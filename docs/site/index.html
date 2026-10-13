@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VoxPaperAi Pro — Транскрибация, перевод, конвертация</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎙</text></svg>">
+    <style>
+        :root {
+            --bg-dark: #0d1117;
+            --bg-card: #161b22;
+            --bg-card-hover: #1c2333;
+            --accent: #7c5bf5;
+            --accent-light: #a78bfa;
+            --accent-glow: rgba(124, 91, 245, 0.3);
+            --text: #e6edf3;
+            --text-muted: #8b949e;
+            --border: #30363d;
+            --success: #3fb950;
+            --warning: #d29922;
+            --info: #58a6ff;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif;
+            background: var(--bg-dark);
+            color: var(--text);
+            line-height: 1.6;
+            overflow-x: hidden;
+        }
+
+        /* ── Animated background ── */
+        .bg-grid {
+            position: fixed;
+            inset: 0;
+            background-image:
+                linear-gradient(rgba(124, 91, 245, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(124, 91, 245, 0.03) 1px, transparent 1px);
+            background-size: 60px 60px;
+            z-index: 0;
+            pointer-events: none;
+        }
+
+        .glow-orb {
+            position: fixed;
+            width: 600px;
+            height: 600px;
+            border-radius: 50%;
+            filter: blur(120px);
+            opacity: 0.15;
+            pointer-events: none;
+            z-index: 0;
+        }
+        .glow-orb.purple { background: #7c5bf5; top: -200px; left: -100px; }
+        .glow-orb.blue { background: #58a6ff; bottom: -200px; right: -100px; }
+
+        /* ── Nav ── */
+        nav {
+            position: sticky; top: 0; z-index: 100;
+            background: rgba(13, 17, 23, 0.85);
+            backdrop-filter: blur(16px);
+            border-bottom: 1px solid var(--border);
+            padding: 0 2rem;
+        }
+        .nav-inner {
+            max-width: 1200px; margin: 0 auto;
+            display: flex; align-items: center; justify-content: space-between;
+            height: 64px;
+        }
+        .nav-brand {
+            display: flex; align-items: center; gap: 0.75rem;
+            font-size: 1.25rem; font-weight: 700;
+            text-decoration: none; color: var(--text);
+        }
+        .nav-brand img { width: 36px; height: 36px; border-radius: 8px; }
+        .nav-links { display: flex; gap: 2rem; list-style: none; }
+        .nav-links a {
+            color: var(--text-muted); text-decoration: none;
+            font-size: 0.9rem; transition: color 0.2s;
+        }
+        .nav-links a:hover { color: var(--text); }
+        .nav-cta {
+            background: var(--accent);
+            color: #fff; padding: 0.5rem 1.25rem;
+            border-radius: 8px; text-decoration: none;
+            font-size: 0.9rem; font-weight: 600;
+            transition: all 0.2s;
+        }
+        .nav-cta:hover { background: var(--accent-light); transform: translateY(-1px); }
+
+        /* ── Hero ── */
+        .hero {
+            position: relative; z-index: 1;
+            max-width: 1200px; margin: 0 auto;
+            padding: 6rem 2rem 4rem;
+            text-align: center;
+        }
+        .hero-badge {
+            display: inline-flex; align-items: center; gap: 0.5rem;
+            background: rgba(124, 91, 245, 0.1);
+            border: 1px solid rgba(124, 91, 245, 0.3);
+            border-radius: 999px; padding: 0.35rem 1rem;
+            font-size: 0.85rem; color: var(--accent-light);
+            margin-bottom: 1.5rem;
+        }
+        .hero-badge .dot {
+            width: 8px; height: 8px; border-radius: 50%;
+            background: var(--success);
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+        .hero h1 {
+            font-size: clamp(2.5rem, 6vw, 4rem);
+            font-weight: 800;
+            background: linear-gradient(135deg, var(--text) 0%, var(--accent-light) 50%, var(--info) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            line-height: 1.15;
+            margin-bottom: 1.5rem;
+        }
+        .hero p {
+            font-size: 1.2rem; color: var(--text-muted);
+            max-width: 640px; margin: 0 auto 2.5rem;
+        }
+        .hero-actions {
+            display: flex; gap: 1rem;
+            justify-content: center; flex-wrap: wrap;
+        }
+        .btn {
+            display: inline-flex; align-items: center; gap: 0.5rem;
+            padding: 0.85rem 2rem;
+            border-radius: 12px;
+            font-size: 1rem; font-weight: 600;
+            text-decoration: none;
+            transition: all 0.25s;
+            cursor: pointer; border: none;
+        }
+        .btn-primary {
+            background: var(--accent); color: #fff;
+            box-shadow: 0 4px 24px var(--accent-glow);
+        }
+        .btn-primary:hover { background: var(--accent-light); transform: translateY(-2px); }
+        .btn-secondary {
+            background: var(--bg-card); color: var(--text);
+            border: 1px solid var(--border);
+        }
+        .btn-secondary:hover { background: var(--bg-card-hover); border-color: var(--accent); }
+
+        /* ── Sections ── */
+        section {
+            position: relative; z-index: 1;
+            max-width: 1200px; margin: 0 auto;
+            padding: 4rem 2rem;
+        }
+        .section-header {
+            text-align: center; margin-bottom: 3rem;
+        }
+        .section-header h2 {
+            font-size: 2rem; font-weight: 700; margin-bottom: 0.75rem;
+        }
+        .section-header p { color: var(--text-muted); font-size: 1.05rem; }
+
+        /* ── Feature cards ── */
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 1.5rem;
+        }
+        .feature-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 2rem;
+            transition: all 0.3s;
+            position: relative;
+            overflow: hidden;
+        }
+        .feature-card::before {
+            content: '';
+            position: absolute; top: 0; left: 0; right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, var(--accent), var(--info));
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        .feature-card:hover {
+            border-color: var(--accent);
+            transform: translateY(-4px);
+            box-shadow: 0 8px 32px rgba(124, 91, 245, 0.15);
+        }
+        .feature-card:hover::before { opacity: 1; }
+        .feature-icon {
+            font-size: 2.5rem; margin-bottom: 1rem;
+        }
+        .feature-card h3 {
+            font-size: 1.2rem; margin-bottom: 0.5rem;
+        }
+        .feature-card p {
+            color: var(--text-muted); font-size: 0.95rem;
+        }
+        .feature-tag {
+            display: inline-block;
+            background: rgba(124, 91, 245, 0.1);
+            color: var(--accent-light);
+            padding: 0.15rem 0.6rem;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            margin-top: 0.75rem;
+        }
+
+        /* ── Pipeline ── */
+        .pipeline {
+            display: flex; align-items: center; justify-content: center;
+            gap: 0.5rem; flex-wrap: wrap;
+            margin: 2rem 0;
+        }
+        .pipe-step {
+            display: flex; align-items: center; gap: 0.5rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 0.75rem 1.25rem;
+            font-size: 0.9rem;
+        }
+        .pipe-arrow { color: var(--accent); font-size: 1.5rem; }
+
+        /* ── Tech stack ── */
+        .tech-grid {
+            display: flex; flex-wrap: wrap; gap: 0.75rem;
+            justify-content: center;
+        }
+        .tech-pill {
+            display: inline-flex; align-items: center; gap: 0.4rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            padding: 0.5rem 1rem;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            transition: border-color 0.2s;
+        }
+        .tech-pill:hover { border-color: var(--accent); color: var(--text); }
+
+        /* ── Requirements table ── */
+        .req-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 2rem;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        .req-row {
+            display: flex; justify-content: space-between;
+            padding: 0.75rem 0;
+            border-bottom: 1px solid var(--border);
+            font-size: 0.95rem;
+        }
+        .req-row:last-child { border-bottom: none; }
+        .req-label { color: var(--text-muted); }
+        .req-value { font-weight: 600; }
+
+        /* ── Install steps ── */
+        .install-steps {
+            max-width: 700px; margin: 0 auto;
+            counter-reset: step;
+        }
+        .install-step {
+            display: flex; gap: 1.25rem;
+            margin-bottom: 1.5rem;
+            position: relative;
+        }
+        .step-num {
+            flex-shrink: 0;
+            width: 40px; height: 40px;
+            border-radius: 50%;
+            background: var(--accent);
+            color: #fff;
+            display: flex; align-items: center; justify-content: center;
+            font-weight: 700; font-size: 1rem;
+        }
+        .step-content h4 { margin-bottom: 0.25rem; }
+        .step-content p { color: var(--text-muted); font-size: 0.9rem; }
+        .code-block {
+            background: #0d1117;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 0.75rem 1rem;
+            font-family: 'SF Mono', Consolas, monospace;
+            font-size: 0.85rem;
+            color: var(--info);
+            margin-top: 0.5rem;
+            overflow-x: auto;
+        }
+
+        /* ── Footer ── */
+        footer {
+            position: relative; z-index: 1;
+            border-top: 1px solid var(--border);
+            padding: 3rem 2rem;
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 0.85rem;
+        }
+        footer a { color: var(--accent-light); text-decoration: none; }
+        footer a:hover { text-decoration: underline; }
+
+        /* ── Responsive ── */
+        @media (max-width: 768px) {
+            .nav-links { display: none; }
+            .hero { padding: 4rem 1.5rem 2rem; }
+            .pipeline { flex-direction: column; }
+            .pipe-arrow { transform: rotate(90deg); }
+        }
+    </style>
+</head>
+<body>
+
+<div class="bg-grid"></div>
+<div class="glow-orb purple"></div>
+<div class="glow-orb blue"></div>
+
+<!-- ═══ NAV ═══ -->
+<nav>
+    <div class="nav-inner">
+        <a class="nav-brand" href="#">
+            <img src="https://raw.githubusercontent.com/maksjermy123/Transcrypt/main/src/ui/assets/logo.png" alt="Logo">
+            VoxPaperAi Pro
+        </a>
+        <ul class="nav-links">
+            <li><a href="#features">Возможности</a></li>
+            <li><a href="#pipeline">Пайплайн</a></li>
+            <li><a href="#tech">Технологии</a></li>
+            <li><a href="#install">Установка</a></li>
+        </ul>
+        <a class="nav-cta" href="https://github.com/maksjermy123/Transcrypt/releases">⬇ Скачать</a>
+    </div>
+</nav>
+
+<!-- ═══ HERO ═══ -->
+<div class="hero">
+    <div class="hero-badge">
+        <span class="dot"></span>
+        Версия 1.0.0 — macOS
+    </div>
+    <h1>Транскрибация. Перевод.<br>Конвертация. Всё в одном.</h1>
+    <p>Локальное десктопное приложение для обработки медиа: транскрибация через Whisper, перевод через Google&nbsp;/&nbsp;DeepL, конвертация форматов — без облачных зависимостей.</p>
+    <div class="hero-actions">
+        <a class="btn btn-primary" href="https://github.com/maksjermy123/Transcrypt/releases">
+            ⬇ Скачать .dmg
+        </a>
+        <a class="btn btn-secondary" href="https://github.com/maksjermy123/Transcrypt">
+            ⭐ GitHub
+        </a>
+    </div>
+</div>
+
+<!-- ═══ FEATURES ═══ -->
+<section id="features">
+    <div class="section-header">
+        <h2>Что умеет VoxPaperAi Pro</h2>
+        <p>Четыре мощных модуля в одном окне</p>
+    </div>
+    <div class="features-grid">
+        <div class="feature-card">
+            <div class="feature-icon">🎙</div>
+            <h3>Транскрибация</h3>
+            <p>Локальные аудио/видео файлы, YouTube-ссылки, импорт URL из <code>.txt</code>. Автовыбор CPU-потоков и модели Whisper.</p>
+            <span class="feature-tag">Whisper · OpenAI</span>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon">🎬</div>
+            <h3>Медиа-обработка</h3>
+            <p>Скачивание видео/аудио с YouTube, очистка аудио-дорожки, вшивание субтитров в видео.</p>
+            <span class="feature-tag">yt-dlp · ffmpeg</span>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon">🔄</div>
+            <h3>Конвертер</h3>
+            <p>Конвертация медиа-файлов, документов и базовых форматов изображений между любыми популярными форматами.</p>
+            <span class="feature-tag">ffmpeg · LibreOffice</span>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon">🌍</div>
+            <h3>Перевод</h3>
+            <p>Google и DeepL переводчики. Режимы <strong>PDF FAST</strong> и <strong>PDF LAYOUT</strong> с сохранением форматирования.</p>
+            <span class="feature-tag">Google · DeepL</span>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon">📋</div>
+            <h3>Живая очередь</h3>
+            <p>Единый блок очереди задач: цветные статусы, прогресс пайплайна, последовательное выполнение без конфликтов.</p>
+            <span class="feature-tag">Task Queue</span>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon">🛡</div>
+            <h3>Устойчивость</h3>
+            <p>Автоматические ретраи с backoff, резервный Chrome-TLS канал при HTTP&nbsp;429 от Google, TLS-impersonation для YouTube.</p>
+            <span class="feature-tag">curl-cffi · Deno</span>
+        </div>
+    </div>
+</section>
+
+<!-- ═══ PIPELINE ═══ -->
+<section id="pipeline">
+    <div class="section-header">
+        <h2>Пайплайн обработки</h2>
+        <p>Автоматическая цепочка от входного файла до готового результата</p>
+    </div>
+    <div class="pipeline">
+        <div class="pipe-step">📁 Файл / URL</div>
+        <span class="pipe-arrow">→</span>
+        <div class="pipe-step">⬇ Загрузка</div>
+        <span class="pipe-arrow">→</span>
+        <div class="pipe-step">🎙 Whisper</div>
+        <span class="pipe-arrow">→</span>
+        <div class="pipe-step">📝 Субтитры</div>
+        <span class="pipe-arrow">→</span>
+        <div class="pipe-step">🌍 Перевод</div>
+        <span class="pipe-arrow">→</span>
+        <div class="pipe-step">✅ Результат</div>
+    </div>
+</section>
+
+<!-- ═══ TECH ═══ -->
+<section id="tech">
+    <div class="section-header">
+        <h2>Технологии</h2>
+        <p>Надёжный стек для локальной обработки</p>
+    </div>
+    <div class="tech-grid">
+        <span class="tech-pill">🐍 Python 3.12</span>
+        <span class="tech-pill">🖼 PyQt6</span>
+        <span class="tech-pill">🎙 OpenAI Whisper</span>
+        <span class="tech-pill">🎬 ffmpeg / ffprobe</span>
+        <span class="tech-pill">⬇ yt-dlp</span>
+        <span class="tech-pill">🔒 curl-cffi</span>
+        <span class="tech-pill">🦕 Deno</span>
+        <span class="tech-pill">🌍 Google Translate</span>
+        <span class="tech-pill">📘 DeepL API</span>
+        <span class="tech-pill">📄 python-docx</span>
+        <span class="tech-pill">📕 PyMuPDF</span>
+        <span class="tech-pill">🍎 macOS native</span>
+    </div>
+</section>
+
+<!-- ═══ INSTALL ═══ -->
+<section id="install">
+    <div class="section-header">
+        <h2>Установка</h2>
+        <p>Два варианта: готовый .dmg или запуск из исходников</p>
+    </div>
+
+    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(320px,1fr)); gap: 2rem; max-width:900px; margin:0 auto;">
+        <!-- DMG -->
+        <div class="req-card">
+            <h3 style="margin-bottom:1rem">📦 Готовый установщик</h3>
+            <div class="install-step">
+                <div class="step-num">1</div>
+                <div class="step-content">
+                    <h4>Скачайте .dmg</h4>
+                    <p>Из раздела <a href="https://github.com/maksjermy123/Transcrypt/releases" style="color:var(--accent-light)">Releases</a> на GitHub</p>
+                </div>
+            </div>
+            <div class="install-step">
+                <div class="step-num">2</div>
+                <div class="step-content">
+                    <h4>Перетащите в Applications</h4>
+                    <p>Стандартная установка macOS</p>
+                </div>
+            </div>
+            <div class="install-step">
+                <div class="step-num">3</div>
+                <div class="step-content">
+                    <h4>Запустите</h4>
+                    <p>При первом запуске: ПКМ → Открыть</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Dev -->
+        <div class="req-card">
+            <h3 style="margin-bottom:1rem">👨‍💻 Из исходников</h3>
+            <div class="install-step">
+                <div class="step-num">1</div>
+                <div class="step-content">
+                    <h4>Клонируйте репо</h4>
+                    <div class="code-block">git clone https://github.com/maksjermy123/Transcrypt.git</div>
+                </div>
+            </div>
+            <div class="install-step">
+                <div class="step-num">2</div>
+                <div class="step-content">
+                    <h4>Запустите</h4>
+                    <div class="code-block">cd Transcrypt && ./run_dev.command</div>
+                </div>
+            </div>
+            <div class="install-step">
+                <div class="step-num">3</div>
+                <div class="step-content">
+                    <h4>Тесты</h4>
+                    <div class="code-block">./run_dev.command --tests</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- ═══ REQUIREMENTS ═══ -->
+<section>
+    <div class="section-header">
+        <h2>Системные требования</h2>
+    </div>
+    <div class="req-card">
+        <div class="req-row">
+            <span class="req-label">ОС</span>
+            <span class="req-value">macOS 12+ (Monterey и выше)</span>
+        </div>
+        <div class="req-row">
+            <span class="req-label">Python</span>
+            <span class="req-value">3.10 – 3.12</span>
+        </div>
+        <div class="req-row">
+            <span class="req-label">Процессор</span>
+            <span class="req-value">Intel или Apple Silicon</span>
+        </div>
+        <div class="req-row">
+            <span class="req-label">ОЗУ</span>
+            <span class="req-value">8 GB+ (16 GB для large модели)</span>
+        </div>
+        <div class="req-row">
+            <span class="req-label">Диск</span>
+            <span class="req-value">~2 GB (с моделями Whisper)</span>
+        </div>
+        <div class="req-row">
+            <span class="req-label">Дополнительно</span>
+            <span class="req-value">ffmpeg, Deno (brew install)</span>
+        </div>
+    </div>
+</section>
+
+<!-- ═══ FOOTER ═══ -->
+<footer>
+    <p>
+        <strong>VoxPaperAi Pro</strong> v1.0.0 · 
+        <a href="https://github.com/maksjermy123/Transcrypt">GitHub</a> · 
+        <a href="https://github.com/maksjermy123/Transcrypt/issues">Issues</a> · 
+        <a href="https://github.com/maksjermy123/Transcrypt/blob/main/LICENSE">MIT License</a>
+    </p>
+    <p style="margin-top:0.5rem">© 2026 VoxPaperAi Pro</p>
+</footer>
+
+</body>
+</html>
