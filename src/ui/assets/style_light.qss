@@ -1,0 +1,220 @@
+/*
+   Light Premium QSS Theme for VoxPaperAi Pro
+*/
+
+QWidget {
+    background-color: #F3F7FC;
+    color: #1F2937;
+    font-family: "Helvetica Neue", Helvetica, Arial;
+    font-size: 13px;
+}
+
+QMainWindow {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #EEF4FB, stop:1 #F7FAFD);
+}
+
+QTabWidget::pane {
+    border: 1px solid #D7E1EE;
+    background-color: #FBFDFF;
+    border-radius: 16px;
+    margin: 6px;
+    padding: 6px;
+}
+
+QTabBar::tab {
+    background-color: #E7EEF8;
+    color: #4B5563;
+    padding: 9px 16px;
+    border-top-left-radius: 9px;
+    border-top-right-radius: 9px;
+    margin-right: 4px;
+    min-width: 96px;
+    font-weight: 600;
+}
+
+QTabBar::tab:selected {
+    background-color: #2F6FED;
+    color: #FFFFFF;
+    font-weight: 700;
+}
+
+QTabBar::tab:hover:!selected {
+    background-color: #DBE7F8;
+    color: #1F2937;
+}
+
+QPushButton {
+    background-color: #2F6FED;
+    color: #FFFFFF;
+    border: none;
+    padding: 7px 12px;
+    border-radius: 9px;
+    font-weight: 700;
+}
+
+QPushButton:hover {
+    background-color: #4E86F0;
+}
+
+QPushButton:pressed {
+    background-color: #265FD0;
+}
+
+QPushButton:disabled {
+    background-color: #DDE6F0;
+    color: #8A94A6;
+}
+
+QToolButton {
+    background-color: transparent;
+    color: #374151;
+    border: 1px solid #D7E1EE;
+    border-radius: 7px;
+    padding: 4px 7px;
+}
+
+QToolButton:hover {
+    background-color: #EEF4FB;
+}
+
+QPushButton[text*="СТОП"], QPushButton[text*="Удалить"] {
+    background-color: #DC3B4C;
+    color: #FFFFFF;
+}
+
+QPushButton[text*="СТОП"]:hover, QPushButton[text*="Удалить"]:hover {
+    background-color: #F05262;
+}
+
+QGroupBox {
+    border: 1px solid #D7E1EE;
+    border-radius: 12px;
+    margin-top: 16px;
+    padding-top: 14px;
+    background-color: #FFFFFF;
+}
+
+QGroupBox::title {
+    subcontrol-origin: margin;
+    subcontrol-position: top left;
+    padding: 0 8px;
+    color: #2F6FED;
+    font-weight: 700;
+}
+
+QLineEdit, QTextEdit, QTextBrowser {
+    background-color: #FFFFFF;
+    border: 1px solid #D7E1EE;
+    border-radius: 9px;
+    padding: 6px;
+    color: #1F2937;
+    selection-background-color: #2F6FED;
+    selection-color: #FFFFFF;
+}
+
+QLineEdit:focus, QTextEdit:focus, QTextBrowser:focus {
+    border: 1px solid #4E86F0;
+}
+
+QLabel {
+    color: #1F2937;
+    background: transparent;
+}
+
+QProgressBar {
+    border: 1px solid #D7E1EE;
+    border-radius: 9px;
+    text-align: center;
+    background-color: #FFFFFF;
+    color: #1F2937;
+    min-height: 18px;
+}
+
+QProgressBar::chunk {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #38BDF8, stop:1 #22C55E);
+    border-radius: 9px;
+}
+
+QComboBox {
+    border: 1px solid #D7E1EE;
+    border-radius: 9px;
+    padding: 4px 8px;
+    background-color: #FFFFFF;
+    color: #1F2937;
+}
+
+QComboBox::drop-down {
+    border: none;
+    width: 22px;
+}
+
+QComboBox QAbstractItemView {
+    background-color: #FFFFFF;
+    border: 1px solid #D7E1EE;
+    selection-background-color: #2F6FED;
+    selection-color: #FFFFFF;
+}
+
+QTableWidget {
+    background-color: #FFFFFF;
+    border: 1px solid #D7E1EE;
+    border-radius: 12px;
+    gridline-color: #E8EEF5;
+    alternate-background-color: #F7FAFD;
+}
+
+QHeaderView::section {
+    background-color: #E7EEF8;
+    color: #1F2937;
+    padding: 5px;
+    border: 1px solid #D7E1EE;
+    font-weight: 700;
+}
+
+QScrollBar:vertical {
+    background: transparent;
+    width: 12px;
+    margin: 4px 2px 4px 2px;
+}
+
+QScrollBar::handle:vertical {
+    background: #CBD7E6;
+    border-radius: 6px;
+    min-height: 28px;
+}
+
+QScrollBar::handle:vertical:hover {
+    background: #A8BAD0;
+}
+
+QScrollBar::add-line:vertical,
+QScrollBar::sub-line:vertical,
+QScrollBar::add-page:vertical,
+QScrollBar::sub-page:vertical {
+    background: none;
+    height: 0px;
+}
+
+QFrame#aboutHero,
+QFrame#aboutCard,
+QFrame#queuePanel,
+QFrame#appNotice {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 rgba(66,133,244,0.12), stop:1 rgba(56,189,248,0.10));
+    border: 1px solid #CFE0F7;
+    border-radius: 16px;
+}
+
+QLabel#queuePanelTitle {
+    color: #2F6FED;
+    font-weight: 800;
+    font-size: 12px;
+}
+
+QLabel#queuePanelCurrent {
+    color: #1F2937;
+    font-weight: 700;
+}
+
+QLabel#queuePanelNext {
+    color: #6B7280;
+}
