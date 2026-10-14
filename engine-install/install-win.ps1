@@ -22,10 +22,12 @@
 $ErrorActionPreference = "Stop"
 
 $RepoRaw = "https://raw.githubusercontent.com/maksjermy123/Transcrypt/main"
+$RepoTarball = "https://github.com/maksjermy123/Transcrypt/archive/refs/heads/main.tar.gz"
 $InstallDir = Join-Path $env:USERPROFILE ".transcrypt-engine"
 $VenvDir = Join-Path $InstallDir "venv"
 $EngineFile = Join-Path $InstallDir "engine_server.py"
 $RequirementsFile = Join-Path $InstallDir "requirements-engine.txt"
+$SrcDir = Join-Path $InstallDir "src"
 $LogFile = Join-Path $InstallDir "engine.log"
 
 function Write-Step { param([string]$msg) Write-Host "▸ $msg" -ForegroundColor Blue }
@@ -99,16 +101,45 @@ Write-Ok "Директория готова"
 Get-Process pythonw -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 Get-Process python -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -like "*engine_server*" } | Stop-Process -Force -ErrorAction SilentlyContinue
 
-# ─── 5. Скачивание файлов ────────────────────────────────────────
-Write-Step "Скачивание engine_server.py и requirements-engine.txt..."
+# ─── 5. Скачивание engine_server.py, src/ и requirements ─────────
+Write-Step "Скачивание engine_server.py, src/ и requirements-engine.txt..."
+# Скачиваем tarball всего репо, распаковываем во временную папку
+$tmpTarball = Join-Path $InstallDir "repo.tar.gz"
+$tmpExtract = Join-Path $InstallDir "_extract"
+
 try {
-    Invoke-WebRequest -Uri "$RepoRaw/engine_server.py" -OutFile $EngineFile -UseBasicParsing
-    Invoke-WebRequest -Uri "$RepoRaw/engine-install/requirements-engine.txt" -OutFile $RequirementsFile -UseBasicParsing
-    Write-Ok "Файлы скачаны"
+    Invoke-WebRequest -Uri $RepoTarball -OutFile $tmpTarball -UseBasicParsing
 } catch {
-    Write-Err "Не удалось скачать файлы. Проверьте интернет."
+    Write-Err "Не удалось скачать tarball репозитория. Проверьте интернет."
     exit 1
 }
+
+if (-not (Test-Path $tmpExtract)) {
+    New-Item -ItemType Directory -Path $tmpExtract -Force | Out-Null
+}
+
+# Распаковываем tarball (Windows 10+ имеет встроенный tar)
+$extractedDir = Join-Path $tmpExtract "Transcrypt-main"
+tar -xzf $tmpTarball -C $tmpExtract 2>&1 | Out-Null
+
+if (-not (Test-Path $extractedDir)) {
+    Write-Err "Не удалось распаковать репозиторий"
+    exit 1
+}
+
+# Копируем нужные файлы
+Copy-Item -Path (Join-Path $extractedDir "engine_server.py") -Destination $EngineFile -Force
+Copy-Item -Path (Join-Path $extractedDir "engine-install/requirements-engine.txt") -Destination $RequirementsFile -Force
+# Копируем весь каталог src/ — engine_server.py импортирует из него
+if (Test-Path $SrcDir) {
+    Remove-Item -Recurse -Force $SrcDir
+}
+Copy-Item -Path (Join-Path $extractedDir "src") -Destination $SrcDir -Recurse -Force
+
+# Чистим временные файлы
+Remove-Item -Force $tmpTarball
+Remove-Item -Recurse -Force $tmpExtract
+Write-Ok "Файлы скачаны (engine_server.py + src/ + requirements)"
 
 # ─── 6. Создание venv ────────────────────────────────────────────
 if (-not (Test-Path $VenvDir)) {

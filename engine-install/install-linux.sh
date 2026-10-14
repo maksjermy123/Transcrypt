@@ -18,10 +18,12 @@
 set -e
 
 REPO_RAW="https://raw.githubusercontent.com/maksjermy123/Transcrypt/main"
+REPO_TARBALL="https://github.com/maksjermy123/Transcrypt/archive/refs/heads/main.tar.gz"
 INSTALL_DIR="$HOME/.transcrypt-engine"
 VENV_DIR="$INSTALL_DIR/venv"
 ENGINE_FILE="$INSTALL_DIR/engine_server.py"
 REQUIREMENTS_FILE="$INSTALL_DIR/requirements-engine.txt"
+SRC_DIR="$INSTALL_DIR/src"
 PID_FILE="$INSTALL_DIR/engine.pid"
 LOG_FILE="$INSTALL_DIR/engine.log"
 
@@ -115,11 +117,35 @@ if [ -f "$PID_FILE" ]; then
     rm -f "$PID_FILE"
 fi
 
-# ─── 6. Скачивание файлов ────────────────────────────────────────
-print_step "Скачивание engine_server.py и requirements-engine.txt..."
-curl -fsSL "$REPO_RAW/engine_server.py" -o "$ENGINE_FILE"
-curl -fsSL "$REPO_RAW/engine-install/requirements-engine.txt" -o "$REQUIREMENTS_FILE"
-print_ok "Файлы скачаны"
+# ─── 6. Скачивание engine_server.py, src/ и requirements ───────────
+print_step "Скачивание engine_server.py, src/ и requirements-engine.txt..."
+# Скачиваем tarball всего репо, распаковываем во временную папку
+TMP_TARBALL="$INSTALL_DIR/repo.tar.gz"
+TMP_EXTRACT="$INSTALL_DIR/_extract"
+curl -fsSL "$REPO_TARBALL" -o "$TMP_TARBALL"
+mkdir -p "$TMP_EXTRACT"
+tar -xzf "$TMP_TARBALL" -C "$TMP_EXTRACT"
+
+# Внутри tarball директория называется Transcrypt-main/
+EXTRACTED="$TMP_EXTRACT/Transcrypt-main"
+if [ ! -d "$EXTRACTED" ]; then
+    print_err "Не удалось распаковать репозиторий"
+    exit 1
+fi
+
+# Копируем нужные файлы
+cp "$EXTRACTED/engine_server.py" "$ENGINE_FILE"
+cp "$EXTRACTED/engine-install/requirements-engine.txt" "$REQUIREMENTS_FILE"
+# Копируем весь каталог src/ — engine_server.py импортирует из него
+if [ -d "$SRC_DIR" ]; then
+    rm -rf "$SRC_DIR"
+fi
+cp -r "$EXTRACTED/src" "$SRC_DIR"
+
+# Чистим временные файлы
+rm -f "$TMP_TARBALL"
+rm -rf "$TMP_EXTRACT"
+print_ok "Файлы скачаны (engine_server.py + src/ + requirements)"
 
 # ─── 7. Создание venv ─────────────────────────────────────────────
 if [ ! -d "$VENV_DIR" ]; then
