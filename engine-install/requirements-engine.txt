@@ -1,0 +1,17 @@
+# Transcrypt Web Engine — минимальный набор зависимостей для engine_server.py
+# Без PyQt6, без переводчиков, без PDF — только то, что нужно веб-интерфейсу.
+#
+# Установочный скрипт скачивает этот файл и engine_server.py из GitHub
+# в ~/.transcrypt-engine/, создаёт venv и запускает движок на 127.0.0.1:8765.
+
+openai-whisper==20231117
+yt-dlp==2026.7.4
+ffmpeg-python==0.2.0
+requests==2.32.3
+curl-cffi==0.15.0
+
+# torch тянется автоматически через openai-whisper, но фиксируем версию
+# для воспроизводимости. CPU-only на macOS/Linux/Windows.
+# Если у вас GPU — установите torch с поддержкой CUDA вручную:
+#   pip install torch --index-url https://download.pytorch.org/whl/cu121
+torch>=2.0.0

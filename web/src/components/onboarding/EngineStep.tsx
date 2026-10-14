@@ -1,24 +1,24 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { Wrench, Loader2, CheckCircle2, AlertCircle, Server } from "lucide-react";
+import { Wrench, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
 import { useState } from "react";
 import { useOnboarding } from "@/lib/onboarding-store";
 import { loadWhisperPipeline, type ProgressInfo } from "@/lib/whisper";
+import { LocalEngineStep } from "./LocalEngineStep";
 
 type Phase = "idle" | "downloading-wasm" | "downloading-model-base" | "ready" | "error";
 
 export function EngineStep({ onNext }: { onNext: () => void }) {
-  const { engineStatus, setEngineStatus, setEngineProgress, setEngineError } =
+  const { engineStatus, setEngineStatus, setEngineProgress, setEngineError, engineServerOnline } =
     useOnboarding();
-  // Если движок уже готов из предыдущей сессии — стартуем с фазы ready.
   const [phase, setPhase] = useState<Phase>(
     engineStatus === "ready" ? "ready" : "idle"
   );
   const [progress, setProgress] = useState(engineStatus === "ready" ? 100 : 0);
   const [phaseText, setPhaseText] = useState(
     engineStatus === "ready"
-      ? "Движок уже установлен и готов"
+      ? "Браузерный движок уже установлен"
       : "Готов к запуску"
   );
 
@@ -49,7 +49,7 @@ export function EngineStep({ onNext }: { onNext: () => void }) {
       });
 
       setPhase("ready");
-      setPhaseText("Движок установлен и готов к работе");
+      setPhaseText("Браузерный движок готов");
       setProgress(100);
       setEngineProgress(100);
       setEngineStatus("ready");
@@ -62,6 +62,9 @@ export function EngineStep({ onNext }: { onNext: () => void }) {
       setEngineError(err?.message ?? "Ошибка установки движка");
     }
   }
+
+  const browserReady = phase === "ready" || engineStatus === "ready";
+  const localReady = engineServerOnline;
 
   return (
     <motion.div
@@ -77,41 +80,42 @@ export function EngineStep({ onNext }: { onNext: () => void }) {
         </div>
         <h2 className="text-3xl font-bold mb-3">Установить движок</h2>
         <p className="text-muted-foreground max-w-lg mx-auto">
-          Движок — это библиотека{" "}
-          <span className="text-foreground font-mono text-sm">transformers.js</span>{" "}
-          (~5 МБ) и WASM-бинарник (~20 МБ). Скачиваются один раз и кешируются в
-          браузере. Никаких exe, dmg, zip — только кеш браузера.
+          Transcrypt использует <span className="text-foreground font-medium">два движка</span>:
+          браузерный (Whisper в WASM, для локальных файлов) и локальный Python-движок
+          (для URL-задач с YouTube/TikTok, обходит блокировки).
         </p>
       </div>
 
-      {/* Прогресс-бар */}
-      <div className="glass-card rounded-2xl p-6 mb-8">
+      {/* Браузерный движок */}
+      <div className="glass-card rounded-2xl p-6 mb-5">
         <div className="flex items-center gap-3 mb-4">
-          {phase === "ready" ? (
-            <CheckCircle2 className="w-6 h-6 text-emerald-500" />
-          ) : phase === "error" ? (
-            <AlertCircle className="w-6 h-6 text-red-500" />
-          ) : phase === "idle" ? (
-            <Wrench className="w-6 h-6 text-[#7c5bf5]" />
-          ) : (
-            <Loader2 className="w-6 h-6 text-[#7c5bf5] animate-spin" />
-          )}
+          <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${
+            phase === "ready"
+              ? "bg-emerald-500/15"
+              : phase === "error"
+              ? "bg-red-500/15"
+              : "bg-[#7c5bf5]/15"
+          }`}>
+            {phase === "ready" ? (
+              <CheckCircle2 className="w-5 h-5 text-emerald-500" />
+            ) : phase === "error" ? (
+              <AlertCircle className="w-5 h-5 text-red-500" />
+            ) : phase === "idle" ? (
+              <Wrench className="w-5 h-5 text-[#7c5bf5]" />
+            ) : (
+              <Loader2 className="w-5 h-5 text-[#7c5bf5] animate-spin" />
+            )}
+          </div>
           <div className="flex-1">
-            <div className="font-medium text-sm">{phaseText}</div>
-            <div className="text-xs text-muted-foreground">
-              {phase === "ready"
-                ? "Движок в кеше браузера. Модель можно сменить в любой момент."
-                : phase === "error"
-                ? "Попробуйте обновить страницу или сменить сеть."
-                : "Не закрывайте вкладку до завершения установки."}
-            </div>
+            <h3 className="font-semibold text-sm">Браузерный движок (Whisper)</h3>
+            <div className="text-xs text-muted-foreground">{phaseText}</div>
           </div>
           <div className="text-2xl font-mono font-bold text-[#7c5bf5]">
             {progress}%
           </div>
         </div>
 
-        <div className="w-full h-2 rounded-full bg-[#1b2334] overflow-hidden">
+        <div className="w-full h-2 rounded-full bg-[#1b2334] overflow-hidden mb-4">
           <motion.div
             className="h-full bg-gradient-primary"
             initial={{ width: 0 }}
@@ -119,92 +123,57 @@ export function EngineStep({ onNext }: { onNext: () => void }) {
             transition={{ duration: 0.4, ease: "easeOut" }}
           />
         </div>
-      </div>
 
-      <div className="text-center space-y-3">
         {phase === "idle" && (
           <button
             onClick={startInstall}
-            className="bg-gradient-primary text-white px-8 py-3.5 rounded-xl font-medium hover:opacity-90 transition-opacity glow-primary"
+            className="bg-gradient-primary text-white px-6 py-2.5 rounded-xl font-medium hover:opacity-90 transition-opacity glow-primary inline-flex items-center gap-2"
           >
-            Установить движок
+            <Wrench className="w-4 h-4" />
+            Установить браузерный движок
           </button>
         )}
         {phase === "ready" && (
-          <>
-            <button
-              onClick={onNext}
-              className="bg-gradient-primary text-white px-8 py-3.5 rounded-xl font-medium hover:opacity-90 transition-opacity glow-primary"
-            >
-              Движок готов — выбрать Whisper →
-            </button>
+          <div className="text-sm text-emerald-400 inline-flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4" />
+            Готово — Whisper работает в браузере для локальных файлов
             <button
               onClick={() => {
                 setPhase("idle");
                 setProgress(0);
               }}
-              className="block mx-auto text-xs text-muted-foreground hover:text-foreground"
+              className="text-xs text-muted-foreground hover:text-foreground ml-3"
             >
-              Переустановить движок
+              Переустановить
             </button>
-          </>
+          </div>
         )}
         {phase === "error" && (
           <button
             onClick={startInstall}
-            className="bg-gradient-primary text-white px-8 py-3.5 rounded-xl font-medium hover:opacity-90 transition-opacity"
+            className="bg-gradient-primary text-white px-6 py-2.5 rounded-xl font-medium hover:opacity-90"
           >
             Повторить установку
           </button>
         )}
-        {(phase === "downloading-wasm" || phase === "downloading-model-base") && (
-          <p className="text-xs text-muted-foreground">
-            Идёт установка… Не закрывайте вкладку.
-          </p>
-        )}
       </div>
 
-      {/* Опционально: локальный Python-движок для URL-задач */}
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.3 }}
-        className="mt-10 glass-card rounded-2xl p-5 text-left"
-      >
-        <div className="flex items-start gap-3">
-          <div className="w-10 h-10 rounded-xl bg-amber-500/15 flex items-center justify-center flex-shrink-0">
-            <Server className="w-5 h-5 text-amber-400" />
-          </div>
-          <div className="flex-1">
-            <h3 className="font-semibold text-sm mb-1.5">
-              Опционально: локальный движок для YouTube URL
-            </h3>
-            <p className="text-xs text-muted-foreground mb-3 leading-relaxed">
-              Браузерный движок работает только с локальными файлами — YouTube блокирует
-              прямые запросы из браузера (CORS + bot-защита). Если хотите работать с
-              URL (YouTube, TikTok, Instagram), запустите локальный Python-движок — он
-              использует <code className="font-mono text-[11px] px-1 py-0.5 rounded bg-[#0b0f19]">yt-dlp</code> с
-              маскировкой под Chrome и обходит все блокировки. Запускать необязательно —
-              сайт уже работает для локальных файлов.
-            </p>
-            <details className="text-xs">
-              <summary className="text-[#7c5bf5] cursor-pointer hover:underline">
-                Как запустить локальный движок →
-              </summary>
-              <div className="mt-3 bg-[#0b0f19] rounded-xl p-3 font-mono text-[11px] space-y-1.5">
-                <div className="text-muted-foreground"># 1. Склонировать репозиторий</div>
-                <div className="text-foreground">git clone https://github.com/maksjermy123/Transcrypt</div>
-                <div className="text-muted-foreground"># 2. Установить зависимости</div>
-                <div className="text-foreground">pip install -r requirements.txt</div>
-                <div className="text-muted-foreground"># 3. Запустить движок</div>
-                <div className="text-foreground">python engine_server.py</div>
-                <div className="text-muted-foreground"># Движок откроется на 127.0.0.1:8765</div>
-                <div className="text-muted-foreground"># Обновите эту страницу — индикатор станет зелёным</div>
-              </div>
-            </details>
-          </div>
+      {/* Локальный движок — показывается после установки браузерного */}
+      {browserReady && (
+        <LocalEngineStep onSkip={onNext} />
+      )}
+
+      {/* Если локальный уже online — даём продолжить сразу */}
+      {(browserReady && localReady && phase !== "idle") && (
+        <div className="mt-5 text-center">
+          <button
+            onClick={onNext}
+            className="bg-gradient-primary text-white px-8 py-3.5 rounded-xl font-medium hover:opacity-90 transition-opacity glow-primary inline-flex items-center gap-2"
+          >
+            Продолжить →
+          </button>
         </div>
-      </motion.div>
+      )}
     </motion.div>
   );
 }

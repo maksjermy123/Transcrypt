@@ -68,46 +68,48 @@
 
 ---
 
-## 🖥 Локальный движок (опционально, для URL-задач)
+## 🖥 Локальный движок (1-клик установщик)
 
-Если хотите работать с YouTube/TikTok/Instagram URL, запустите локальный Python-движок:
+Для URL-задач (YouTube/TikTok/Instagram) нужен локальный Python-движок. Устанавливается автоматически во время онбординга:
 
-### Установка
+### Способ 1 — Автоматически (рекомендуется)
+
+На шаге «Установить движок» в онбординге:
+1. Сайт определяет вашу платформу (macOS/Windows/Linux)
+2. Кнопка «Скачать установщик для {платформа}» скачивает скрипт (~5 КБ)
+3. Запустите скачанный файл двойным кликом (macOS/Windows) или `bash install-linux.sh`
+4. Скрипт:
+   - Создаст venv в `~/.transcrypt-engine/`
+   - Скачает `engine_server.py` и `requirements-engine.txt` из GitHub
+   - Установит Whisper + yt-dlp (~5 минут при первом запуске, ~800 МБ)
+   - Запустит движок на `http://127.0.0.1:8765`
+   - Откроет браузер с сайтом
+5. Сайт автоматически опрашивает `127.0.0.1:8765` каждые 2 секунды
+6. Когда движок поднимется — индикатор в шапке станет зелёным, и кнопка «Продолжить» активируется
+
+### Способ 2 — Вручную
 
 ```bash
 git clone https://github.com/maksjermy123/Transcrypt
 cd Transcrypt
-
-# Python 3.10+
 python -m venv .venv
 source .venv/bin/activate  # на Windows: .venv\Scripts\activate
-
-pip install -r requirements.txt
-```
-
-`requirements.txt` включает:
-- `yt-dlp` — скачивание с YouTube/TikTok/Instagram
-- `openai-whisper` — распознавание речи
-- `torch` — для Whisper
-- `ffmpeg-python` — для медиа-операций (также нужен системный ffmpeg)
-- `curl-cffi` — TLS-impersonation (обход блокировок YouTube)
-
-Дополнительно для macOS: `brew install deno` (для JS-челленджей YouTube)
-
-### Запуск
-
-```bash
+pip install -r engine-install/requirements-engine.txt
 python engine_server.py
-# или с портом:
-python engine_server.py 8765
 ```
 
-Движок откроется на `http://127.0.0.1:8765`. Сервер печатает:
-```
-🚀 VoxPaperAi Pro — Локальный движок запущен!
-📡 Порт: http://127.0.0.1:8765
-🌐 Откройте веб-интерфейс: https://maksjermy123.github.io/Transcrypt/
-```
+### Способ 3 — Только браузерный режим
+
+Локальный движок **необязателен**. Если хотите работать только с локальными файлами — нажмите «Пропустить» в онбординге. Браузерный Whisper через transformers.js будет распознавать локальные аудио/видео без установки Python.
+
+### Установка файлов
+
+| Файл | Описание |
+|------|----------|
+| `engine-install/install-mac.command` | Установщик для macOS (двойной клик в Finder) |
+| `engine-install/install-win.bat` | Установщик для Windows (двойной клик в проводнике) |
+| `engine-install/install-linux.sh` | Установщик для Linux (`bash install-linux.sh`) |
+| `engine-install/requirements-engine.txt` | Минимальный набор зависимостей (без PyQt6) |
 
 ### Проверка работоспособности
 
@@ -117,7 +119,14 @@ curl http://127.0.0.1:8765/api/health
 # {"status":"ok","version":"1.0.0","platform":"darwin","device":"cpu","ffmpeg":true,...}
 ```
 
-После запуска движка — обновите страницу `https://maksjermy123.github.io/Transcrypt/` — индикатор в шапке станет зелёным, и все URL-задачи заработают.
+### Управление движком
+
+| Команда | Действие |
+|---------|----------|
+| `tail -f ~/.transcrypt-engine/engine.log` | Смотреть логи |
+| `kill $(cat ~/.transcrypt-engine/engine.pid)` | Остановить движок |
+| `~/.transcrypt-engine/venv/bin/python ~/.transcrypt-engine/engine_server.py` | Запустить вручную |
+| `rm -rf ~/.transcrypt-engine` | Полное удаление |
 
 ### Эндпоинты API
 
