@@ -50,6 +50,14 @@ try {
         if ($major -ge 3 -and $minor -ge 10) {
             $pyCmd = "python"
             Write-Ok "Python $($matches[1]).$($matches[2]) найден: python"
+            # Предупреждение для Python 3.14+
+            if ($minor -ge 14) {
+                Write-Warn "Python $($matches[1]).$($matches[2]) — очень новая версия"
+                Write-Host "    openai-whisper требует pkg_resources (удалён в setuptools 81+)." -ForegroundColor DarkGray
+                Write-Host "    Мы принудительно установим setuptools<81, но если установка" -ForegroundColor DarkGray
+                Write-Host "    всё равно упадёт — установите Python 3.12 с https://www.python.org/downloads/" -ForegroundColor DarkGray
+                Write-Host "    Продолжаем установку..." -ForegroundColor DarkGray
+            }
         } else {
             Write-Err "Требуется Python 3.10+. Найдена версия $($matches[1]).$($matches[2])"
             Write-Host "    Установите с https://www.python.org/downloads/"
@@ -117,10 +125,25 @@ $venvPip = Join-Path $VenvDir "Scripts\pip.exe"
 # ─── 7. Установка зависимостей ──────────────────────────────────
 Write-Step "Установка зависимостей (это займёт несколько минут при первом запуске)..."
 & $venvPip install --upgrade pip --quiet
-& $venvPip install -r $RequirementsFile --quiet
+# ВАЖНО: сначала отдельно setuptools<81, потом остальные пакеты.
+# openai-whisper требует pkg_resources (удалён в setuptools 81+).
+& $venvPip install "setuptools<81" --quiet
+& $venvPip install -r $RequirementsFile --quiet --no-cache-dir
 if ($LASTEXITCODE -ne 0) {
     Write-Err "Ошибка установки зависимостей"
-    Write-Host "    Попробуйте вручную: $venvPip install -r $RequirementsFile"
+    Write-Host ""
+    Write-Host "Если у вас Python 3.14+ — openai-whisper может не собраться." -ForegroundColor DarkGray
+    Write-Host "Установите Python 3.12 с https://www.python.org/downloads/:" -ForegroundColor DarkGray
+    Write-Host "  1. Скачайте Python 3.12 и установите (отметьте 'Add Python to PATH')"
+    Write-Host "  2. Удалите текущий venv:"
+    Write-Host "       Remove-Item -Recurse -Force $VenvDir"
+    Write-Host "  3. Пересоздайте venv с Python 3.12:"
+    Write-Host "       python3.12 -m venv $VenvDir"
+    Write-Host "  4. Установите зависимости вручную:"
+    Write-Host "       $venvPip install 'setuptools<81'"
+    Write-Host "       $venvPip install -r $RequirementsFile"
+    Write-Host "  5. Запустите движок:"
+    Write-Host "       $venvPythonw $EngineFile"
     exit 1
 }
 Write-Ok "Зависимости установлены"

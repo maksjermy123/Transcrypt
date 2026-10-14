@@ -51,6 +51,17 @@ if command -v python3 &> /dev/null; then
     PY_MINOR=$(echo $PY_VERSION | cut -d. -f2)
     if [ "$PY_MAJOR" -ge 3 ] && [ "$PY_MINOR" -ge 10 ]; then
         print_ok "Python $PY_VERSION найден: $(which python3)"
+        # Предупреждение для Python 3.14+ — openai-whisper может не собраться
+        if [ "$PY_MINOR" -ge 14 ]; then
+            print_warn "Python $PY_VERSION — очень новая версия"
+            echo "    openai-whisper требует pkg_resources (удалён в setuptools 81+)."
+            echo "    Мы принудительно установим setuptools<81, но если установка"
+            echo "    всё равно упадёт — установите Python 3.12:"
+            echo "      Ubuntu/Debian: sudo apt install python3.12 python3.12-venv"
+            echo "      Fedora:         sudo dnf install python3.12"
+            echo "      Arch:           sudo pacman -S python"  # Arch всегда последний
+            echo "    Продолжаем установку..."
+        fi
     else
         print_err "Требуется Python 3.10+. Найдена версия $PY_VERSION"
         echo "    Установите через пакетный менеджер вашего дистрибутива:"
@@ -122,7 +133,27 @@ fi
 # ─── 8. Установка зависимостей ───────────────────────────────────
 print_step "Установка зависимостей (это займёт несколько минут при первом запуске)..."
 "$VENV_DIR/bin/pip" install --upgrade pip --quiet
-"$VENV_DIR/bin/pip" install -r "$REQUIREMENTS_FILE" --quiet
+# ВАЖНО: сначала отдельно setuptools<81, потом остальные пакеты.
+# openai-whisper требует pkg_resources (удалён в setuptools 81+).
+"$VENV_DIR/bin/pip" install "setuptools<81" --quiet
+
+# Установка остальных зависимостей с подробным выводом при ошибке
+if ! "$VENV_DIR/bin/pip" install -r "$REQUIREMENTS_FILE" --quiet --no-cache-dir; then
+    print_err "Не удалось установить зависимости."
+    echo ""
+    echo "Если у вас Python 3.14+ — openai-whisper может не собраться."
+    echo "Рекомендуется установить Python 3.12:"
+    echo ""
+    echo "  Ubuntu/Debian: sudo apt install python3.12 python3.12-venv"
+    echo "  rm -rf $VENV_DIR"
+    echo "  python3.12 -m venv $VENV_DIR"
+    echo "  $VENV_DIR/bin/pip install --upgrade pip"
+    echo "  $VENV_DIR/bin/pip install \"setuptools<81\""
+    echo "  $VENV_DIR/bin/pip install -r $REQUIREMENTS_FILE"
+    echo ""
+    echo "Затем запустите установщик снова — он использует обновлённый venv."
+    exit 1
+fi
 print_ok "Зависимости установлены"
 
 # ─── 9. Запуск движка ─────────────────────────────────────────────

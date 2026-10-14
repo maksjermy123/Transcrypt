@@ -4,13 +4,28 @@
 # Установочный скрипт скачивает этот файл и engine_server.py из GitHub
 # в ~/.transcrypt-engine/, создаёт venv и запускает движок на 127.0.0.1:8765.
 
-openai-whisper==20231117
+# ВАЖНО: openai-whisper использует pkg_resources в своём setup.py (старые версии),
+# а pkg_resources удалён в setuptools 81+. Фиксируем setuptools<81 чтобы
+# избежать ModuleNotFoundError при установке на Python 3.12+.
+# Подробнее: https://setuptools.pypa.io/en/latest/history.html#v81-0-0
+setuptools<81
+
+# Whisper + зависимости (новая версия 20250625 — без pkg_resources в setup.py)
+openai-whisper==20250625
+
+# Скачивание медиа с YouTube/TikTok/Instagram с обходом блокировок
 yt-dlp==2026.7.4
+
+# ffmpeg-обёртка для Python (для медиа-операций)
 ffmpeg-python==0.2.0
+
+# HTTP-клиент (для yt-dlp fallback каналов)
 requests==2.32.3
+
+# TLS-impersonation — обход блокировок YouTube (HTTP 429, bot-защита)
 curl-cffi==0.15.0
 
-# torch тянется автоматически через openai-whisper, но фиксируем версию
+# torch тянется автоматически через openai-whisper. Фиксируем мин. версию
 # для воспроизводимости. CPU-only на macOS/Linux/Windows.
 # Если у вас GPU — установите torch с поддержкой CUDA вручную:
 #   pip install torch --index-url https://download.pytorch.org/whl/cu121
