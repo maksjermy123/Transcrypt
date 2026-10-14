@@ -2,19 +2,25 @@
 
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Mic, FileAudio, FileArchive, Home, Server, ServerOff, Zap, X, Trash2 } from "lucide-react";
+import { Mic, FileAudio, FileArchive, Home, Server, ServerOff, Zap, X, Trash2, Languages, Wrench, Info } from "lucide-react";
 import { useOnboarding } from "@/lib/onboarding-store";
 import { checkEngineHealth } from "@/lib/engine-bridge";
 import { TranscribeTab } from "./TranscribeTab";
 import { MediaTab } from "./MediaTab";
 import { ConvertTab } from "./ConvertTab";
+import { TranslateTab } from "./TranslateTab";
+import { SettingsTab } from "./SettingsTab";
+import { AboutTab } from "./AboutTab";
 
-type WorkTab = "transcribe" | "media" | "convert";
+type WorkTab = "transcribe" | "media" | "convert" | "translate" | "settings" | "about";
 
 const TABS: { id: WorkTab; label: string; icon: React.ComponentType<{ className?: string }>; hint: string }[] = [
   { id: "transcribe", label: "Транскрипция", icon: Mic, hint: "Whisper превратит голос в текст с таймкодами" },
   { id: "media", label: "Медиа", icon: FileAudio, hint: "Скачать видео/аудио, очистить аудио, вшить субтитры" },
   { id: "convert", label: "Конвертер", icon: FileArchive, hint: "Медиа через ffmpeg, изображения, текст" },
+  { id: "translate", label: "Перевод", icon: Languages, hint: "Текст и файлы TXT/DOCX/PDF, включая LAYOUT с разметкой" },
+  { id: "settings", label: "Настройки", icon: Wrench, hint: "Железо, движок, модели Whisper, переводчик" },
+  { id: "about", label: "О программе", icon: Info, hint: "Возможности, архитектура и ограничения" },
 ];
 
 export function Workbench({ onExit }: { onExit: () => void }) {
@@ -71,21 +77,22 @@ export function Workbench({ onExit }: { onExit: () => void }) {
           </div>
 
           {/* Tabs */}
-          <nav className="flex items-center gap-1 bg-[#1b2334] rounded-xl p-1">
+          <nav className="flex items-center gap-1 bg-[#1b2334] rounded-xl p-1 overflow-x-auto max-w-full">
             {TABS.map((t) => {
               const Icon = t.icon;
               return (
                 <button
                   key={t.id}
                   onClick={() => setTab(t.id)}
-                  className={`px-3 sm:px-4 py-1.5 rounded-lg text-sm font-medium transition-colors inline-flex items-center gap-2 ${
+                  title={t.hint}
+                  className={`px-2.5 lg:px-3.5 py-1.5 rounded-lg text-sm font-medium transition-colors inline-flex items-center gap-2 flex-shrink-0 ${
                     tab === t.id
                       ? "bg-gradient-primary text-white"
                       : "text-muted-foreground hover:text-foreground"
                   }`}
                 >
                   <Icon className="w-4 h-4" />
-                  <span className="hidden sm:inline">{t.label}</span>
+                  <span className="hidden lg:inline">{t.label}</span>
                 </button>
               );
             })}
@@ -184,6 +191,9 @@ export function Workbench({ onExit }: { onExit: () => void }) {
             {tab === "transcribe" && <TranscribeTab onInstallEngine={goToEngineInstall} />}
             {tab === "media" && <MediaTab />}
             {tab === "convert" && <ConvertTab />}
+            {tab === "translate" && <TranslateTab />}
+            {tab === "settings" && <SettingsTab onInstallEngine={goToEngineInstall} />}
+            {tab === "about" && <AboutTab />}
           </motion.div>
         </AnimatePresence>
       </main>
