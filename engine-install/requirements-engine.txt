@@ -25,6 +25,10 @@ requests==2.32.3
 # TLS-impersonation — обход блокировок YouTube (HTTP 429, bot-защита)
 curl-cffi==0.15.0
 
+# Переводчик (engine_server.py импортирует Translator, даже если веб-интерфейс
+# не использует перевод — это нужно для импорта без ошибки)
+deep-translator==1.11.4
+
 # torch тянется автоматически через openai-whisper. Фиксируем мин. версию
 # для воспроизводимости. CPU-only на macOS/Linux/Windows.
 # Если у вас GPU — установите torch с поддержкой CUDA вручную:
