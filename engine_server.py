@@ -21,6 +21,15 @@ import urllib.parse
 from pathlib import Path
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 
+# Небуферизованный вывод: при запуске через nohup/launchd логи должны
+# появляться в файле сразу, а не после заполнения буфера (иначе логи
+# выглядят пустыми, пока импортируются тяжёлые библиотеки).
+try:
+    sys.stdout.reconfigure(line_buffering=True)
+    sys.stderr.reconfigure(line_buffering=True)
+except Exception:
+    pass
+
 # Add project root to sys.path
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 if PROJECT_ROOT not in sys.path:
@@ -599,7 +608,16 @@ class EngineHTTPRequestHandler(BaseHTTPRequestHandler):
 
 def run_server(port=8765):
     server_address = ('127.0.0.1', port)
-    httpd = ThreadingHTTPServer(server_address, EngineHTTPRequestHandler)
+    try:
+        httpd = ThreadingHTTPServer(server_address, EngineHTTPRequestHandler)
+    except OSError as e:
+        # Порт занят (например, движок уже запущен launchd/systemd или другим
+        # экземпляром). Выходим тихо с кодом 0, чтобы автозапуск (KeepAlive
+        # LaunchAgent / systemd Restart) не устраивал бесконечный перезапуск.
+        if e.errno in (48, 98):  # EADDRINUSE (macOS / Linux)
+            print(f"⚠ Порт {port} уже занят — похоже, движок уже работает. Выходим.")
+            return
+        raise
     print("=" * 60)
     print(f"🚀 VoxPaperAi Pro — Локальный движок запущен!")
     print(f"📡 Порт: http://127.0.0.1:{port}")

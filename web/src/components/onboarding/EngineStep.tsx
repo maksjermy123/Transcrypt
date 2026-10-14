@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { Wrench, Loader2, CheckCircle2, AlertCircle, Globe, Server } from "lucide-react";
+import { Wrench, Loader2, CheckCircle2, AlertCircle, Globe, Server, ArrowRight } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useOnboarding } from "@/lib/onboarding-store";
 import { loadWhisperPipeline, type ProgressInfo } from "@/lib/whisper";
@@ -26,8 +26,13 @@ export function EngineStep({ onNext }: { onNext: () => void }) {
   // Авто-переход после подключения локального движка
   const [showConnected, setShowConnected] = useState(false);
   const announcedRef = useRef(false);
+  // Флаг: установка браузерного движка запускалась на ЭТОМ монтировании шага
+  // (нужен, чтобы при заходе с уже кешированным движком не выкидывать пользователя
+  // авто-переходом, а показать кнопку «Продолжить»)
+  const installedHere = useRef(false);
 
   async function startInstall() {
+    installedHere.current = true;
     setPhase("downloading-wasm");
     setPhaseText("Загружаем WASM-рантайм transformers.js…");
     setEngineStatus("loading");
@@ -80,6 +85,14 @@ export function EngineStep({ onNext }: { onNext: () => void }) {
       clearTimeout(t);
     };
   }, [connected]);
+
+  // ─── Авто-переход в браузерном режиме: движок установился прямо на этом шаге ───
+  useEffect(() => {
+    if (isEngine || !installedHere.current || phase !== "ready" || announcedRef.current) return;
+    announcedRef.current = true;
+    const t = setTimeout(onNext, 2500);
+    return () => clearTimeout(t);
+  }, [phase, isEngine]);
 
   const browserReady = phase === "ready" || engineStatus === "ready";
 
@@ -300,6 +313,26 @@ export function EngineStep({ onNext }: { onNext: () => void }) {
           <Server className="w-5 h-5 flex-shrink-0" />
           Локальный движок тоже online — доступны все функции, включая YouTube
         </div>
+      )}
+
+      {/* Продолжить: браузерный движок готов (свежеустановлен или уже из кеша) */}
+      {browserReady && (
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="text-center mt-8"
+        >
+          <button
+            onClick={onNext}
+            className="bg-gradient-primary text-white px-8 py-3.5 rounded-xl font-medium hover:opacity-90 transition-opacity glow-primary inline-flex items-center gap-2"
+          >
+            Продолжить — выбрать уровень Whisper
+            <ArrowRight className="w-5 h-5" />
+          </button>
+          <p className="text-xs text-muted-foreground mt-3">
+            Следующий шаг: выбор одного из 5 уровней модели Whisper.
+          </p>
+        </motion.div>
       )}
     </motion.div>
   );

@@ -185,25 +185,27 @@ print_ok "Зависимости установлены"
 # ─── 9. Запуск движка ─────────────────────────────────────────────
 print_step "Запуск engine_server.py на http://127.0.0.1:8765..."
 
-nohup "$VENV_DIR/bin/python" "$ENGINE_FILE" > "$LOG_FILE" 2>&1 &
+nohup "$VENV_DIR/bin/python" -u "$ENGINE_FILE" > "$LOG_FILE" 2>&1 &
 ENGINE_PID=$!
 echo "$ENGINE_PID" > "$PID_FILE"
 disown $ENGINE_PID 2>/dev/null || true
 
-sleep 3
-
-if ! kill -0 "$ENGINE_PID" 2>/dev/null; then
-    print_err "Движок не запустился. Логи:"
-    cat "$LOG_FILE"
-    exit 1
-fi
-
-# Пинг /api/health
+# Ждём подъёма до 3 минут: первый импорт torch/whisper идёт долго,
+# порт начинает отвечать только после всех импортов.
+print_step "Ожидаем ответа /api/health (первый запуск может занять 1–3 минуты)..."
 HEALTH_OK=false
-for i in {1..10}; do
+for i in $(seq 1 180); do
+    if ! kill -0 "$ENGINE_PID" 2>/dev/null; then
+        print_err "Движок завершился с ошибкой. Логи:"
+        tail -40 "$LOG_FILE" 2>/dev/null
+        exit 1
+    fi
     if curl -fsS http://127.0.0.1:8765/api/health > /dev/null 2>&1; then
         HEALTH_OK=true
         break
+    fi
+    if [ $((i % 15)) -eq 0 ]; then
+        print_warn "Движок ещё импортирует библиотеки... (${i} сек)"
     fi
     sleep 1
 done
@@ -211,9 +213,11 @@ done
 if [ "$HEALTH_OK" = true ]; then
     print_ok "Движок запущен на http://127.0.0.1:8765 (PID $ENGINE_PID)"
 else
-    print_err "Движок не отвечает. Логи:"
-    cat "$LOG_FILE"
-    exit 1
+    # Процесс жив, но долго не отвечает — не роняем установку:
+    # движок поднимется чуть позже и индикатор на сайте позеленеет сам.
+    print_warn "Движок пока не отвечает, но процесс работает (PID $ENGINE_PID)."
+    echo "    Он автоматически станет доступен через пару минут."
+    echo "    Лог: tail -f $LOG_FILE"
 fi
 
 # ─── 10. Открытие браузера ────────────────────────────────────────

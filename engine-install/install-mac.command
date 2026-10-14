@@ -19,6 +19,9 @@
 
 set -e
 
+# Можно переопределить Python: TRANSCRYPT_PYTHON=python3.12 bash install-mac.command
+PYTHON_BIN="${TRANSCRYPT_PYTHON:-python3}"
+
 REPO_RAW="https://raw.githubusercontent.com/maksjermy123/Transcrypt/main"
 REPO_TARBALL="https://github.com/maksjermy123/Transcrypt/archive/refs/heads/main.tar.gz"
 INSTALL_DIR="$HOME/.transcrypt-engine"
@@ -48,22 +51,22 @@ echo "════════════════════════�
 echo ""
 
 # ─── 1. Проверка Python 3 ─────────────────────────────────────────
-print_step "Проверка Python 3..."
-if command -v python3 &> /dev/null; then
-    PY_VERSION=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
+print_step "Проверка Python 3 ($PYTHON_BIN)..."
+if command -v "$PYTHON_BIN" &> /dev/null; then
+    PY_VERSION=$("$PYTHON_BIN" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
     PY_MAJOR=$(echo $PY_VERSION | cut -d. -f1)
     PY_MINOR=$(echo $PY_VERSION | cut -d. -f2)
     if [ "$PY_MAJOR" -ge 3 ] && [ "$PY_MINOR" -ge 10 ]; then
-        print_ok "Python $PY_VERSION найден: $(which python3)"
+        print_ok "Python $PY_VERSION найден: $(which "$PYTHON_BIN")"
         # Предупреждение для Python 3.14+ — openai-whisper может не собраться
         if [ "$PY_MINOR" -ge 14 ]; then
             print_warn "Python $PY_VERSION — очень новая версия"
             echo "    openai-whisper требует pkg_resources (удалён в setuptools 81+)."
             echo "    Мы принудительно установим setuptools<81, но если установка"
-            echo "    всё равно упадёт — установите Python 3.12 через brew:"
+            echo "    всё равно упадёт — поставьте Python 3.12 через brew:"
             echo "      brew install python@3.12"
-            echo "      и запустите установщик снова с этим Python:"
-            echo "      python3.12 ~/.transcrypt-engine/venv/bin/..."
+            echo "    и запустите установщик снова с этим Python:"
+            echo "      TRANSCRYPT_PYTHON=python3.12 bash -c \"\$(curl -fsSL $REPO_RAW/engine-install/install-mac.command)\""
             echo "    Продолжаем установку..."
         fi
     else
@@ -73,7 +76,7 @@ if command -v python3 &> /dev/null; then
         exit 1
     fi
 else
-    print_err "Python 3 не найден. Установите с https://www.python.org/downloads/ или:"
+    print_err "Python 3 не найден (искали: $PYTHON_BIN). Установите с https://www.python.org/downloads/ или:"
     echo "    brew install python@3.11"
     exit 1
 fi
@@ -94,6 +97,14 @@ mkdir -p "$INSTALL_DIR"
 print_ok "Директория готова"
 
 # ─── 4. Остановка старого движка если запущен ─────────────────────
+LAUNCH_AGENT_DIR="$HOME/Library/LaunchAgents"
+LAUNCH_AGENT_FILE="$LAUNCH_AGENT_DIR/com.transcrypt.engine.plist"
+
+# Сначала останавливаем экземпляр под управлением launchd (если был)
+if [ -f "$LAUNCH_AGENT_FILE" ]; then
+    launchctl unload "$LAUNCH_AGENT_FILE" 2>/dev/null || true
+fi
+
 if [ -f "$PID_FILE" ]; then
     OLD_PID=$(cat "$PID_FILE")
     if kill -0 "$OLD_PID" 2>/dev/null; then
@@ -137,7 +148,7 @@ print_ok "Файлы скачаны (engine_server.py + src/ + requirements)"
 # ─── 6. Создание venv ─────────────────────────────────────────────
 if [ ! -d "$VENV_DIR" ]; then
     print_step "Создание виртуального окружения Python..."
-    python3 -m venv "$VENV_DIR"
+    "$PYTHON_BIN" -m venv "$VENV_DIR"
     print_ok "venv создан"
 else
     print_ok "venv уже существует, переиспользуем"
@@ -172,27 +183,35 @@ print_ok "Зависимости установлены"
 # ─── 8. Запуск движка ──────────────────────────────────────────────
 print_step "Запуск engine_server.py на http://127.0.0.1:8765..."
 
-# Запуск в фоне, логи в файл
-nohup "$VENV_DIR/bin/python" "$ENGINE_FILE" > "$LOG_FILE" 2>&1 &
+# Запуск в фоне, логи в файл (-u — небуферизованный вывод: логи видны сразу)
+nohup "$VENV_DIR/bin/python" -u "$ENGINE_FILE" > "$LOG_FILE" 2>&1 &
 ENGINE_PID=$!
 echo "$ENGINE_PID" > "$PID_FILE"
 
-# Ждём пока поднимется
-sleep 3
-
-# Проверяем живой ли процесс
-if ! kill -0 "$ENGINE_PID" 2>/dev/null; then
-    print_err "Движок не запустился. Логи:"
-    cat "$LOG_FILE"
-    exit 1
-fi
-
-# Пингуем /api/health
+# Ждём подъёма ДО 3 МИНУТ: первый импорт torch/whisper идёт долго,
+# особенно на Python 3.14. Порт начинает отвечать только после всех импортов.
+print_step "Ожидаем ответа /api/health (первый запуск может занять 1–3 минуты)..."
 HEALTH_OK=false
-for i in {1..10}; do
+for i in $(seq 1 180); do
+    # Процесс умер — реальная ошибка, показываем лог и выходим
+    if ! kill -0 "$ENGINE_PID" 2>/dev/null; then
+        print_err "Движок завершился с ошибкой. Логи:"
+        tail -40 "$LOG_FILE" 2>/dev/null
+        echo ""
+        echo "Если ошибка связана с pkg_resources/whisper — установите Python 3.12:"
+        echo "  brew install python@3.12"
+        echo "  rm -rf $VENV_DIR"
+        echo "  и запустите установщик снова:"
+        echo "  TRANSCRYPT_PYTHON=python3.12 bash -c \"\$(curl -fsSL $REPO_RAW/engine-install/install-mac.command)\""
+        exit 1
+    fi
     if curl -fsS http://127.0.0.1:8765/api/health > /dev/null 2>&1; then
         HEALTH_OK=true
         break
+    fi
+    # Прогресс каждые 15 секунд, чтобы пользователь видел, что установка жива
+    if [ $((i % 15)) -eq 0 ]; then
+        print_warn "Движок ещё импортирует библиотеки... (${i} сек)"
     fi
     sleep 1
 done
@@ -200,9 +219,11 @@ done
 if [ "$HEALTH_OK" = true ]; then
     print_ok "Движок запущен на http://127.0.0.1:8765 (PID $ENGINE_PID)"
 else
-    print_err "Движок не отвечает на /api/health. Логи:"
-    cat "$LOG_FILE"
-    exit 1
+    # Процесс жив, но за 3 минуты так и не ответил — НЕ роняем установку:
+    # он, вероятно, поднимется через минуту (медленный диск/антivirus). Продолжаем.
+    print_warn "Движок пока не отвечает, но процесс работает (PID $ENGINE_PID)."
+    echo "    Он автоматически станет доступен через пару минут — индикатор на"
+    echo "    сайте позеленеет сам. Лог: tail -f $LOG_FILE"
 fi
 
 # ─── 9. Открытие браузера ─────────────────────────────────────────
@@ -212,8 +233,6 @@ open "https://maksjermy123.github.io/Transcrypt/"
 
 # ─── 9.5. Автозапуск с системой (LaunchAgent) ────────────────────
 print_step "Настраиваем автозапуск с системой (LaunchAgent)..."
-LAUNCH_AGENT_DIR="$HOME/Library/LaunchAgents"
-LAUNCH_AGENT_FILE="$LAUNCH_AGENT_DIR/com.transcrypt.engine.plist"
 mkdir -p "$LAUNCH_AGENT_DIR"
 
 # Создаём plist файл для LaunchAgent — macOS запустит движок при логине
@@ -246,9 +265,9 @@ cat > "$LAUNCH_AGENT_FILE" << EOF
 </plist>
 EOF
 
-# Загружаем LaunchAgent немедленно
-launchctl unload "$LAUNCH_AGENT_FILE" 2>/dev/null || true
-launchctl load "$LAUNCH_AGENT_FILE" 2>/dev/null || true
+# НЕ грузим агент немедленно: движок уже работает (nohup), а повторный
+# запуск через launchd упёрся бы в занятый порт. macOS сам подхватит
+# plist из ~/Library/LaunchAgents при следующем входе в систему.
 print_ok "LaunchAgent создан — движок будет стартовать при входе в систему"
 
 # ─── 10. Финальное сообщение ──────────────────────────────────────

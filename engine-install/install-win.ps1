@@ -182,14 +182,23 @@ Write-Ok "Зависимости установлены"
 # ─── 8. Запуск движка ────────────────────────────────────────────
 Write-Step "Запуск engine_server.py на http://127.0.0.1:8765..."
 
-$venvPythonw = Join-Path $VenvDir "Scripts\pythonw.exe"
-Start-Process -FilePath $venvPythonw -ArgumentList $EngineFile -WindowStyle Hidden -RedirectStandardOutput $LogFile -RedirectStandardError $LogFile
-
-Start-Sleep -Seconds 3
+# python.exe (не pythonw) с -u — чтобы логи реально писались в файл
+$venvPython = Join-Path $VenvDir "Scripts\python.exe"
+$LogFileErr = "$LogFile.err"
+$proc = Start-Process -FilePath $venvPython -ArgumentList "-u", $EngineFile -WindowStyle Hidden -RedirectStandardOutput $LogFile -RedirectStandardError $LogFileErr -PassThru
 
 # ─── 9. Проверка /api/health ─────────────────────────────────────
+# Ждём до 3 минут: первый импорт torch/whisper идёт долго, порт
+# начинает отвечать только после всех импортов.
+Write-Step "Ожидаем ответа /api/health (первый запуск может занять 1–3 минуты)..."
 $healthOk = $false
-for ($i = 1; $i -le 10; $i++) {
+for ($i = 1; $i -le 60; $i++) {
+    if ($proc.HasExited) {
+        Write-Err "Движок завершился с ошибкой. Логи:"
+        Get-Content $LogFile -ErrorAction SilentlyContinue | Select-Object -Last 40
+        Get-Content $LogFileErr -ErrorAction SilentlyContinue | Select-Object -Last 40
+        exit 1
+    }
     try {
         $resp = Invoke-WebRequest -Uri "http://127.0.0.1:8765/api/health" -TimeoutSec 2 -UseBasicParsing
         if ($resp.StatusCode -eq 200) {
@@ -197,19 +206,24 @@ for ($i = 1; $i -le 10; $i++) {
             break
         }
     } catch {}
-    Start-Sleep -Seconds 1
+    if ($i % 5 -eq 0) {
+        Write-Warn "Движок ещё импортирует библиотеки... ($($i * 3) сек)"
+    }
+    Start-Sleep -Seconds 3
 }
 
 if ($healthOk) {
     Write-Ok "Движок запущен на http://127.0.0.1:8765"
 } else {
-    Write-Err "Движок не отвечает. Логи в $LogFile"
-    Get-Content $LogFile -ErrorAction SilentlyContinue
-    exit 1
+    # Процесс жив, но долго не отвечает — не роняем установку:
+    # движок поднимется чуть позже и индикатор на сайте позеленеет сам.
+    Write-Warn "Движок пока не отвечает, но процесс работает. Он автоматически станет доступен через пару минут."
+    Write-Host "  Логи: $LogFile" -ForegroundColor Gray
 }
 
 # ─── 10. Автозапуск с системой (реестр) ──────────────────────────
 Write-Step "Настраиваем автозапуск с системой (Windows Registry)..."
+$venvPythonw = Join-Path $VenvDir "Scripts\pythonw.exe"
 $autorunKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
 $autorunValue = "TranscryptEngine"
 $autorunData = "`"$venvPythonw`" `"$EngineFile`""
