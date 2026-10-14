@@ -1,46 +1,63 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { Upload, Download, Trash2, Loader2, FileArchive, Image as ImageIcon } from "lucide-react";
+import {
+  Upload,
+  Download,
+  Trash2,
+  Loader2,
+  FileArchive,
+  Image as ImageIcon,
+  FileAudio,
+  Settings2,
+} from "lucide-react";
 import { useState, useRef, useCallback } from "react";
-import { downloadFile } from "@/lib/subtitles";
 
-/**
- * Вкладка-конвертер.
- * Реализуем то, что браузер умеет без ffmpeg.wasm:
- *   - изображения: png ↔ jpeg ↔ webp через Canvas
- *   - аудио: извлечение аудиодорожки из видео в原始альном формате (через MediaRecorder)
- *   - text: txt / md / csv / json — кодировка в utf-8 + скачать
- *
- * В дальнейшем можно подключить ffmpeg.wasm, но это добавит ~30 МБ к первичной загрузке.
- */
+import { convertMedia, downloadBytes, getFFmpeg } from "@/lib/ffmpeg";
+import { useOnboarding } from "@/lib/onboarding-store";
+import {
+  convertViaEngine,
+  uploadFileToEngine,
+  downloadEngineFile,
+  type EngineProgress,
+} from "@/lib/engine-bridge";
 
-type Tab = "image" | "text";
+type Mode = "media" | "image" | "text";
+
+const MEDIA_FORMATS = [
+  { ext: "mp3", label: "MP3 — аудио (192 kbps)", kind: "audio" },
+  { ext: "wav", label: "WAV — без потерь", kind: "audio" },
+  { ext: "aac", label: "AAC — аудио", kind: "audio" },
+  { ext: "ogg", label: "OGG — аудио", kind: "audio" },
+  { ext: "mp4", label: "MP4 — видео (H.264 + AAC)", kind: "video" },
+  { ext: "webm", label: "WebM — видео", kind: "video" },
+];
 
 export function ConvertTab() {
-  const [tab, setTab] = useState<Tab>("image");
+  const [mode, setMode] = useState<Mode>("media");
   return (
     <div className="max-w-4xl mx-auto px-6 py-8">
       <div className="mb-8">
         <h1 className="text-2xl font-bold mb-1">Конвертер</h1>
         <p className="text-sm text-muted-foreground">
-          Браузерные конвертации без сервера. Изображения — через Canvas,
-          текст — через File API.
+          Медиа (через локальный ffmpeg, если движок запущен — иначе ffmpeg.wasm), изображения (Canvas), текстовые файлы.
         </p>
       </div>
 
-      <div className="flex gap-2 mb-6">
-        <TabBtn active={tab === "image"} onClick={() => setTab("image")} icon={ImageIcon} label="Изображения" />
-        <TabBtn active={tab === "text"} onClick={() => setTab("text")} icon={FileArchive} label="Текстовые файлы" />
+      <div className="flex gap-2 mb-6 flex-wrap">
+        <ModeBtn active={mode === "media"} onClick={() => setMode("media")} icon={FileAudio} label="Медиа" />
+        <ModeBtn active={mode === "image"} onClick={() => setMode("image")} icon={ImageIcon} label="Изображения" />
+        <ModeBtn active={mode === "text"} onClick={() => setMode("text")} icon={FileArchive} label="Текст" />
       </div>
 
-      {tab === "image" && <ImageConverter />}
-      {tab === "text" && <TextConverter />}
+      {mode === "media" && <MediaConverter />}
+      {mode === "image" && <ImageConverter />}
+      {mode === "text" && <TextConverter />}
     </div>
   );
 }
 
-function TabBtn({
+function ModeBtn({
   active,
   onClick,
   icon: Icon,
@@ -63,6 +80,302 @@ function TabBtn({
       <Icon className="w-4 h-4" />
       {label}
     </button>
+  );
+}
+
+function MediaConverter() {
+  const { engineServerOnline } = useOnboarding();
+  const [file, setFile] = useState<File | null>(null);
+  const [target, setTarget] = useState("mp3");
+  const [bitrate, setBitrate] = useState(192);
+  const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [progressText, setProgressText] = useState("");
+  const [log, setLog] = useState<string[]>([]);
+  const [result, setResult] = useState<{ name: string; sizeKB: number; mime: string; data: Uint8Array } | null>(null);
+  const [resultFile, setResultFile] = useState<string | null>(null);
+  const [resultName, setResultName] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const handleFile = useCallback((f: File) => {
+    if (!f.type.startsWith("audio/") && !f.type.startsWith("video/")) return;
+    setFile(f);
+    setResult(null);
+    setResultFile(null);
+    setError(null);
+    setProgress(0);
+  }, []);
+
+  async function convert() {
+    if (!file) return;
+    setBusy(true);
+    setError(null);
+    setProgress(0);
+    setLog([]);
+    setResult(null);
+    setResultFile(null);
+
+    try {
+      if (engineServerOnline) {
+        // ===== Через локальный движок =====
+        setProgressText("Загружаем файл на движок…");
+        setProgress(10);
+        const filePath = await uploadFileToEngine(file, file.name);
+        setProgress(25);
+        setProgressText("Конвертация на движке…");
+
+        const result = await convertViaEngine(filePath, target, (p: EngineProgress) => {
+          setProgress(p.percent);
+          setProgressText(p.stage || "Конвертация…");
+          if (p.log?.length) {
+            setLog((l) => [...l.slice(-50), ...p.log.slice(-3)]);
+          }
+        });
+
+        if (result.status !== "success" || !result.file) {
+          throw new Error(result.message || "Движок вернул ошибку");
+        }
+
+        // Извлекаем имя
+        let fname = `output.${target}`;
+        try {
+          const u = new URL(result.file.startsWith("http") ? result.file : `http://x${result.file}`);
+          const fp = u.searchParams.get("file") || u.pathname;
+          fname = decodeURIComponent(fp.split("/").pop() || fname);
+        } catch {
+          /* ignore */
+        }
+        setResultFile(result.file);
+        setResultName(fname);
+        setProgress(100);
+        setProgressText("Готово");
+        return;
+      }
+
+      // ===== Fallback на ffmpeg.wasm в браузере =====
+      setProgressText("Загружаем ffmpeg.wasm…");
+      setProgress(5);
+      await getFFmpeg();
+      setProgress(15);
+
+      const inBytes = new Uint8Array(await file.arrayBuffer());
+      const inName = file.name;
+      const outExt = target;
+      const outName = `output.${outExt}`;
+
+      const isAudio = ["mp3", "wav", "aac", "ogg"].includes(outExt);
+      const extra: string[] = [];
+      if (isAudio) {
+        if (outExt === "mp3") extra.push("-b:a", `${bitrate}k`);
+        if (outExt === "wav") extra.push("-c:a", "pcm_s16le");
+      } else {
+        extra.push("-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac");
+      }
+
+      setProgressText("Конвертация через ffmpeg.wasm…");
+      const out = await convertMedia(inBytes, inName, outName, extra, (m) => {
+        setLog((l) => [...l.slice(-50), m]);
+      });
+
+      setResult({
+        name: file.name.replace(/\.[^.]+$/, "") + "." + outExt,
+        sizeKB: Math.round((out.length / 1024) * 10) / 10,
+        mime: isAudio ? `audio/${outExt}` : `video/${outExt}`,
+        data: out,
+      });
+      setProgress(100);
+      setProgressText("Готово");
+    } catch (err: any) {
+      console.error(err);
+      setError(err?.message ?? "Ошибка конвертации");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function download() {
+    if (resultFile && engineServerOnline) {
+      await downloadEngineFile(resultFile, resultName || `output.${target}`);
+      return;
+    }
+    if (result) {
+      downloadBytes(result.name, result.data, result.mime);
+    }
+  }
+
+  return (
+    <div className="space-y-5">
+      <div className="text-xs px-3 py-2 rounded-lg bg-[#1b2334] text-muted-foreground inline-block">
+        {engineServerOnline ? (
+          <>🟢 Через локальный движок (нативный ffmpeg) — быстрее, больше форматов</>
+        ) : (
+          <>🟡 Через ffmpeg.wasm в браузере — медленнее, но без установки</>
+        )}
+      </div>
+
+      {!file ? (
+        <div
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => {
+            e.preventDefault();
+            const f = e.dataTransfer.files?.[0];
+            if (f) handleFile(f);
+          }}
+          onClick={() => inputRef.current?.click()}
+          className="glass-card rounded-2xl p-12 text-center cursor-pointer hover:border-[#7c5bf5]/50 transition-colors"
+        >
+          <input
+            ref={inputRef}
+            type="file"
+            accept="audio/*,video/*"
+            hidden
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) handleFile(f);
+            }}
+          />
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-[#7c5bf5]/15 mb-4">
+            <FileAudio className="w-8 h-8 text-[#7c5bf5]" />
+          </div>
+          <h3 className="font-semibold mb-1">Загрузите аудио или видео</h3>
+          <p className="text-sm text-muted-foreground">
+            MP3, WAV, M4A, MP4, MKV, WebM, MOV — до 500 МБ
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-5">
+          <div className="glass-card rounded-2xl p-5 flex items-center gap-4">
+            <FileAudio className="w-10 h-10 text-[#7c5bf5]" />
+            <div className="flex-1 min-w-0">
+              <div className="font-medium truncate">{file.name}</div>
+              <div className="text-xs text-muted-foreground">
+                {(file.size / 1024 / 1024).toFixed(2)} МБ · {file.type || "неизвестный формат"}
+              </div>
+            </div>
+            <button
+              onClick={() => {
+                setFile(null);
+                setResult(null);
+                setResultFile(null);
+              }}
+              className="p-2 rounded-lg text-muted-foreground hover:text-red-400"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          </div>
+
+          <div className="glass-card rounded-2xl p-5">
+            <div className="flex flex-wrap gap-4 items-end">
+              <div className="flex-1 min-w-48">
+                <label className="text-xs text-muted-foreground block mb-1 flex items-center gap-1.5">
+                  <Settings2 className="w-3 h-3" />
+                  Формат
+                </label>
+                <select
+                  value={target}
+                  onChange={(e) => setTarget(e.target.value)}
+                  className="bg-[#0b0f19] border border-[#263147] rounded-lg px-3 py-2 text-sm w-full"
+                >
+                  {MEDIA_FORMATS.map((f) => (
+                    <option key={f.ext} value={f.ext}>
+                      {f.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {target === "mp3" && (
+                <div className="flex-1 min-w-48">
+                  <label className="text-xs text-muted-foreground block mb-1">
+                    Битрейт MP3: {bitrate} kbps
+                  </label>
+                  <input
+                    type="range"
+                    min={64}
+                    max={320}
+                    step={32}
+                    value={bitrate}
+                    onChange={(e) => setBitrate(Number(e.target.value))}
+                    className="w-full"
+                  />
+                </div>
+              )}
+
+              <button
+                onClick={convert}
+                disabled={busy}
+                className="bg-gradient-primary text-white px-5 py-2.5 rounded-xl font-medium hover:opacity-90 disabled:opacity-40 inline-flex items-center gap-2"
+              >
+                {busy ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" /> Конвертация…
+                  </>
+                ) : (
+                  "Сконвертировать"
+                )}
+              </button>
+            </div>
+
+            {busy && (
+              <div className="mt-4">
+                <div className="flex items-center justify-between mb-2 text-sm">
+                  <span>{progressText}</span>
+                  <span className="text-[#7c5bf5] font-mono font-bold">{progress}%</span>
+                </div>
+                <div className="w-full h-1.5 rounded-full bg-[#1b2334] overflow-hidden mb-2">
+                  <motion.div
+                    className="h-full bg-gradient-primary"
+                    animate={{ width: `${progress}%` }}
+                    transition={{ duration: 0.3 }}
+                  />
+                </div>
+                {log.length > 0 && (
+                  <details className="text-xs">
+                    <summary className="text-muted-foreground cursor-pointer hover:text-foreground">
+                      Лог ({log.length} строк)
+                    </summary>
+                    <div className="max-h-32 overflow-y-auto mt-2 font-mono text-[10px] text-muted-foreground bg-[#0b0f19] p-2 rounded-lg">
+                      {log.map((l, i) => (
+                        <div key={i} className="truncate">{l}</div>
+                      ))}
+                    </div>
+                  </details>
+                )}
+              </div>
+            )}
+
+            {error && (
+              <div className="mt-4 text-sm text-red-400 bg-red-500/10 p-3 rounded-lg">
+                {error}
+              </div>
+            )}
+
+            {((result && !busy) || (resultFile && !busy)) && (
+              <motion.div
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="mt-5 pt-5 border-t border-[#263147] flex items-center justify-between"
+              >
+                <div className="text-sm">
+                  <div className="font-medium">{result?.name || resultName}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {result ? `${(result.sizeKB / 1024).toFixed(2)} МБ` : "Готово"}
+                  </div>
+                </div>
+                <button
+                  onClick={download}
+                  className="bg-emerald-500/15 text-emerald-400 px-4 py-2 rounded-lg font-medium inline-flex items-center gap-2 hover:bg-emerald-500/25"
+                >
+                  <Download className="w-4 h-4" />
+                  Скачать
+                </button>
+              </motion.div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -227,7 +540,7 @@ function ImageConverter() {
               <button
                 onClick={convert}
                 disabled={busy}
-                className="bg-gradient-primary text-white px-5 py-2.5 rounded-xl font-medium hover:opacity-90 transition-opacity disabled:opacity-40 inline-flex items-center gap-2"
+                className="bg-gradient-primary text-white px-5 py-2.5 rounded-xl font-medium hover:opacity-90 disabled:opacity-40 inline-flex items-center gap-2"
               >
                 {busy ? (
                   <>
@@ -286,7 +599,6 @@ function TextConverter() {
     try {
       let out = content;
       if (target === "json") {
-        // Пробуем распарсить как JSON, если не получается — оборачиваем
         try {
           JSON.parse(content);
           out = JSON.stringify(JSON.parse(content), null, 2);

@@ -1,13 +1,13 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { Mic, Download, FileAudio, Languages, Cpu, ShieldCheck } from "lucide-react";
+import { Mic, Download, FileAudio, Film, Cpu, ShieldCheck } from "lucide-react";
 
 const features = [
   {
     icon: Mic,
     title: "Транскрипция аудио и видео",
-    text: "Whisper превращает голос в текст прямо в вашем браузере. С таймкодами, без отправки файлов на сервер.",
+    text: "Whisper превращает голос в текст прямо в браузере. Локальные файлы и URL (YouTube, TikTok, Instagram). С таймкодами, без отправки файлов на сервер.",
   },
   {
     icon: FileAudio,
@@ -15,9 +15,9 @@ const features = [
     text: "Экспорт в SRT, VTT и TXT — для видео, блогов, лекций и подкастов.",
   },
   {
-    icon: Languages,
-    title: "Перевод текста",
-    text: "Бесплатный перевод между 14 языками через MyMemory API — никаких ключей и подписок.",
+    icon: Film,
+    title: "Медиа-операции",
+    text: "Скачать видео/аудио, очистить звук от шума, вшить субтитры (hardsub) — всё прямо в браузере через ffmpeg.wasm.",
   },
   {
     icon: Cpu,

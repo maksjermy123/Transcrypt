@@ -2,6 +2,7 @@
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import type { EngineHealth } from "./engine-bridge";
 
 export type WhisperModelId = "tiny" | "base";
 
@@ -13,6 +14,10 @@ export type OnboardingStep =
   | "model-download"
   | "done";
 
+/**
+ * EngineStatus — статус **браузерного** движка (transformers.js).
+ * Это отдельный концепт от локального Python-движка (engineServerOnline).
+ */
 export type EngineStatus =
   | "not-started"
   | "loading"
@@ -47,6 +52,10 @@ interface OnboardingState {
   modelProgressText: string;
   completed: boolean;
 
+  // Гибридный движок: локальный engine_server.py (Python на 127.0.0.1:8765)
+  engineServerOnline: boolean; // запущен ли локальный Python-движок
+  engineServerHealth: EngineHealth | null; // последнее известное состояние
+
   setStep: (s: OnboardingStep) => void;
   setEngineStatus: (s: EngineStatus) => void;
   setModelStatus: (s: ModelStatus) => void;
@@ -58,6 +67,8 @@ interface OnboardingState {
   setModelProgress: (p: number) => void;
   setModelProgressText: (t: string) => void;
   setCompleted: (c: boolean) => void;
+  setEngineServerOnline: (v: boolean) => void;
+  setEngineServerHealth: (h: EngineHealth | null) => void;
   reset: () => void;
 }
 
@@ -73,6 +84,8 @@ const initialState = {
   modelProgress: 0,
   modelProgressText: "",
   completed: false,
+  engineServerOnline: false,
+  engineServerHealth: null,
 };
 
 export const useOnboarding = create<OnboardingState>()(
@@ -90,6 +103,8 @@ export const useOnboarding = create<OnboardingState>()(
       setModelProgress: (modelProgress) => set({ modelProgress }),
       setModelProgressText: (modelProgressText) => set({ modelProgressText }),
       setCompleted: (completed) => set({ completed }),
+      setEngineServerOnline: (engineServerOnline) => set({ engineServerOnline }),
+      setEngineServerHealth: (engineServerHealth) => set({ engineServerHealth }),
       reset: () => set({ ...initialState }),
     }),
     {
@@ -100,6 +115,7 @@ export const useOnboarding = create<OnboardingState>()(
         step: state.completed ? "done" : state.step,
         engineStatus: state.engineStatus,
         modelStatus: state.modelStatus,
+        engineServerOnline: state.engineServerOnline,
       }),
     }
   )

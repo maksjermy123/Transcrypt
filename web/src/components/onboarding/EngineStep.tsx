@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { Wrench, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
+import { Wrench, Loader2, CheckCircle2, AlertCircle, Server } from "lucide-react";
 import { useState } from "react";
 import { useOnboarding } from "@/lib/onboarding-store";
 import { loadWhisperPipeline, type ProgressInfo } from "@/lib/whisper";
@@ -163,6 +163,48 @@ export function EngineStep({ onNext }: { onNext: () => void }) {
           </p>
         )}
       </div>
+
+      {/* Опционально: локальный Python-движок для URL-задач */}
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 0.3 }}
+        className="mt-10 glass-card rounded-2xl p-5 text-left"
+      >
+        <div className="flex items-start gap-3">
+          <div className="w-10 h-10 rounded-xl bg-amber-500/15 flex items-center justify-center flex-shrink-0">
+            <Server className="w-5 h-5 text-amber-400" />
+          </div>
+          <div className="flex-1">
+            <h3 className="font-semibold text-sm mb-1.5">
+              Опционально: локальный движок для YouTube URL
+            </h3>
+            <p className="text-xs text-muted-foreground mb-3 leading-relaxed">
+              Браузерный движок работает только с локальными файлами — YouTube блокирует
+              прямые запросы из браузера (CORS + bot-защита). Если хотите работать с
+              URL (YouTube, TikTok, Instagram), запустите локальный Python-движок — он
+              использует <code className="font-mono text-[11px] px-1 py-0.5 rounded bg-[#0b0f19]">yt-dlp</code> с
+              маскировкой под Chrome и обходит все блокировки. Запускать необязательно —
+              сайт уже работает для локальных файлов.
+            </p>
+            <details className="text-xs">
+              <summary className="text-[#7c5bf5] cursor-pointer hover:underline">
+                Как запустить локальный движок →
+              </summary>
+              <div className="mt-3 bg-[#0b0f19] rounded-xl p-3 font-mono text-[11px] space-y-1.5">
+                <div className="text-muted-foreground"># 1. Склонировать репозиторий</div>
+                <div className="text-foreground">git clone https://github.com/maksjermy123/Transcrypt</div>
+                <div className="text-muted-foreground"># 2. Установить зависимости</div>
+                <div className="text-foreground">pip install -r requirements.txt</div>
+                <div className="text-muted-foreground"># 3. Запустить движок</div>
+                <div className="text-foreground">python engine_server.py</div>
+                <div className="text-muted-foreground"># Движок откроется на 127.0.0.1:8765</div>
+                <div className="text-muted-foreground"># Обновите эту страницу — индикатор станет зелёным</div>
+              </div>
+            </details>
+          </div>
+        </div>
+      </motion.div>
     </motion.div>
   );
 }

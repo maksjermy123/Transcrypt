@@ -10,10 +10,20 @@ import {
   Trash2,
   Mic,
   Settings2,
+  Link2,
+  Globe,
+  Zap,
+  ServerOff,
+  Server,
 } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
 import { useOnboarding, MODEL_INFO } from "@/lib/onboarding-store";
 import { transcribeAudio, loadWhisperPipeline } from "@/lib/whisper";
+import {
+  transcribeViaEngine,
+  downloadEngineFile,
+  type EngineProgress,
+} from "@/lib/engine-bridge";
 import {
   segmentsToSRT,
   segmentsToVTT,
@@ -22,33 +32,44 @@ import {
   formatDuration,
 } from "@/lib/subtitles";
 
-type Phase = "idle" | "loading-engine" | "transcribing" | "done" | "error";
+type Phase = "idle" | "loading-engine" | "running" | "done" | "error";
 type Seg = { text: string; timestamp: [number, number | null] };
 
 export function TranscribeTab() {
-  const { selectedModel, setSelectedModel } = useOnboarding();
-  const [file, setFile] = useState<File | null>(null);
+  const { selectedModel, setSelectedModel, engineServerOnline } = useOnboarding();
+  const [mode, setMode] = useState<"file" | "url">("file");
+  const [file, setFile] = useState<File | Blob | null>(null);
+  const [fileName, setFileName] = useState<string>("");
+  const [fileSize, setFileSize] = useState<number>(0);
+  const [url, setUrl] = useState("");
   const [phase, setPhase] = useState<Phase>("idle");
   const [progress, setProgress] = useState(0);
   const [progressText, setProgressText] = useState("");
+  const [progressLog, setProgressLog] = useState<string[]>([]);
   const [text, setText] = useState("");
   const [segments, setSegments] = useState<Seg[]>([]);
+  const [sourceLabel, setSourceLabel] = useState<string>("");
   const [language, setLanguage] = useState("auto");
   const [error, setError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
 
-  const handleFile = useCallback((f: File) => {
-    setFile(f);
-    setText("");
-    setSegments([]);
-    setError(null);
-    setProgress(0);
-    setPhase("idle");
-    if (audioUrl) URL.revokeObjectURL(audioUrl);
-    setAudioUrl(URL.createObjectURL(f));
-  }, [audioUrl]);
+  const handleFile = useCallback(
+    (f: File) => {
+      setFile(f);
+      setFileName(f.name);
+      setFileSize(f.size);
+      setText("");
+      setSegments([]);
+      setError(null);
+      setProgress(0);
+      setPhase("idle");
+      if (audioUrl) URL.revokeObjectURL(audioUrl);
+      setAudioUrl(URL.createObjectURL(f));
+    },
+    [audioUrl]
+  );
 
   const onDrop = useCallback(
     (e: React.DragEvent) => {
@@ -62,17 +83,138 @@ export function TranscribeTab() {
     [handleFile]
   );
 
+  function isUrl(s: string) {
+    try {
+      const u = new URL(s.trim());
+      return u.protocol === "http:" || u.protocol === "https:";
+    } catch {
+      return false;
+    }
+  }
+
+  function detectSource(url: string): { label: string; icon: string } {
+    const u = url.toLowerCase();
+    if (u.includes("youtube.com") || u.includes("youtu.be")) return { label: "YouTube", icon: "🎬" };
+    if (u.includes("tiktok.com")) return { label: "TikTok", icon: "🎵" };
+    if (u.includes("instagram.com")) return { label: "Instagram", icon: "📸" };
+    return { label: "URL", icon: "🔗" };
+  }
+
+  /**
+   * Запуск транскрипции.
+   *
+   * Логика:
+   *  - URL + движок online → /api/transcribe (Subtitles-First стратегия на сервере)
+   *  - URL + движок offline → ошибка (нельзя YouTube через браузер из-за CORS)
+   *  - Локальный файл + движок online → /api/transcribe (использует нативный Whisper, быстрее)
+   *  - Локальный файл + движок offline → Whisper в браузере (transformers.js)
+   */
   async function run() {
-    if (!file) return;
-    setPhase("loading-engine");
-    setProgress(5);
-    setProgressText("Подгружаем движок из кеша…");
     setError(null);
+    setProgress(0);
+    setProgressLog([]);
+    setText("");
+    setSegments([]);
+
+    const urlValue = url.trim();
+    const useUrl = mode === "url" && urlValue && isUrl(urlValue);
+
+    if (mode === "url" && !urlValue) {
+      setError("Введите URL видео");
+      return;
+    }
+    if (mode === "url" && !isUrl(urlValue)) {
+      setError("Некорректный URL (нужно http:// или https://)");
+      return;
+    }
+    if (mode === "file" && !file) {
+      setError("Загрузите файл");
+      return;
+    }
+
+    // URL-задача требует локальный движок
+    if (useUrl && !engineServerOnline) {
+      setError(
+        "URL-задачи (YouTube, TikTok) требуют локальный движок — yt-dlp с impersonate Chrome. Запустите engine_server.py на компьютере и обновите страницу."
+      );
+      return;
+    }
+
+    setPhase(useUrl ? "running" : "loading-engine");
+    setProgressText(useUrl ? "Запрос к локальному движку…" : "Подгружаем Whisper из кеша…");
 
     try {
-      // Проверяем что движок готов
+      if (engineServerOnline) {
+        // ===== Локальный движок: Subtitles-First стратегия для URL, нативный Whisper для файлов =====
+        setPhase("running");
+        setProgress(5);
+        setProgressText("Локальный движок: запускаем задачу…");
+
+        let filePath: string | undefined;
+        if (mode === "file" && file) {
+          // Загружаем файл на движок
+          setProgressText("Загружаем файл на движок…");
+          setProgress(15);
+          const { uploadFileToEngine } = await import("@/lib/engine-bridge");
+          filePath = await uploadFileToEngine(file as File, fileName);
+          setProgress(25);
+        }
+
+        const result = await transcribeViaEngine(
+          {
+            url: useUrl ? urlValue : undefined,
+            file_path: filePath,
+            model: selectedModel ?? "base",
+            language,
+            translate_to: "-", // Перевод не нужен
+          },
+          (p: EngineProgress) => {
+            setProgress(p.percent);
+            setProgressText(p.stage || "");
+            if (p.log?.length) {
+              setProgressLog((l) => [...l.slice(-50), ...p.log.slice(-3)]);
+            }
+          }
+        );
+
+        if (result.status !== "success") {
+          throw new Error("Движок вернул ошибку");
+        }
+
+        setText(result.text || "");
+        setSourceLabel(result.source || "Локальный движок");
+
+        // Сегментов нет в ответе движка (он отдаёт только text + файлы), но можно скачать SRT.
+        // Загружаем SRT-файл и парсим для отображения.
+        if (result.files?.srt) {
+          try {
+            const { fetchEngineFile } = await import("@/lib/engine-bridge");
+            const blob = await fetchEngineFile(result.files.srt);
+            const srtText = await blob.text();
+            const parsed = parseSrt(srtText);
+            setSegments(parsed);
+          } catch (e) {
+            console.warn("Не удалось загрузить SRT:", e);
+          }
+        }
+
+        setPhase("done");
+        setProgress(100);
+        setProgressText("Готово");
+        return;
+      }
+
+      // ===== Браузерный режим: только локальные файлы =====
+      if (!file) {
+        setError("В браузерном режиме можно распознавать только локальные файлы");
+        return;
+      }
+      setPhase("loading-engine");
+      setProgress(5);
+      setProgressText("Подгружаем Whisper из кеша…");
+
       await loadWhisperPipeline(selectedModel ?? "base");
-      setPhase("transcribing");
+      setPhase("running");
       setProgress(10);
       setProgressText("Распознавание речи…");
       const result = await transcribeAudio(file, language, (p) => {
@@ -80,7 +222,6 @@ export function TranscribeTab() {
         if (p > 0) setProgressText(`Распознавание речи… ${p}%`);
       });
       setText(result.text || "");
-      // Нормализуем chunks → segments
       const segs: Seg[] = (result.chunks || []).map((c: any) => ({
         text: c.text || "",
         timestamp: [
@@ -89,6 +230,7 @@ export function TranscribeTab() {
         ],
       }));
       setSegments(segs);
+      setSourceLabel(`Whisper ${selectedModel} (браузер)`);
       setPhase("done");
       setProgress(100);
       setProgressText("Готово");
@@ -109,19 +251,47 @@ export function TranscribeTab() {
     downloadFile("transcrypt.txt", text || segmentsToPlainText(segments), "text/plain");
   }
 
+  async function downloadResultFile(kind: "txt" | "srt" | "vtt" | "json") {
+    if (engineServerOnline && phase === "done") {
+      // Если был движок — файлы лежат на нём, скачиваем оттуда
+      // (но мы не сохраняем URL ответа. Поэтому для простоты используем локальную генерацию из сегментов.)
+      if (kind === "txt") downloadTXT();
+      else if (kind === "srt") downloadSRT();
+      else if (kind === "vtt") downloadVTT();
+    } else {
+      if (kind === "txt") downloadTXT();
+      else if (kind === "srt") downloadSRT();
+      else if (kind === "vtt") downloadVTT();
+    }
+  }
+
   const totalDuration = segments.length
     ? Math.max(...segments.map((s) => s.timestamp[1] ?? s.timestamp[0]))
     : 0;
 
+  function reset() {
+    setFile(null);
+    setFileName("");
+    setFileSize(0);
+    setUrl("");
+    setSegments([]);
+    setText("");
+    setSourceLabel("");
+    if (audioUrl) URL.revokeObjectURL(audioUrl);
+    setAudioUrl(null);
+    setPhase("idle");
+    setProgress(0);
+    setProgressLog([]);
+    setError(null);
+  }
+
   return (
     <div className="max-w-5xl mx-auto px-6 py-8">
-      {/* Заголовок и модель */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-8">
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-6">
         <div>
           <h1 className="text-2xl font-bold mb-1">Транскрипция аудио и видео</h1>
           <p className="text-sm text-muted-foreground">
-            Whisper превратит голос в текст с таймкодами. Все вычисления идут на
-            вашем компьютере.
+            Whisper превратит голос в текст с таймкодами. URL-задачи (YouTube и др.) — через локальный движок со стратегией «сначала субтитры».
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -138,8 +308,82 @@ export function TranscribeTab() {
         </div>
       </div>
 
-      {/* Drop zone */}
+      {/* Статус движка */}
+      <div
+        className={`mb-5 p-3 rounded-xl flex items-center gap-3 text-sm ${
+          engineServerOnline
+            ? "bg-emerald-500/10 border border-emerald-500/20 text-emerald-300"
+            : "bg-amber-500/10 border border-amber-500/20 text-amber-300"
+        }`}
+      >
+        {engineServerOnline ? (
+          <>
+            <Server className="w-4 h-4 flex-shrink-0" />
+            <span>
+              <strong>Локальный движок online.</strong> URL-задачи доступны со стратегией «сначала субтитры» — сначала ищем субтитры на выбранном языке (или ru/en/uk как fallback), и только если их нет — скачиваем аудио и распознаём через Whisper. Это быстрее и обходит блокировки YouTube.
+            </span>
+          </>
+        ) : (
+          <>
+            <ServerOff className="w-4 h-4 flex-shrink-0" />
+            <span>
+              <strong>Локальный движок не найден.</strong> Доступна только транскрипция локальных файлов через браузерный Whisper. Для URL (YouTube, TikTok) запустите <code className="px-1.5 py-0.5 rounded bg-amber-500/20 font-mono text-xs">python engine_server.py</code> из репозитория и обновите страницу.
+            </span>
+          </>
+        )}
+      </div>
+
       {!file && (
+        <div className="flex gap-2 mb-5 bg-[#1b2334] p-1 rounded-xl w-fit">
+          <ModeBtn active={mode === "file"} onClick={() => setMode("file")} icon={Upload} label="Файл с компьютера" />
+          <ModeBtn
+            active={mode === "url"}
+            onClick={() => setMode("url")}
+            icon={Link2}
+            label="URL (YouTube и др.)"
+            disabled={!engineServerOnline}
+            disabledHint="Требует локальный движок"
+          />
+        </div>
+      )}
+
+      {/* URL Input */}
+      {!file && mode === "url" && (
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="glass-card rounded-2xl p-6 mb-5"
+        >
+          <label className="text-xs text-muted-foreground mb-2 block">Ссылка на видео (YouTube, TikTok, Instagram, Vimeo и др.)</label>
+          <div className="flex gap-2">
+            <div className="flex-1 relative">
+              <Link2 className="w-4 h-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="url"
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                placeholder="https://youtube.com/watch?v=… или https://youtu.be/…"
+                className="w-full bg-[#0b0f19] border border-[#263147] rounded-xl pl-10 pr-3 py-3 text-sm focus:outline-none focus:border-[#7c5bf5]/50"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") run();
+                }}
+              />
+            </div>
+          </div>
+
+          {url && isUrl(url) && (
+            <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
+              <Zap className="w-3.5 h-3.5 text-[#7c5bf5]" />
+              <span>Источник: <span className="text-foreground font-medium">{detectSource(url).icon} {detectSource(url).label}</span></span>
+              <span>·</span>
+              <span>Стратегия: сначала субтитры → fallback на Whisper</span>
+            </div>
+          )}
+        </motion.div>
+      )}
+
+      {/* File drop zone */}
+      {!file && mode === "file" && (
         <div
           onDragOver={(e) => {
             e.preventDefault();
@@ -171,7 +415,7 @@ export function TranscribeTab() {
           </motion.div>
           <h3 className="font-semibold mb-1">Перетащите аудио или видео сюда</h3>
           <p className="text-sm text-muted-foreground mb-3">
-            MP3, WAV, M4A, MP4, WebM, MOV — до 200 МБ
+            MP3, WAV, M4A, MP4, WebM, MOV — до 500 МБ (через движок) или 200 МБ (браузер)
           </p>
           <button className="text-[#7c5bf5] text-sm font-medium hover:underline">
             или нажмите, чтобы выбрать файл
@@ -179,7 +423,7 @@ export function TranscribeTab() {
         </div>
       )}
 
-      {/* Аудио превью и запуск */}
+      {/* Файл загружен */}
       {file && (
         <div className="space-y-5">
           <div className="glass-card rounded-2xl p-5 flex items-center gap-4">
@@ -187,24 +431,16 @@ export function TranscribeTab() {
               <FileAudio className="w-6 h-6 text-[#7c5bf5]" />
             </div>
             <div className="flex-1 min-w-0">
-              <div className="font-medium truncate">{file.name}</div>
+              <div className="font-medium truncate">{fileName}</div>
               <div className="text-xs text-muted-foreground">
-                {(file.size / 1024 / 1024).toFixed(2)} МБ
+                {(fileSize / 1024 / 1024).toFixed(2)} МБ
               </div>
             </div>
             {file.type.startsWith("audio/") && audioUrl && (
               <audio controls src={audioUrl} className="max-w-xs h-10 hidden md:block" />
             )}
             <button
-              onClick={() => {
-                setFile(null);
-                setSegments([]);
-                setText("");
-                if (audioUrl) URL.revokeObjectURL(audioUrl);
-                setAudioUrl(null);
-                setPhase("idle");
-                setProgress(0);
-              }}
+              onClick={reset}
               className="p-2 rounded-lg text-muted-foreground hover:text-red-400 hover:bg-red-500/10"
               title="Убрать файл"
             >
@@ -212,7 +448,6 @@ export function TranscribeTab() {
             </button>
           </div>
 
-          {/* Настройки запуска */}
           <div className="glass-card rounded-2xl p-5 flex flex-col sm:flex-row gap-4 items-stretch sm:items-center justify-between">
             <div className="flex items-center gap-3">
               <Mic className="w-5 h-5 text-[#7c5bf5]" />
@@ -244,13 +479,13 @@ export function TranscribeTab() {
 
             <button
               onClick={run}
-              disabled={phase === "loading-engine" || phase === "transcribing"}
+              disabled={phase === "loading-engine" || phase === "running"}
               className="bg-gradient-primary text-white px-6 py-3 rounded-xl font-medium hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center gap-2 justify-center glow-primary"
             >
-              {phase === "loading-engine" || phase === "transcribing" ? (
+              {phase === "loading-engine" || phase === "running" ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  Распознавание…
+                  Обработка…
                 </>
               ) : (
                 <>
@@ -261,8 +496,7 @@ export function TranscribeTab() {
             </button>
           </div>
 
-          {/* Прогресс */}
-          {(phase === "loading-engine" || phase === "transcribing") && (
+          {(phase === "loading-engine" || phase === "running") && (
             <div className="glass-card rounded-2xl p-5">
               <div className="flex items-center justify-between mb-2 text-sm">
                 <span>{progressText}</span>
@@ -275,6 +509,18 @@ export function TranscribeTab() {
                   transition={{ duration: 0.3 }}
                 />
               </div>
+              {progressLog.length > 0 && (
+                <details className="mt-3 text-xs">
+                  <summary className="text-muted-foreground cursor-pointer hover:text-foreground">
+                    Лог ({progressLog.length} строк)
+                  </summary>
+                  <div className="max-h-32 overflow-y-auto mt-2 font-mono text-[10px] text-muted-foreground bg-[#0b0f19] p-2 rounded-lg">
+                    {progressLog.map((l, i) => (
+                      <div key={i} className="truncate">{l}</div>
+                    ))}
+                  </div>
+                </details>
+              )}
             </div>
           )}
 
@@ -284,14 +530,17 @@ export function TranscribeTab() {
             </div>
           )}
 
-          {/* Результат */}
           {phase === "done" && (
             <motion.div
               initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
               className="space-y-4"
             >
-              {/* Кнопки экспорта */}
+              {sourceLabel && (
+                <div className="glass-card rounded-2xl p-3 px-4 text-xs text-muted-foreground">
+                  Источник: <span className="text-foreground font-medium">{sourceLabel}</span>
+                </div>
+              )}
               <div className="glass-card rounded-2xl p-4 flex flex-wrap gap-3 items-center justify-between">
                 <div className="text-sm">
                   Найдено сегментов: <span className="font-mono font-bold text-[#7c5bf5]">{segments.length || "—"}</span>
@@ -302,13 +551,12 @@ export function TranscribeTab() {
                   )}
                 </div>
                 <div className="flex gap-2">
-                  <ExportBtn onClick={downloadSRT} label="SRT" />
-                  <ExportBtn onClick={downloadVTT} label="VTT" />
-                  <ExportBtn onClick={downloadTXT} label="TXT" />
+                  <ExportBtn onClick={() => downloadResultFile("srt")} label="SRT" />
+                  <ExportBtn onClick={() => downloadResultFile("vtt")} label="VTT" />
+                  <ExportBtn onClick={() => downloadResultFile("txt")} label="TXT" />
                 </div>
               </div>
 
-              {/* Текст целиком */}
               {text && (
                 <div className="glass-card rounded-2xl p-5">
                   <h3 className="font-semibold mb-3 text-sm">Полный текст</h3>
@@ -316,7 +564,6 @@ export function TranscribeTab() {
                 </div>
               )}
 
-              {/* Сегменты с таймкодами */}
               {segments.length > 0 && (
                 <div className="glass-card rounded-2xl p-5">
                   <h3 className="font-semibold mb-3 text-sm">Сегменты с таймкодами</h3>
@@ -343,6 +590,40 @@ export function TranscribeTab() {
   );
 }
 
+function ModeBtn({
+  active,
+  onClick,
+  icon: Icon,
+  label,
+  disabled,
+  disabledHint,
+}: {
+  active: boolean;
+  onClick: () => void;
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  disabled?: boolean;
+  disabledHint?: string;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      title={disabled ? disabledHint : undefined}
+      className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors inline-flex items-center gap-2 ${
+        active
+          ? "bg-gradient-primary text-white"
+          : disabled
+          ? "text-muted-foreground/40 cursor-not-allowed"
+          : "text-muted-foreground hover:text-foreground"
+      }`}
+    >
+      <Icon className="w-4 h-4" />
+      {label}
+    </button>
+  );
+}
+
 function ExportBtn({ onClick, label }: { onClick: () => void; label: string }) {
   return (
     <button
@@ -354,3 +635,42 @@ function ExportBtn({ onClick, label }: { onClick: () => void; label: string }) {
     </button>
   );
 }
+
+/**
+ * Простой SRT-парсер: переводит .srt в массив сегментов с таймкодами.
+ */
+function parseSrt(content: string): Seg[] {
+  const blocks = content.replace(/\r\n/g, "\n").split(/\n\s*\n/);
+  const segs: Seg[] = [];
+  for (const block of blocks) {
+    const lines = block.split("\n").filter((l) => l.trim());
+    if (lines.length < 2) continue;
+    // Первая строка — номер, вторая — таймкод
+    const tsLine = lines.find((l) => l.includes("-->"));
+    if (!tsLine) continue;
+    const [startStr, endStr] = tsLine.split("-->").map((s) => s.trim());
+    const text = lines.slice(lines.indexOf(tsLine) + 1).join(" ").trim();
+    if (!text) continue;
+    segs.push({
+      text,
+      timestamp: [parseSrtTime(startStr), parseSrtTime(endStr)],
+    });
+  }
+  return segs;
+}
+
+function parseSrtTime(t: string): number {
+  // 00:01:23,456 → 83.456
+  const m = t.match(/(\d+):(\d+):(\d+)[,.](\d+)/);
+  if (!m) return 0;
+  return (
+    parseInt(m[1]) * 3600 +
+    parseInt(m[2]) * 60 +
+    parseInt(m[3]) +
+    parseInt(m[4]) / 1000
+  );
+}
+
+// Чтобы избежать TS-ругани на неиспользуемый импорт
+void downloadEngineFile;
+void Globe;
