@@ -159,7 +159,14 @@ const PLATFORM_INFO: Record<
   },
 };
 
-export function LocalEngineStep({ onSkip }: { onSkip: () => void }) {
+export function LocalEngineStep({
+  onSkip,
+  hero = false,
+}: {
+  onSkip: () => void;
+  /** hero — движок является главным шагом (режим локального движка) */
+  hero?: boolean;
+}) {
   const { engineServerOnline, setEngineServerOnline, setEngineServerHealth } = useOnboarding();
   const [phase, setPhase] = useState<LocalPhase>(engineServerOnline ? "online" : "idle");
   const [platform] = useState<Platform>(() =>
@@ -261,11 +268,15 @@ export function LocalEngineStep({ onSkip }: { onSkip: () => void }) {
       initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.45 }}
-      className="glass-card rounded-2xl p-6 mt-6"
+      className={`glass-card rounded-2xl p-6 ${hero ? "" : "mt-6"} ${
+        hero ? "border-[#7c5bf5]/40 shadow-[0_0_40px_-12px_rgba(124,91,245,0.4)]" : ""
+      }`}
     >
       <div className="flex items-start gap-3 mb-5">
         <div
-          className={`w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 ${
+          className={`rounded-xl flex items-center justify-center flex-shrink-0 ${
+            hero ? "w-14 h-14" : "w-12 h-12"
+          } ${
             phase === "online"
               ? "bg-emerald-500/15"
               : phase === "error"
@@ -284,9 +295,11 @@ export function LocalEngineStep({ onSkip }: { onSkip: () => void }) {
           )}
         </div>
         <div className="flex-1">
-          <h3 className="font-semibold text-base mb-1">
+          <h3 className={`font-semibold mb-1 ${hero ? "text-xl" : "text-base"}`}>
             {phase === "online"
               ? "Локальный движок запущен и готов!"
+              : hero
+              ? "Установить движок — одна команда"
               : "Установка локального движка"}
           </h3>
           <p className="text-xs text-muted-foreground leading-relaxed">

@@ -9,8 +9,6 @@ export default function Home() {
   const {
     completed,
     setCompleted,
-    engineStatus,
-    modelStatus,
     selectedModel,
   } = useOnboarding();
   // Гидратация zustand/persist: первый кадр показывает заглушку, дальше реальные данные.
@@ -20,14 +18,10 @@ export default function Home() {
     return true;
   });
 
-  // Решаем, что показывать: если онбординг завершён и движок+модель готовы — рабочая.
-  // Иначе — продолжаем онбординг с текущего шага.
-  const ready =
-    hydrated &&
-    completed &&
-    engineStatus === "ready" &&
-    modelStatus === "downloaded" &&
-    !!selectedModel;
+  // Решаем, что показывать: если онбординг завершён — рабочая страница.
+  // Движок подтягивается сам: Workbench автоматически пингует 127.0.0.1:8765,
+  // браузерная модель загружается лениво при первом использовании.
+  const ready = hydrated && completed && !!selectedModel;
   const view = ready ? "workbench" : "onboarding";
 
   if (!hydrated) {

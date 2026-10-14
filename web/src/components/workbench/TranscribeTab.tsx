@@ -18,7 +18,7 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
-import { useOnboarding, MODEL_INFO } from "@/lib/onboarding-store";
+import { useOnboarding, MODEL_INFO, browserSafeModel, type WhisperModelId } from "@/lib/onboarding-store";
 import { transcribeAudio, loadWhisperPipeline } from "@/lib/whisper";
 import {
   transcribeViaEngine,
@@ -214,7 +214,7 @@ export function TranscribeTab() {
       setProgress(5);
       setProgressText("Подгружаем Whisper из кеша…");
 
-      await loadWhisperPipeline(selectedModel ?? "base");
+      await loadWhisperPipeline(browserSafeModel(selectedModel));
       setPhase("running");
       setProgress(10);
       setProgressText("Распознавание речи…");
@@ -231,7 +231,7 @@ export function TranscribeTab() {
         ],
       }));
       setSegments(segs);
-      setSourceLabel(`Whisper ${selectedModel} (браузер)`);
+      setSourceLabel(`Whisper ${browserSafeModel(selectedModel)} (браузер)`);
       setPhase("done");
       setProgress(100);
       setProgressText("Готово");
@@ -299,12 +299,23 @@ export function TranscribeTab() {
           <Settings2 className="w-4 h-4 text-muted-foreground" />
           <span className="text-xs text-muted-foreground">Модель:</span>
           <select
-            value={selectedModel ?? "base"}
-            onChange={(e) => setSelectedModel(e.target.value as "tiny" | "base")}
+            value={engineServerOnline ? (selectedModel ?? "base") : browserSafeModel(selectedModel)}
+            onChange={(e) => setSelectedModel(e.target.value as WhisperModelId)}
             className="bg-[#1b2334] border border-[#263147] rounded-lg px-3 py-1.5 text-sm font-medium hover:border-[#7c5bf5]/50"
           >
-            <option value="tiny">Tiny — {MODEL_INFO.tiny.sizeMB} МБ (быстрее)</option>
-            <option value="base">Base — {MODEL_INFO.base.sizeMB} МБ (точнее)</option>
+            {(engineServerOnline
+              ? (["tiny", "base", "small", "medium", "large-v3"] as const)
+              : (["tiny", "base", "small"] as const)
+            ).map((id) => {
+              const mi = MODEL_INFO[id];
+              const size = engineServerOnline ? mi.engineSizeMB : mi.sizeMB;
+              const sizeLabel = size >= 1000 ? `${(size / 1000).toFixed(1)} ГБ` : `${size} МБ`;
+              return (
+                <option key={id} value={id}>
+                  {mi.name.replace("Whisper ", "")} — {sizeLabel}
+                </option>
+              );
+            })}
           </select>
         </div>
       </div>

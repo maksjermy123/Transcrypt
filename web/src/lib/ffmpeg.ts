@@ -213,7 +213,7 @@ export async function hardsubVideo(
  * Скачивание Uint8Array как файла.
  */
 export function downloadBytes(filename: string, data: Uint8Array, mime = "application/octet-stream") {
-  const blob = new Blob([data], { type: mime });
+  const blob = new Blob([data.buffer as ArrayBuffer], { type: mime });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;

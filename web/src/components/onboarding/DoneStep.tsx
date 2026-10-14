@@ -6,7 +6,8 @@ import { useEffect, useState } from "react";
 import { useOnboarding } from "@/lib/onboarding-store";
 
 export function DoneStep({ onStart }: { onStart: () => void }) {
-  const { selectedModel, setCompleted } = useOnboarding();
+  const { selectedModel, setCompleted, mode } = useOnboarding();
+  const isEngine = mode === "engine";
   const [bookmarked, setBookmarked] = useState(false);
   const [canPress, setCanPress] = useState(false);
 
@@ -59,10 +60,22 @@ export function DoneStep({ onStart }: { onStart: () => void }) {
         </motion.div>
         <h2 className="text-3xl font-bold mb-3">Готово! Всё настроено</h2>
         <p className="text-muted-foreground max-w-lg mx-auto">
-          Модель <span className="text-foreground font-medium">Whisper {selectedModel}</span>{" "}
-          загружена и кеширована. Движок установлен. Теперь страница готова к
-          работе — каждый раз при открытии движок будет подтягиваться
-          автоматически.
+          {isEngine ? (
+            <>
+              Локальный движок установлен на компьютере. Уровень{" "}
+              <span className="text-foreground font-medium">Whisper {selectedModel}</span>{" "}
+              движок загрузит сам при первой задаче — вручную ничего скачивать не
+              нужно. Теперь страница готова к работе — каждый раз при открытии
+              движок будет подтягиваться автоматически.
+            </>
+          ) : (
+            <>
+              Модель <span className="text-foreground font-medium">Whisper {selectedModel}</span>{" "}
+              загружена и кеширована. Движок установлен. Теперь страница готова к
+              работе — каждый раз при открытии движок будет подтягиваться
+              автоматически.
+            </>
+          )}
         </p>
       </div>
 
@@ -98,10 +111,21 @@ export function DoneStep({ onStart }: { onStart: () => void }) {
       <div className="glass-card rounded-2xl p-5 mb-8">
         <h3 className="font-medium mb-3 text-sm">Что произойдёт при следующем открытии:</h3>
         <ul className="space-y-2 text-sm text-muted-foreground">
-          <Step n={1} text="Браузер открывает страницу из кеша (даже без интернета)" />
-          <Step n={2} text="Движок transformers.js автоматически инициализируется из IndexedDB" />
-          <Step n={3} text="Модель Whisper берётся из кеша — повторной загрузки не будет" />
-          <Step n={4} text="Вы сразу можете начать работать — без настройки" />
+          {isEngine ? (
+            <>
+              <Step n={1} text="Движок стартует сам вместе с системой — автозапуск уже настроен установщиком" />
+              <Step n={2} text="Страница сама обнаружит его на 127.0.0.1:8765 — индикатор в шапке станет зелёным" />
+              <Step n={3} text="Выбранный уровень Whisper и настройки сохранены в браузере" />
+              <Step n={4} text="Вы сразу можете начать работать — без настройки" />
+            </>
+          ) : (
+            <>
+              <Step n={1} text="Браузер открывает страницу из кеша (даже без интернета)" />
+              <Step n={2} text="Движок transformers.js автоматически инициализируется из IndexedDB" />
+              <Step n={3} text="Модель Whisper берётся из кеша — повторной загрузки не будет" />
+              <Step n={4} text="Вы сразу можете начать работать — без настройки" />
+            </>
+          )}
         </ul>
       </div>
 

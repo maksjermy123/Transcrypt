@@ -10,6 +10,7 @@
  */
 
 import type { WhisperModelId } from "./onboarding-store";
+import { browserSafeModel } from "./onboarding-store";
 
 let transformersPromise: Promise<any> | null = null;
 
@@ -100,7 +101,8 @@ export async function transcribeAudio(
   language: string = "auto",
   onProgress?: (percent: number) => void
 ): Promise<TranscribeResult> {
-  const model = (loadedModelId ?? "base") as WhisperModelId;
+  // Браузер не потянет medium/large-v3 — подменяем на посильную модель
+  const model = browserSafeModel(loadedModelId ?? "base");
   const pipeline = await loadWhisperPipeline(model);
 
   // transformers.js принимает URL или Float32Array; для File делаем URL.

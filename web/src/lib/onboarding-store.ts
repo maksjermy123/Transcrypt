@@ -4,7 +4,29 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { EngineHealth } from "./engine-bridge";
 
-export type WhisperModelId = "tiny" | "base";
+/**
+ * Пять уровней Whisper:
+ *  - tiny / base / small — доступны и в браузере (transformers.js, q8),
+ *  - medium / large-v3 — только через локальный Python-движок (нативный Whisper).
+ */
+export type WhisperModelId = "tiny" | "base" | "small" | "medium" | "large-v3";
+
+/** Модели, которые реально потянет браузер (WASM/WebGPU). */
+export type BrowserModelId = "tiny" | "base" | "small";
+export const BROWSER_MODEL_IDS: readonly WhisperModelId[] = ["tiny", "base", "small"];
+
+export function isBrowserModel(id: WhisperModelId): id is BrowserModelId {
+  return BROWSER_MODEL_IDS.includes(id);
+}
+
+/**
+ * Если пользователь выбрал "тяжёлую" модель, доступную только движку,
+ * а движок offline и работает браузерный fallback — подменяем на посильную.
+ */
+export function browserSafeModel(id: WhisperModelId | null): BrowserModelId {
+  if (id && isBrowserModel(id)) return id;
+  return "small";
+}
 
 export type OnboardingStep =
   | "welcome"
@@ -34,7 +56,7 @@ export type ModelStatus =
 
 type Mode = "browser" | "engine";
 
-interface HardwareInfo {
+export interface HardwareInfo {
   cpuCores: number;
   deviceMemory: number | null; // ГБ, если доступно
   webgpu: boolean;
@@ -142,20 +164,59 @@ export function recommendedThreads(cpuCores: number): number {
 
 export const MODEL_INFO: Record<
   WhisperModelId,
-  { name: string; sizeMB: number; ramGB: number; speed: string; accuracy: string }
+  {
+    name: string;
+    sizeMB: number; // размер для браузера (q8), 0 — недоступна в браузере
+    engineSizeMB: number; // размер, который скачает локальный движок
+    ramGB: number;
+    speed: string;
+    accuracy: string;
+    accent: string; // цвет бейджа
+  }
 > = {
   tiny: {
     name: "Whisper Tiny",
     sizeMB: 40,
+    engineSizeMB: 72,
     ramGB: 1,
     speed: "Очень быстрая",
-    accuracy: "Базовая — хорошо для чистой речи и русских субтитров",
+    accuracy: "Базовая — хорошо для чистой речи и черновиков",
+    accent: "amber",
   },
   base: {
     name: "Whisper Base",
     sizeMB: 77,
+    engineSizeMB: 139,
     ramGB: 1.5,
     speed: "Быстрая",
-    accuracy: "Хорошая — рекомендована для большинства задач",
+    accuracy: "Хорошая — уверенный баланс для большинства задач",
+    accent: "violet",
+  },
+  small: {
+    name: "Whisper Small",
+    sizeMB: 250,
+    engineSizeMB: 461,
+    ramGB: 2.5,
+    speed: "Средняя",
+    accuracy: "Заметно лучше Base — отличный выбор для русского языка",
+    accent: "violet",
+  },
+  medium: {
+    name: "Whisper Medium",
+    sizeMB: 0, // в браузере не используется
+    engineSizeMB: 1400,
+    ramGB: 5,
+    speed: "Медленная",
+    accuracy: "Высокая — сложная лексика, шумные записи",
+    accent: "emerald",
+  },
+  "large-v3": {
+    name: "Whisper Large-v3",
+    sizeMB: 0, // в браузере не используется
+    engineSizeMB: 2900,
+    ramGB: 10,
+    speed: "Очень медленная",
+    accuracy: "Максимальная — студийное качество распознавания",
+    accent: "emerald",
   },
 };
