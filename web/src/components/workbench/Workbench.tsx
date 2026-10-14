@@ -181,7 +181,7 @@ export function Workbench({ onExit }: { onExit: () => void }) {
             exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.3 }}
           >
-            {tab === "transcribe" && <TranscribeTab />}
+            {tab === "transcribe" && <TranscribeTab onInstallEngine={goToEngineInstall} />}
             {tab === "media" && <MediaTab />}
             {tab === "convert" && <ConvertTab />}
           </motion.div>

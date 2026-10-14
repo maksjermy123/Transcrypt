@@ -124,13 +124,17 @@ async function runTaskWithProgress<T>(
   // Запускаем поллинг прогресса сразу (асинхронно)
   let polling = true;
   const poll = async () => {
+    // Защита от «устаревшего» 100% от предыдущей задачи: пока не увидим
+    // живую активность (active=true или percent в процессе), завершение не засчитываем.
+    let sawActive = false;
     while (polling) {
       try {
         const r = await fetch(`${ENGINE_URL}/api/progress`);
         if (r.ok) {
           const p = (await r.json()) as EngineProgress;
           onProgress?.(p);
-          if (!p.active && p.percent >= 100) {
+          if (p.active || (p.percent > 0 && p.percent < 100)) sawActive = true;
+          if (sawActive && !p.active && p.percent >= 100) {
             polling = false;
             return;
           }

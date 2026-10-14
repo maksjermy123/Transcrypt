@@ -33,7 +33,7 @@ const ACTIONS: { id: MediaAction; label: string; icon: React.ComponentType<{ cla
 ];
 
 export function MediaTab() {
-  const { engineServerOnline } = useOnboarding();
+  const { engineServerOnline, selectedModel } = useOnboarding();
   const [action, setAction] = useState<MediaAction>("download_video");
   const [url, setUrl] = useState("");
   const [localFile, setLocalFile] = useState<File | null>(null);
@@ -119,7 +119,7 @@ export function MediaTab() {
           file_path: filePath,
           sub_file: subFilePath,
           sub_lang: subLang,
-          model: "base",
+          model: selectedModel ?? "base",
         },
         (p: EngineProgress) => {
           setProgress(p.percent);

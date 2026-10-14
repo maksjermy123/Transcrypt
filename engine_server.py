@@ -240,6 +240,11 @@ class EngineHTTPRequestHandler(BaseHTTPRequestHandler):
             self.send_error_json("Не указан URL или файл для транскрибации")
             return
 
+        # Файл передан, но не существует на диске — понятная ошибка вместо трейсбека Whisper
+        if local_file and not os.path.exists(local_file):
+            self.send_error_json(f"Файл не найден на диске движка: {local_file}", 404)
+            return
+
         progress_state["active"] = True
         progress_state["log"] = []
         log_progress("🚀 Запуск транскрибации...", stage="Инициализация", percent=5)
@@ -431,6 +436,11 @@ class EngineHTTPRequestHandler(BaseHTTPRequestHandler):
             if url.startswith("http"):
                 target, _ = downloader.download(url, extract_audio=True)
 
+            if not target or not os.path.exists(target):
+                self.send_error_json("Укажите ссылку на видео или загрузите локальный аудио-файл для очистки")
+                progress_state["active"] = False
+                return
+
             cleaned = converter.enhance_audio(target, OUTPUT_DIR)
             log_progress(f"✅ Очищенный аудиофайл готов: {os.path.basename(cleaned)}", stage="Готово", percent=100)
             self.send_json({"status": "success", "file": f"/api/download?file={urllib.parse.quote(cleaned)}"})
@@ -448,6 +458,11 @@ class EngineHTTPRequestHandler(BaseHTTPRequestHandler):
                 if choice:
                     sub_file = downloader.download_subtitles(url, choice["lang"], auto=choice["auto"])
                 video_file, _ = downloader.download(url, video_only=True)
+
+            if not video_file or not os.path.exists(video_file):
+                self.send_error_json("Укажите ссылку на видео или загрузите локальный видео-файл для вшивания субтитров")
+                progress_state["active"] = False
+                return
 
             if not sub_file or not os.path.exists(sub_file):
                 # Generate via Whisper
@@ -562,7 +577,11 @@ class EngineHTTPRequestHandler(BaseHTTPRequestHandler):
         for chunk in chunks:
             if b'filename=' in chunk:
                 headers_part, file_bytes = chunk.split(b'\r\n\r\n', 1)
-                file_bytes = file_bytes.rstrip(b'\r\n--')
+                # Корректная обрезка: часть файла всегда заканчивается на \r\n
+                # (перевод строки перед следующим boundary). rstrip здесь НЕЛЬЗЯ —
+                # он съедает последние байты файла, если они совпадают с \r, \n или '-'.
+                if file_bytes.endswith(b"\r\n"):
+                    file_bytes = file_bytes[:-2]
                 # Extract filename
                 headers_str = headers_part.decode('utf-8', errors='ignore')
                 import re

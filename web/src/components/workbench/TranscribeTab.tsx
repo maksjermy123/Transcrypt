@@ -36,7 +36,12 @@ import {
 type Phase = "idle" | "loading-engine" | "running" | "done" | "error";
 type Seg = { text: string; timestamp: [number, number | null] };
 
-export function TranscribeTab() {
+export function TranscribeTab({
+  onInstallEngine,
+}: {
+  /** Переход к шагу установки движка (из воркбенча) */
+  onInstallEngine?: () => void;
+}) {
   const { selectedModel, setSelectedModel, engineServerOnline } = useOnboarding();
   const [mode, setMode] = useState<"file" | "url">("file");
   const [file, setFile] = useState<File | Blob | null>(null);
@@ -286,6 +291,158 @@ export function TranscribeTab() {
     setError(null);
   }
 
+  // ═════════ Общие блоки для обоих режимов (файл / URL) ═════════
+  const busy = phase === "loading-engine" || phase === "running";
+  const urlValue = url.trim();
+  const urlValid = !!urlValue && isUrl(urlValue);
+  const canRun = mode === "url"
+    ? engineServerOnline && urlValid && !busy
+    : !!file && !busy;
+
+  const langSelect = (
+    <div className="flex items-center gap-3">
+      <Mic className="w-5 h-5 text-[#7c5bf5]" />
+      <div>
+        <div className="font-medium text-sm">Исходный язык</div>
+        <select
+          value={language}
+          onChange={(e) => setLanguage(e.target.value)}
+          className="bg-[#0b0f19] border border-[#263147] rounded-lg px-3 py-1.5 text-sm mt-1"
+        >
+          <option value="auto">Автоопределение</option>
+          <option value="ru">Русский</option>
+          <option value="en">English</option>
+          <option value="uk">Українська</option>
+          <option value="de">Deutsch</option>
+          <option value="fr">Français</option>
+          <option value="es">Español</option>
+          <option value="it">Italiano</option>
+          <option value="pt">Português</option>
+          <option value="pl">Polski</option>
+          <option value="tr">Türkçe</option>
+          <option value="ar">العربية</option>
+          <option value="zh">中文</option>
+          <option value="ja">日本語</option>
+          <option value="ko">한국어</option>
+        </select>
+      </div>
+    </div>
+  );
+
+  const runButton = (
+    <button
+      onClick={run}
+      disabled={!canRun}
+      title={
+        mode === "url" && !urlValid
+          ? "Вставьте корректную ссылку на видео"
+          : undefined
+      }
+      className="bg-gradient-primary text-white px-6 py-3 rounded-xl font-medium hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center gap-2 justify-center glow-primary"
+    >
+      {busy ? (
+        <>
+          <Loader2 className="w-4 h-4 animate-spin" />
+          Обработка…
+        </>
+      ) : (
+        <>
+          <Play className="w-4 h-4" />
+          Распознать речь
+        </>
+      )}
+    </button>
+  );
+
+  const progressBlock = busy ? (
+    <div className="glass-card rounded-2xl p-5">
+      <div className="flex items-center justify-between mb-2 text-sm">
+        <span>{progressText}</span>
+        <span className="text-[#7c5bf5] font-mono font-bold">{progress}%</span>
+      </div>
+      <div className="w-full h-1.5 rounded-full bg-[#1b2334] overflow-hidden">
+        <motion.div
+          className="h-full bg-gradient-primary"
+          animate={{ width: `${progress}%` }}
+          transition={{ duration: 0.3 }}
+        />
+      </div>
+      {progressLog.length > 0 && (
+        <details className="mt-3 text-xs">
+          <summary className="text-muted-foreground cursor-pointer hover:text-foreground">
+            Лог ({progressLog.length} строк)
+          </summary>
+          <div className="max-h-32 overflow-y-auto mt-2 font-mono text-[10px] text-muted-foreground bg-[#0b0f19] p-2 rounded-lg">
+            {progressLog.map((l, i) => (
+              <div key={i} className="truncate">{l}</div>
+            ))}
+          </div>
+        </details>
+      )}
+    </div>
+  ) : null;
+
+  const errorBlock = error ? (
+    <div className="glass-card rounded-2xl p-4 border-red-500/40">
+      <div className="text-sm text-red-400">Ошибка: {error}</div>
+    </div>
+  ) : null;
+
+  const resultBlock = phase === "done" ? (
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="space-y-4"
+    >
+      {sourceLabel && (
+        <div className="glass-card rounded-2xl p-3 px-4 text-xs text-muted-foreground">
+          Источник: <span className="text-foreground font-medium">{sourceLabel}</span>
+        </div>
+      )}
+      <div className="glass-card rounded-2xl p-4 flex flex-wrap gap-3 items-center justify-between">
+        <div className="text-sm">
+          Найдено сегментов: <span className="font-mono font-bold text-[#7c5bf5]">{segments.length || "—"}</span>
+          {totalDuration > 0 && (
+            <span className="text-muted-foreground ml-3">
+              длительность ≈ {formatDuration(totalDuration)}
+            </span>
+          )}
+        </div>
+        <div className="flex gap-2">
+          <ExportBtn onClick={() => downloadResultFile("srt")} label="SRT" />
+          <ExportBtn onClick={() => downloadResultFile("vtt")} label="VTT" />
+          <ExportBtn onClick={() => downloadResultFile("txt")} label="TXT" />
+        </div>
+      </div>
+
+      {text && (
+        <div className="glass-card rounded-2xl p-5">
+          <h3 className="font-semibold mb-3 text-sm">Полный текст</h3>
+          <p className="text-sm leading-relaxed whitespace-pre-wrap">{text}</p>
+        </div>
+      )}
+
+      {segments.length > 0 && (
+        <div className="glass-card rounded-2xl p-5">
+          <h3 className="font-semibold mb-3 text-sm">Сегменты с таймкодами</h3>
+          <div className="space-y-2 max-h-96 overflow-y-auto pr-2">
+            {segments.map((s, i) => (
+              <div
+                key={i}
+                className="flex items-start gap-3 p-2 rounded-lg hover:bg-[#1b2334] transition-colors"
+              >
+                <span className="font-mono text-xs text-[#7c5bf5] mt-0.5 flex-shrink-0 tabular-nums">
+                  {formatDuration(s.timestamp[0])}
+                </span>
+                <span className="text-sm text-foreground/90">{s.text}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </motion.div>
+  ) : null;
+
   return (
     <div className="max-w-5xl mx-auto px-6 py-8">
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-6">
@@ -352,9 +509,7 @@ export function TranscribeTab() {
             active={mode === "url"}
             onClick={() => setMode("url")}
             icon={Link2}
-            label="URL (YouTube и др.)"
-            disabled={!engineServerOnline}
-            disabledHint="Требует локальный движок"
+            label={engineServerOnline ? "URL (YouTube и др.)" : "URL (нужен движок)"}
           />
         </div>
       )}
@@ -377,20 +532,54 @@ export function TranscribeTab() {
                 placeholder="https://youtube.com/watch?v=… или https://youtu.be/…"
                 className="w-full bg-[#0b0f19] border border-[#263147] rounded-xl pl-10 pr-3 py-3 text-sm focus:outline-none focus:border-[#7c5bf5]/50"
                 onKeyDown={(e) => {
-                  if (e.key === "Enter") run();
+                  if (e.key === "Enter" && canRun) run();
                 }}
               />
             </div>
           </div>
 
-          {url && isUrl(url) && (
+          {urlValid && (
             <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
               <Zap className="w-3.5 h-3.5 text-[#7c5bf5]" />
-              <span>Источник: <span className="text-foreground font-medium">{detectSource(url).icon} {detectSource(url).label}</span></span>
+              <span>Источник: <span className="text-foreground font-medium">{detectSource(urlValue).icon} {detectSource(urlValue).label}</span></span>
               <span>·</span>
               <span>Стратегия: сначала субтитры → fallback на Whisper</span>
             </div>
           )}
+
+          {engineServerOnline ? (
+            <div className="mt-4 pt-4 border-t border-[#263147]/60 flex flex-col sm:flex-row gap-4 items-stretch sm:items-center justify-between">
+              {langSelect}
+              {runButton}
+            </div>
+          ) : (
+            <div className="mt-4 rounded-xl p-4 border-amber-500/30 bg-amber-500/5">
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <p className="text-sm text-amber-200 font-medium mb-1">Для ссылок нужен локальный движок</p>
+                  <p className="text-xs text-amber-200/80 leading-relaxed mb-3">
+                    Распознавание по ссылке работает через движок на вашем компьютере
+                    (yt-dlp + Whisper): браузер технически не может скачать видео с YouTube напрямую —
+                    это блокируют CORS и защита от ботов. Установка — одна команда, без архивов.
+                  </p>
+                  {onInstallEngine && (
+                    <button
+                      onClick={onInstallEngine}
+                      className="bg-gradient-primary text-white px-4 py-2 rounded-lg text-xs font-medium hover:opacity-90 inline-flex items-center gap-1.5"
+                    >
+                      <Zap className="w-3.5 h-3.5" />
+                      Установить движок за 1 команду
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {progressBlock}
+          {errorBlock}
+          {resultBlock}
         </motion.div>
       )}
 
@@ -480,141 +669,13 @@ export function TranscribeTab() {
           )}
 
           <div className="glass-card rounded-2xl p-5 flex flex-col sm:flex-row gap-4 items-stretch sm:items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Mic className="w-5 h-5 text-[#7c5bf5]" />
-              <div>
-                <div className="font-medium text-sm">Исходный язык</div>
-                <select
-                  value={language}
-                  onChange={(e) => setLanguage(e.target.value)}
-                  className="bg-[#0b0f19] border border-[#263147] rounded-lg px-3 py-1.5 text-sm mt-1"
-                >
-                  <option value="auto">Автоопределение</option>
-                  <option value="ru">Русский</option>
-                  <option value="en">English</option>
-                  <option value="uk">Українська</option>
-                  <option value="de">Deutsch</option>
-                  <option value="fr">Français</option>
-                  <option value="es">Español</option>
-                  <option value="it">Italiano</option>
-                  <option value="pt">Português</option>
-                  <option value="pl">Polski</option>
-                  <option value="tr">Türkçe</option>
-                  <option value="ar">العربية</option>
-                  <option value="zh">中文</option>
-                  <option value="ja">日本語</option>
-                  <option value="ko">한국어</option>
-                </select>
-              </div>
-            </div>
-
-            <button
-              onClick={run}
-              disabled={phase === "loading-engine" || phase === "running"}
-              className="bg-gradient-primary text-white px-6 py-3 rounded-xl font-medium hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center gap-2 justify-center glow-primary"
-            >
-              {phase === "loading-engine" || phase === "running" ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Обработка…
-                </>
-              ) : (
-                <>
-                  <Play className="w-4 h-4" />
-                  Распознать речь
-                </>
-              )}
-            </button>
+            {langSelect}
+            {runButton}
           </div>
 
-          {(phase === "loading-engine" || phase === "running") && (
-            <div className="glass-card rounded-2xl p-5">
-              <div className="flex items-center justify-between mb-2 text-sm">
-                <span>{progressText}</span>
-                <span className="text-[#7c5bf5] font-mono font-bold">{progress}%</span>
-              </div>
-              <div className="w-full h-1.5 rounded-full bg-[#1b2334] overflow-hidden">
-                <motion.div
-                  className="h-full bg-gradient-primary"
-                  animate={{ width: `${progress}%` }}
-                  transition={{ duration: 0.3 }}
-                />
-              </div>
-              {progressLog.length > 0 && (
-                <details className="mt-3 text-xs">
-                  <summary className="text-muted-foreground cursor-pointer hover:text-foreground">
-                    Лог ({progressLog.length} строк)
-                  </summary>
-                  <div className="max-h-32 overflow-y-auto mt-2 font-mono text-[10px] text-muted-foreground bg-[#0b0f19] p-2 rounded-lg">
-                    {progressLog.map((l, i) => (
-                      <div key={i} className="truncate">{l}</div>
-                    ))}
-                  </div>
-                </details>
-              )}
-            </div>
-          )}
-
-          {error && (
-            <div className="glass-card rounded-2xl p-4 border-red-500/40">
-              <div className="text-sm text-red-400">Ошибка: {error}</div>
-            </div>
-          )}
-
-          {phase === "done" && (
-            <motion.div
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="space-y-4"
-            >
-              {sourceLabel && (
-                <div className="glass-card rounded-2xl p-3 px-4 text-xs text-muted-foreground">
-                  Источник: <span className="text-foreground font-medium">{sourceLabel}</span>
-                </div>
-              )}
-              <div className="glass-card rounded-2xl p-4 flex flex-wrap gap-3 items-center justify-between">
-                <div className="text-sm">
-                  Найдено сегментов: <span className="font-mono font-bold text-[#7c5bf5]">{segments.length || "—"}</span>
-                  {totalDuration > 0 && (
-                    <span className="text-muted-foreground ml-3">
-                      длительность ≈ {formatDuration(totalDuration)}
-                    </span>
-                  )}
-                </div>
-                <div className="flex gap-2">
-                  <ExportBtn onClick={() => downloadResultFile("srt")} label="SRT" />
-                  <ExportBtn onClick={() => downloadResultFile("vtt")} label="VTT" />
-                  <ExportBtn onClick={() => downloadResultFile("txt")} label="TXT" />
-                </div>
-              </div>
-
-              {text && (
-                <div className="glass-card rounded-2xl p-5">
-                  <h3 className="font-semibold mb-3 text-sm">Полный текст</h3>
-                  <p className="text-sm leading-relaxed whitespace-pre-wrap">{text}</p>
-                </div>
-              )}
-
-              {segments.length > 0 && (
-                <div className="glass-card rounded-2xl p-5">
-                  <h3 className="font-semibold mb-3 text-sm">Сегменты с таймкодами</h3>
-                  <div className="space-y-2 max-h-96 overflow-y-auto pr-2">
-                    {segments.map((s, i) => (
-                      <div
-                        key={i}
-                        className="flex items-start gap-3 p-2 rounded-lg hover:bg-[#1b2334] transition-colors"
-                      >
-                        <span className="font-mono text-xs text-[#7c5bf5] mt-0.5 flex-shrink-0 tabular-nums">
-                          {formatDuration(s.timestamp[0])}
-                        </span>
-                        <span className="text-sm text-foreground/90">{s.text}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </motion.div>
-          )}
+          {progressBlock}
+          {errorBlock}
+          {resultBlock}
         </div>
       )}
     </div>
