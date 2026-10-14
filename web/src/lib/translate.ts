@@ -67,53 +67,66 @@ async function engineTranslate(text: string, targetLang: string): Promise<string
   return data.translated_text as string;
 }
 
-/** Запрос к серверному прокси /api/translate */
-async function proxyTranslate(
-  text: string,
-  targetLang: string,
-  provider: TranslateProvider,
-  apiKey?: string
-): Promise<string> {
-  const resp = await fetch("/api/translate", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      text,
-      target_lang: targetLang,
-      provider,
-      api_key: apiKey || undefined,
-    }),
-  });
-  const data = await resp.json().catch(() => null);
-  if (!resp.ok || !data || data.status !== "success") {
-    throw new Error(data?.message || `HTTP ${resp.status}`);
-  }
-  return data.translated_text as string;
-}
-
 /**
  * Прямой вызов MyMemory из браузера (CORS разрешён, без ключа).
  * Использует квоту IP пользователя — работает даже без серверного прокси
  * (например, на статичном GitHub Pages).
+ *
+ * ⚠️ У MyMemory жёсткий лимит — 500 символов на запрос; при превышении API
+ * возвращает 403 с текстом "QUERY LENGTH LIMIT EXCEEDED..." в translatedText.
+ * Поэтому режем до 480 и распознаём ошибочные ответы (раньше текст ошибки
+ * мог тихо вернуться как «перевод»).
  */
+const MYMEMORY_ERR_RE =
+  /MYMEMORY WARNING|QUERY LENGTH LIMIT|INVALID (SOURCE|TARGET|LANG)|PLEASE SELECT|NO QUERY|API KEY/i;
+
 async function myMemoryClientTranslate(text: string, targetLang: string): Promise<string> {
   const resp = await fetch(
-    `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text.slice(0, 4800))}&langpair=autodetect|${encodeURIComponent(targetLang)}`,
+    `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text.slice(0, 480))}&langpair=autodetect|${encodeURIComponent(targetLang)}`,
     { signal: AbortSignal.timeout(20000) }
   );
   if (!resp.ok) throw new Error(`MyMemory HTTP ${resp.status}`);
   const data = await resp.json();
+  const status = data?.responseStatus;
   const t = data?.responseData?.translatedText;
-  if (typeof t !== "string" || !t || t.includes("MYMEMORY WARNING")) {
-    throw new Error("MyMemory: квота исчерпана или пустой ответ");
+  if (status !== 200 || typeof t !== "string" || !t.trim() || MYMEMORY_ERR_RE.test(t)) {
+    throw new Error(
+      `MyMemory: ${typeof t === "string" ? t.slice(0, 90) : "пустой ответ"}`
+    );
   }
   return t;
+}
+
+/**
+ * MyMemory ≤500 символов за запрос — длинный текст режем на куски ≤480
+ * и склеиваем ответы. Бросает ошибку, если не перевелся ни один кусок.
+ */
+async function myMemoryLongTranslate(text: string, targetLang: string): Promise<string> {
+  if (text.length <= 480) return myMemoryClientTranslate(text, targetLang);
+  const pieces = splitTextChunks(text, 480);
+  const out: string[] = [];
+  let lastErr: Error | null = null;
+  for (const p of pieces) {
+    try {
+      out.push(await myMemoryClientTranslate(p, targetLang));
+    } catch (err) {
+      lastErr = err instanceof Error ? err : new Error(String(err));
+      out.push(p); // не теряем кусок — оставляем оригинал
+    }
+    await new Promise((r) => setTimeout(r, 150));
+  }
+  if (out.length && out.every((o, i) => o === pieces[i])) {
+    throw lastErr ?? new Error("MyMemory: не удалось перевести текст");
+  }
+  return out.join(" ");
 }
 
 /**
  * Запрос к серверному прокси /api/translate.
  * Возвращает null, если прокси недоступен (статичный хостинг без API) —
  * тогда вызывающий код переключается на клиентский фолбэк.
+ * «Недоступен» = сбой сети, 404/405 ИЛИ ответ не в формате нашего прокси
+ * (например, HTML-страница 501 от статического сервера вместо JSON).
  */
 async function proxyTranslateOrNull(
   text: string,
@@ -121,16 +134,26 @@ async function proxyTranslateOrNull(
   provider: TranslateProvider,
   apiKey?: string
 ): Promise<string | null> {
+  let resp: Response;
   try {
-    return await proxyTranslate(text, targetLang, provider, apiKey);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    // 404/405 = прокси не существует (статический хостинг) → пробуем клиентский фолбэк
-    if (msg.includes("404") || msg.includes("405") || msg.includes("Failed to fetch")) {
-      return null;
-    }
-    throw err; // реальная ошибка провайдера — отдаём наверх
+    resp = await fetch("/api/translate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, target_lang: targetLang, provider, api_key: apiKey || undefined }),
+    });
+  } catch {
+    return null; // сеть недоступна / прокси не существует
   }
+  if (resp.status === 404 || resp.status === 405) return null;
+
+  const data = await resp.json().catch(() => null);
+  if (!data || (data.status !== "success" && data.status !== "error")) {
+    return null; // это не наш прокси (заглушка статического хостинга)
+  }
+  if (!resp.ok || data.status !== "success") {
+    throw new Error(data?.message || `HTTP ${resp.status}`);
+  }
+  return data.translated_text as string;
 }
 
 /**
@@ -153,7 +176,11 @@ export async function translateText(
     let res: string | null = null;
 
     if (engineOnline && provider === "google") {
-      res = await engineTranslate(chunks[i], targetLang);
+      try {
+        res = await engineTranslate(chunks[i], targetLang);
+      } catch {
+        /* движок недоступен — идём в прокси/MyMemory */
+      }
     }
 
     if (res === null) {
@@ -162,14 +189,14 @@ export async function translateText(
       } catch (err) {
         // Прокси есть, но провайдер упал — последний шанс: MyMemory из браузера
         try {
-          res = await myMemoryClientTranslate(chunks[i], targetLang);
+          res = await myMemoryLongTranslate(chunks[i], targetLang);
         } catch {
           throw err;
         }
       }
       // Прокси отсутствует (статичный хостинг) — MyMemory напрямую
       if (res === null) {
-        res = await myMemoryClientTranslate(chunks[i], targetLang);
+        res = await myMemoryLongTranslate(chunks[i], targetLang);
       }
     }
 
@@ -215,43 +242,88 @@ export async function translateBatch(
   const total = texts.length;
   if (!total) return [];
 
-  // Движок не умеет батчи — если он online, шлём батчи группами на его эндпоинт по одной строке.
-  // Для простоты при engineOnline отправляем одну большую пачку текстом с разделителем — движок
-  // переведёт её как единый текст (Google сохраняет маркеры-слова).
+  // ─── 1. Локальный движок (если online) ───
+  // Движок не умеет батчи — шлём одну пачку с разделителем (Google сохраняет
+  // маркеры-слова); при расхождении — по одной строке. Любая ошибка движка
+  // не фатальна: идём дальше по цепочке (прокси → MyMemory).
   if (engineOnline && provider === "google") {
-    const joined = texts.join(separator);
     try {
+      const joined = texts.join(separator);
       const res = await engineTranslate(joined, targetLang);
       const parts = res.split(separator);
       if (parts.length === total) return parts;
+
+      // Разделитель испорчен — по одной строке на движке
+      const out: string[] = new Array(total).fill("");
+      for (let i = 0; i < total; i++) {
+        out[i] = texts[i]?.trim() ? await engineTranslate(texts[i], targetLang) : texts[i] ?? "";
+        onProgress?.(Math.round(((i + 1) / total) * 100));
+      }
+      return out;
     } catch {
-      /* fallback ниже */
+      /* движок недоступен/упал — fallback ниже */
     }
-    // Fallback: по одной строке на движке
-    const out: string[] = [];
-    for (let i = 0; i < total; i++) {
-      out.push(texts[i]?.trim() ? await engineTranslate(texts[i], targetLang) : texts[i] ?? "");
-      onProgress?.(Math.round(((i + 1) / total) * 100));
-    }
-    return out;
   }
 
-  // Прокси умеет нативный батч-режим
-  const resp = await fetch("/api/translate", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      batch: texts,
-      separator,
-      target_lang: targetLang,
-      provider,
-      api_key: apiKey || undefined,
-    }),
-  });
-  const data = await resp.json().catch(() => null);
-  if (!resp.ok || !data || data.status !== "success") {
-    throw new Error(data?.message || `HTTP ${resp.status}`);
+  // ─── 2. Серверный прокси (нативный батч-режим) ───
+  // null = прокси отсутствует (статичный хостинг: 404/405/сбой сети) — не ошибка.
+  let proxyFailed: Error | null = null;
+  try {
+    const resp = await fetch("/api/translate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        batch: texts,
+        separator,
+        target_lang: targetLang,
+        provider,
+        api_key: apiKey || undefined,
+      }),
+    });
+    if (resp.status === 404 || resp.status === 405) {
+      // Статический хостинг без API-роута (например, GitHub Pages)
+    } else {
+      const data = await resp.json().catch(() => null);
+      if (!data || (data.status !== "success" && data.status !== "error")) {
+        // ответ не от нашего прокси (HTML-заглушка статики) — считаем прокси отсутствующим
+      } else if (!resp.ok || data.status !== "success") {
+        throw new Error(data?.message || `HTTP ${resp.status}`);
+      } else {
+        onProgress?.(100);
+        return data.batch as string[];
+      }
+    }
+  } catch (err) {
+    // Прокси есть, но провайдер упал (рейт-лимит и т.п.) — запомним и попробуем MyMemory
+    proxyFailed = err instanceof Error ? err : new Error(String(err));
   }
-  onProgress?.(100);
-  return data.batch as string[];
+
+  // ─── 3. MyMemory напрямую из браузера (статика или упавший прокси) ───
+  // MyMemory принимает ≤500 символов, поэтому строки шлём по одной
+  // (PDF-строки короткие). Ошибки отдельных строк не роняют файл:
+  // непереведённые строки остаются с оригинальным текстом.
+  const out: string[] = new Array(total).fill("");
+  let done = 0;
+  let failures = 0;
+  let lastErr: Error | null = null;
+  for (let i = 0; i < total; i++) {
+    const piece = texts[i] ?? "";
+    if (!piece.trim()) continue; // пустые остаются пустыми
+    try {
+      out[i] = await myMemoryClientTranslate(piece, targetLang);
+    } catch (err) {
+      out[i] = piece;
+      failures++;
+      lastErr = err instanceof Error ? err : new Error(String(err));
+    }
+    done++;
+    onProgress?.(Math.round((done / total) * 100));
+    if (i < total - 1) await new Promise((r) => setTimeout(r, 150));
+  }
+  if (failures > 0 && failures >= done) {
+    // не перевелось ни одной строки — отдаём самую информативную ошибку:
+    // обычно это ответ MyMemory (квота/лимит), а не сетевой сбой прокси
+    throw lastErr ?? proxyFailed ?? new Error("MyMemory: все строки не перевелись");
+  }
+  return out;
 }
