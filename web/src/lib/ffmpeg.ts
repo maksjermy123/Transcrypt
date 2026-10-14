@@ -17,8 +17,9 @@ import type { WhisperModelId } from "./onboarding-store";
 let ffmpegInstance: any = null;
 let ffmpegPromise: Promise<any> | null = null;
 
-const FFMPEG_VERSION = "0.12.15";
-const FFMPEG_CORE_VERSION = "0.12.10";
+const FFMPEG_VERSION = "0.12.15";        // @ffmpeg/ffmpeg
+const FFMPEG_UTIL_VERSION = "0.12.2";    // @ffmpeg/util (последняя версия, 0.12.15 НЕ существует)
+const FFMPEG_CORE_VERSION = "0.12.10";   // @ffmpeg/core
 const FFMPEG_BASE = `https://unpkg.com/@ffmpeg/core@${FFMPEG_CORE_VERSION}/dist/umd`;
 
 /**
@@ -32,18 +33,18 @@ export async function getFFmpeg(): Promise<any> {
   ffmpegPromise = (async () => {
     // Динамический import — от статического анализатора bundler'а
     const ffmpegUrl = `https://unpkg.com/@ffmpeg/ffmpeg@${FFMPEG_VERSION}/dist/umd/ffmpeg.js`;
-    const utilUrl = `https://unpkg.com/@ffmpeg/util@${FFMPEG_VERSION}/dist/umd/index.js`;
+    const utilUrl = `https://unpkg.com/@ffmpeg/util@${FFMPEG_UTIL_VERSION}/dist/umd/index.js`;
 
     const dynamicImport = new Function("u", "return import(u)") as (u: string) => Promise<any>;
 
     const ffmpegMod = await dynamicImport(ffmpegUrl);
     const utilMod = await dynamicImport(utilUrl);
+    void utilMod; // util сейчас не используется напрямую, но модуль должен быть загружен для ffmpeg
 
     const ffmpeg = new ffmpegMod.FFmpeg();
     await ffmpeg.load({
       coreURL: `${FFMPEG_BASE}/ffmpeg-core.js`,
       wasmURL: `${FFMPEG_BASE}/ffmpeg-core.wasm`,
-      // workerURL нужен для многопоточного варианта; базовая версия работает без него
     });
 
     ffmpegInstance = ffmpeg;

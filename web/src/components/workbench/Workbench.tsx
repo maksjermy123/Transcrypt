@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Mic, FileAudio, FileArchive, Home, Server, ServerOff } from "lucide-react";
+import { Mic, FileAudio, FileArchive, Home, Server, ServerOff, Zap, X } from "lucide-react";
 import { useOnboarding } from "@/lib/onboarding-store";
 import { checkEngineHealth } from "@/lib/engine-bridge";
 import { TranscribeTab } from "./TranscribeTab";
@@ -18,9 +18,10 @@ const TABS: { id: WorkTab; label: string; icon: React.ComponentType<{ className?
 ];
 
 export function Workbench({ onExit }: { onExit: () => void }) {
-  const { selectedModel, reset, engineServerOnline, setEngineServerOnline, setEngineServerHealth } = useOnboarding();
+  const { selectedModel, reset, engineServerOnline, setEngineServerOnline, setEngineServerHealth, setStep } = useOnboarding();
   const [tab, setTab] = useState<WorkTab>("transcribe");
   const [checking, setChecking] = useState(true);
+  const [showBanner, setShowBanner] = useState(true);
 
   // Авто-пинг локального движка при загрузке
   useEffect(() => {
@@ -33,6 +34,8 @@ export function Workbench({ onExit }: { onExit: () => void }) {
       setEngineServerOnline(online);
       setEngineServerHealth(online ? health : null);
       setChecking(false);
+      // Если движок появился — скрываем баннер
+      if (online) setShowBanner(false);
     }
     void check();
     // Пингуем каждые 30 сек — чтобы поймать момент, когда пользователь запустит движок
@@ -42,6 +45,13 @@ export function Workbench({ onExit }: { onExit: () => void }) {
       clearInterval(interval);
     };
   }, [setEngineServerOnline, setEngineServerHealth]);
+
+  // Перейти к шагу установки локального движка (engine step в онбординге)
+  function goToEngineInstall() {
+    // Выходим в онбординг и прыгаем на шаг engine
+    setStep("engine");
+    onExit();
+  }
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -82,31 +92,35 @@ export function Workbench({ onExit }: { onExit: () => void }) {
           </nav>
 
           <div className="flex items-center gap-2">
-            {/* Индикатор движка */}
-            <div
-              className={`hidden md:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium ${
+            {/* Индикатор движка — КЛИКАБЕЛЬНЫЙ */}
+            <button
+              onClick={engineServerOnline ? undefined : goToEngineInstall}
+              disabled={engineServerOnline}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all ${
                 engineServerOnline
-                  ? "bg-emerald-500/15 text-emerald-400"
-                  : "bg-amber-500/10 text-amber-400"
+                  ? "bg-emerald-500/15 text-emerald-400 cursor-default"
+                  : "bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 cursor-pointer"
               } ${checking ? "opacity-60" : ""}`}
               title={
                 engineServerOnline
                   ? "Локальный Python-движок запущен — все функции доступны, включая URL-задачи с YouTube"
-                  : "Локальный движок не найден — URL-задачи не доступны, но локальные файлы работают через браузерный Whisper"
+                  : "Локальный движок не найден. Нажмите чтобы установить."
               }
             >
               {engineServerOnline ? (
                 <>
                   <Server className="w-3.5 h-3.5" />
-                  Движок online
+                  <span className="hidden md:inline">Движок online</span>
+                  <Server className="w-3.5 h-3.5 md:hidden" />
                 </>
               ) : (
                 <>
                   <ServerOff className="w-3.5 h-3.5" />
-                  Только браузер
+                  <span className="hidden md:inline">Только браузер — нажмите чтобы установить движок</span>
+                  <span className="md:hidden">Только браузер</span>
                 </>
               )}
-            </div>
+            </button>
 
             <button
               onClick={onExit}
@@ -120,18 +134,29 @@ export function Workbench({ onExit }: { onExit: () => void }) {
       </header>
 
       {/* Баннер с предложением установить движок, если он не запущен */}
-      {!engineServerOnline && !checking && tab !== "convert" && (
-        <div className="bg-amber-500/10 border-b border-amber-500/20 px-6 py-3 text-center text-sm text-amber-300">
-          <span className="font-medium">Хотите работать с YouTube/TikTok URL?</span>{" "}
-          Запустите локальный движок — он обходит блокировки YouTube.{" "}
-          <a
-            href="https://github.com/maksjermy123/Transcrypt#-локальный-движок-опционально-для-url-задач"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="underline text-amber-200 hover:text-amber-100 font-medium"
-          >
-            Как запустить →
-          </a>
+      {!engineServerOnline && !checking && showBanner && (
+        <div className="bg-gradient-to-r from-amber-500/15 to-amber-500/5 border-b border-amber-500/30">
+          <div className="max-w-6xl mx-auto px-6 py-3.5 flex items-center gap-3 text-sm">
+            <Zap className="w-5 h-5 text-amber-400 flex-shrink-0" />
+            <div className="flex-1 min-w-0">
+              <span className="text-amber-200 font-medium">Хотите URL-задачи с YouTube/TikTok и быструю транскрипцию длинных файлов?</span>{" "}
+              <span className="text-amber-300/80">Установите локальный движок — он работает в 5-10 раз быстрее и не зависает на длинных аудио.</span>
+            </div>
+            <button
+              onClick={goToEngineInstall}
+              className="bg-gradient-primary text-white px-4 py-1.5 rounded-lg text-xs font-medium hover:opacity-90 whitespace-nowrap inline-flex items-center gap-1.5"
+            >
+              <Zap className="w-3 h-3" />
+              Установить движок
+            </button>
+            <button
+              onClick={() => setShowBanner(false)}
+              className="p-1 rounded-md text-amber-400/70 hover:text-amber-400 hover:bg-amber-500/10"
+              title="Скрыть"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       )}
 

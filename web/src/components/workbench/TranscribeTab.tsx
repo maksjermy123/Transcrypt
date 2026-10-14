@@ -15,6 +15,7 @@ import {
   Zap,
   ServerOff,
   Server,
+  AlertTriangle,
 } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
 import { useOnboarding, MODEL_INFO } from "@/lib/onboarding-store";
@@ -447,6 +448,25 @@ export function TranscribeTab() {
               <Trash2 className="w-4 h-4" />
             </button>
           </div>
+
+          {/* Предупреждение для длинных файлов в браузерном режиме */}
+          {!engineServerOnline && (fileSize / 1024 / 1024) > 50 && (
+            <div className="glass-card rounded-2xl p-4 border-amber-500/30 bg-amber-500/5">
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
+                <div className="text-sm text-amber-200">
+                  <p className="font-medium mb-1">Большой файл для браузерного режима</p>
+                  <p className="text-xs text-amber-200/80 leading-relaxed">
+                    Браузерный Whisper (WASM) работает медленно для файлов длиннее 10-15 минут и
+                    может зависать на очень длинных аудио (более 30 минут). Для длинных файлов
+                    рекомендуется установить локальный движок — он работает в 5-10 раз быстрее
+                    и не блокирует браузер. Нажмите на индикатор «Только браузер» в шапке
+                    справа для перехода к установке.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
 
           <div className="glass-card rounded-2xl p-5 flex flex-col sm:flex-row gap-4 items-stretch sm:items-center justify-between">
             <div className="flex items-center gap-3">

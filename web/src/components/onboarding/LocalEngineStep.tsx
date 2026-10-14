@@ -169,9 +169,9 @@ export function LocalEngineStep({ onSkip }: { onSkip: () => void }) {
   }, [polling, setEngineServerOnline, setEngineServerHealth]);
 
   /**
-   * Magic button: инициирует скачивание установщика.
-   * Браузер покажет файл в системном диалоге или сохранит в «Загрузки».
-   * Дальше — пользователь открывает файл вручную по инструкции ниже.
+   * Magic button: инициирует скачивание установщика через fetch + Blob,
+   * что гарантирует сохранение файла без навигации (в отличие от прямого <a href>).
+   * После скачивания показывается инструкция с указанием где найти файл и как запустить.
    */
   async function installEngine() {
     if (platform === "unknown" || startedRef.current) return;
@@ -180,14 +180,35 @@ export function LocalEngineStep({ onSkip }: { onSkip: () => void }) {
 
     const filename = PLATFORM_INFO[platform].filename;
 
-    // Скачиваем через <a download> — браузер сохраняет в «Загрузки»
-    const a = document.createElement("a");
-    a.href = `${RAW_BASE}/${filename}`;
-    a.download = filename;
-    a.rel = "noopener noreferrer";
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    try {
+      // Скачиваем скрипт через fetch — получаем Blob, который точно сохранится
+      // как файл, без навигации на страницу с исходником.
+      const resp = await fetch(`${RAW_BASE}/${filename}`);
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const blob = await resp.blob();
+
+      // Создаём objectURL и триггерим скачивание
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.rel = "noopener noreferrer";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (err) {
+      console.error("Ошибка скачивания установщика:", err);
+      // Fallback на прямой <a download> — может привести к навигации,
+      // но если fetch заблокирован CORS, это единственный вариант
+      const a = document.createElement("a");
+      a.href = `${RAW_BASE}/${filename}`;
+      a.download = filename;
+      a.rel = "noopener noreferrer";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    }
 
     // Через 3 секунды переходим в фазу "waiting" с инструкциями
     setTimeout(() => {
