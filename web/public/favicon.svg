@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#7c5bf5"/>
+      <stop offset="100%" stop-color="#9070ff"/>
+    </linearGradient>
+    <filter id="shadow" x="-50%" y="-50%" width="200%" height="200%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000000" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+  <!-- Rounded square background -->
+  <rect x="2" y="2" width="60" height="60" rx="14" fill="url(#bg)" filter="url(#shadow)"/>
+  <!-- Letter T -->
+  <path d="
+    M 14 18
+    L 50 18
+    L 50 25
+    L 38 25
+    L 38 50
+    L 26 50
+    L 26 25
+    L 14 25
+    Z
+  " fill="#ffffff"/>
+</svg>
