@@ -16,7 +16,6 @@ import sys
 import os
 import json
 import time
-import cgi
 import tempfile
 import urllib.parse
 from pathlib import Path
@@ -33,11 +32,15 @@ from src.core.engine import WhisperEngine
 from src.core.converter import Converter
 from src.core.translator import Translator
 from src.utils.fs import find_ffmpeg_executable, find_ffprobe_executable, find_soffice_executable
-from src.utils.runtime import resolve_whisper_device, get_recommended_thread_count
+from src.utils.runtime import resolve_whisper_device, recommended_cpu_threads
 from src.utils.app_paths import app_support_dir
 
-OUTPUT_DIR = os.path.join(app_support_dir(), "web_output")
-os.makedirs(OUTPUT_DIR, exist_ok=True)
+try:
+    OUTPUT_DIR = os.path.join(app_support_dir(), "web_output")
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+except Exception:
+    OUTPUT_DIR = os.path.join(tempfile.gettempdir(), "voxpaperai_web_output")
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 # Shared progress tracking
 progress_state = {
@@ -152,7 +155,7 @@ class EngineHTTPRequestHandler(BaseHTTPRequestHandler):
         soffice_ok = bool(find_soffice_executable())
         
         device_label = resolve_whisper_device("Auto")
-        threads = get_recommended_thread_count()
+        threads = recommended_cpu_threads()
 
         sys_name = "macOS" if sys.platform == "darwin" else ("Windows" if sys.platform == "win32" else "Linux")
 
@@ -531,29 +534,48 @@ class EngineHTTPRequestHandler(BaseHTTPRequestHandler):
     # ─────────────────────────────────────────────────────────────
     def handle_upload(self):
         ctype = self.headers.get('Content-Type', '')
-        if not ctype.startswith('multipart/form-data'):
-            self.send_error_json("Expected multipart/form-data")
+        length = int(self.headers.get('Content-Length', 0))
+        if length <= 0:
+            self.send_error_json("Empty upload")
             return
 
-        form = cgi.FieldStorage(
-            fp=self.rfile,
-            headers=self.headers,
-            environ={'REQUEST_METHOD': 'POST', 'CONTENT_TYPE': ctype}
-        )
+        body = self.rfile.read(length)
+        # Parse boundary
+        boundary = None
+        for part in ctype.split(';'):
+            part = part.strip()
+            if part.startswith('boundary='):
+                boundary = part.split('=', 1)[1].strip('"').encode('utf-8')
+                break
 
-        file_item = form['file'] if 'file' in form else None
-        if not file_item or not file_item.file:
-            self.send_error_json("No file uploaded")
+        if not boundary:
+            # Raw fallback
+            fname = f"upload_{int(time.time())}.bin"
+            out_path = os.path.join(OUTPUT_DIR, fname)
+            with open(out_path, "wb") as f:
+                f.write(body)
+            self.send_json({"status": "success", "file_path": out_path, "filename": fname})
             return
 
-        fname = os.path.basename(file_item.filename or "upload.bin")
-        out_path = os.path.join(OUTPUT_DIR, f"upload_{int(time.time())}_{fname}")
+        delimiter = b'--' + boundary
+        chunks = body.split(delimiter)
+        for chunk in chunks:
+            if b'filename=' in chunk:
+                headers_part, file_bytes = chunk.split(b'\r\n\r\n', 1)
+                file_bytes = file_bytes.rstrip(b'\r\n--')
+                # Extract filename
+                headers_str = headers_part.decode('utf-8', errors='ignore')
+                import re
+                fn_match = re.search(r'filename="([^"]+)"', headers_str)
+                fname = fn_match.group(1) if fn_match else f"upload_{int(time.time())}.bin"
+                fname = os.path.basename(fname)
+                out_path = os.path.join(OUTPUT_DIR, f"upload_{int(time.time())}_{fname}")
+                with open(out_path, "wb") as f:
+                    f.write(file_bytes)
+                self.send_json({"status": "success", "file_path": out_path, "filename": fname})
+                return
 
-        with open(out_path, "wb") as f:
-            while chunk := file_item.file.read(65536):
-                f.write(chunk)
-
-        self.send_json({"status": "success", "file_path": out_path, "filename": fname})
+        self.send_error_json("No file part found in upload")
 
 
 def run_server(port=8765):
