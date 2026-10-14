@@ -8,17 +8,17 @@ import {
   XCircle,
   RefreshCw,
   ArrowRight,
-  Zap,
-  Folder,
   Terminal,
-  ShieldAlert,
-  FileCheck,
+  Clipboard,
+  ClipboardCheck,
+  ExternalLink,
+  Info,
 } from "lucide-react";
 import { useEffect, useState, useRef } from "react";
 import { useOnboarding } from "@/lib/onboarding-store";
 import { checkEngineHealth, type EngineHealth } from "@/lib/engine-bridge";
 
-type LocalPhase = "idle" | "downloading" | "waiting" | "online" | "error";
+type LocalPhase = "idle" | "waiting" | "online" | "error";
 
 const RAW_BASE = "https://raw.githubusercontent.com/maksjermy123/Transcrypt/main/engine-install";
 
@@ -38,93 +38,113 @@ const PLATFORM_INFO: Record<
   Platform,
   {
     label: string;
-    filename: string;
-    size: string;
-    fileLabel: string;
-    downloadFolder: string;
-    openInstruction: { step: string; detail: string }[];
-    gatekeeper?: { title: string; body: string };
+    command: string;
+    terminalName: string;
+    openTerminalHint: string;
+    steps: { step: string; detail: string }[];
   }
 > = {
   mac: {
     label: "macOS",
-    filename: "install-mac.command",
-    size: "10 КБ",
-    fileLabel: "install-mac.command",
-    downloadFolder: "Загрузки (Downloads)",
-    openInstruction: [
+    // Команда, которую пользователь копирует и вставляет в Terminal
+    command:
+      'bash -c "$(curl -fsSL https://raw.githubusercontent.com/maksjermy123/Transcrypt/main/engine-install/install-mac.command)"',
+    terminalName: "Terminal.app",
+    openTerminalHint:
+      "Cmd+Space → введите «Terminal» → Enter. Или откройте Finder → Программы → Утилиты → Terminal",
+    steps: [
       {
-        step: "Откройте Finder",
-        detail: "Сделка Cmd+Space → «Finder» → Enter. Или кликните по иконке Finder в Dock.",
+        step: "Откройте Terminal",
+        detail:
+          "Cmd+Space → введите «Terminal» → нажмите Enter. Откроется окно с чёрным фоном и текстовой строкой.",
       },
       {
-        step: "Перейдите в папку «Загрузки»",
-        detail: "В боковом меню слева — раздел «Загрузки» (Downloads). Найдите файл install-mac.command.",
+        step: "Скопируйте команду ниже (кнопка «Скопировать команду»)",
+        detail:
+          "Команда автоматически попадёт в буфер обмена. Ничего скачивать не нужно — Terminal.app подписан Apple, Gatekeeper не мешает.",
       },
       {
-        step: "Дважды кликните по файлу",
-        detail: "Откроется Terminal.app, и скрипт начнёт установку. Если спросит «Are you sure?» — нажмите «Открыть».",
-      },
-    ],
-    gatekeeper: {
-      title: "Если macOS блокирует запуск",
-      body:
-        '«не можем проверить разработчика» или «Identity cannot be verified» — откройте Системные настройки → Конфиденциальность и безопасность (Privacy & Security). Прокрутите вниз — будет кнопка «Всё равно открыть» (Open Anyway). Нажмите её и подтвердите.',
-    },
-  },
-  win: {
-    label: "Windows",
-    filename: "install-win.bat",
-    size: "9 КБ",
-    fileLabel: "install-win.bat",
-    downloadFolder: "Загрузки (Downloads)",
-    openInstruction: [
-      {
-        step: "Откройте Проводник (Win+E)",
-        detail: "Или кликните по иконке папки на панели задач.",
+        step: "Вставьте команду в Terminal и нажмите Enter",
+        detail:
+          "Cmd+V — вставить. Запустится установка (~5 минут первый раз, ставится Whisper ~800 МБ).",
       },
       {
-        step: "Перейдите в папку «Загрузки»",
-        detail: "В левой панели — раздел «Загрузки». Найдите файл install-win.bat.",
-      },
-      {
-        step: "Дважды кликните по install-win.bat",
-        detail: "Откроется окно командной строки (cmd.exe), скрипт начнёт установку. Если Windows Defender SmartScreen спросит — нажмите «Дополнительные сведения» → «Всё равно запустить».",
+        step: "Дождитесь сообщения «Установка завершена!»",
+        detail:
+          "Движок стартует на 127.0.0.1:8765 и откроет сайт в браузере. Этот индикатор позеленеет автоматически.",
       },
     ],
   },
   linux: {
     label: "Linux",
-    filename: "install-linux.sh",
-    size: "10 КБ",
-    fileLabel: "install-linux.sh",
-    downloadFolder: "~/Загрузки (или ~/Downloads)",
-    openInstruction: [
+    command:
+      'bash -c "$(curl -fsSL https://raw.githubusercontent.com/maksjermy123/Transcrypt/main/engine-install/install-linux.sh)"',
+    terminalName: "Терминал",
+    openTerminalHint:
+      "Ctrl+Alt+T в большинстве дистрибутивов, или найдите «Терминал» в меню приложений",
+    steps: [
       {
         step: "Откройте терминал",
-        detail: "Ctrl+Alt+T в большинстве дистрибутивов, или найдите «Терминал» в меню приложений.",
+        detail: "Ctrl+Alt+T — стандартный шорткат. Или найдите «Terminal» в меню приложений.",
       },
       {
-        step: "Перейдите в папку загрузок",
-        detail: "cd ~/Загрузки  (или: cd ~/Downloads — зависит от локали)",
+        step: "Скопируйте команду ниже (кнопка «Скопировать команду»)",
+        detail: "Команда попадёт в буфер обмена.",
       },
       {
-        step: "Запустите скрипт",
-        detail: "bash install-linux.sh — скрипт начнёт установку. Если терминал скажет permission denied, выполните: chmod +x install-linux.sh && bash install-linux.sh",
+        step: "Вставьте команду в терминал и нажмите Enter",
+        detail:
+          "Ctrl+Shift+V (или Shift+Insert) — вставка в терминале. Запустится установка (~5 минут первый раз).",
+      },
+      {
+        step: "Дождитесь сообщения «Установка завершена!»",
+        detail:
+          "Движок стартует на 127.0.0.1:8765 и откроет сайт. Индикатор позеленеет автоматически.",
+      },
+    ],
+  },
+  win: {
+    label: "Windows",
+    // PowerShell one-liner — запускается из существующего PowerShell, никаких скачиваний
+    command:
+      "iwr -useb https://raw.githubusercontent.com/maksjermy123/Transcrypt/main/engine-install/install-win.ps1 | iex",
+    terminalName: "PowerShell",
+    openTerminalHint:
+      "Win+R → введите «powershell» → Enter. Или: Пуск → найдите «PowerShell»",
+    steps: [
+      {
+        step: "Откройте PowerShell",
+        detail:
+          "Win+R → введите «powershell» → Enter. Откроется синее окно PowerShell. НЕ используйте обычный cmd — там другая команда.",
+      },
+      {
+        step: "Скопируйте команду ниже (кнопка «Скопировать команду»)",
+        detail:
+          "Команда попадёт в буфер обмена. PowerShell подписан Microsoft, SmartScreen не мешает.",
+      },
+      {
+        step: "Вставьте команду в PowerShell и нажмите Enter",
+        detail:
+          "Правый клик в окне PowerShell = вставка (или Ctrl+V в новых версиях). Запустится установка (~5 минут первый раз).",
+      },
+      {
+        step: "Дождитесь сообщения «Установка завершена!»",
+        detail:
+          "Движок стартует на 127.0.0.1:8765 и откроет сайт. Индикатор позеленеет автоматически.",
       },
     ],
   },
   unknown: {
     label: "Неизвестная платформа",
-    filename: "",
-    size: "",
-    fileLabel: "установщик",
-    downloadFolder: "папка загрузок",
-    openInstruction: [
+    command:
+      'bash -c "$(curl -fsSL https://raw.githubusercontent.com/maksjermy123/Transcrypt/main/engine-install/install-linux.sh)"',
+    terminalName: "терминал",
+    openTerminalHint: "Откройте терминал вашей системы",
+    steps: [
       {
-        step: "Скачайте установщик вручную",
+        step: "Не удалось определить платформу",
         detail:
-          "Зайдите на https://github.com/maksjermy123/Transcrypt/tree/main/engine-install и скачайте файл для вашей платформы.",
+          "Скачайте установщик вручную с https://github.com/maksjermy123/Transcrypt/tree/main/engine-install",
       },
     ],
   },
@@ -139,10 +159,10 @@ export function LocalEngineStep({ onSkip }: { onSkip: () => void }) {
   const [polling, setPolling] = useState(false);
   const [waitTime, setWaitTime] = useState(0);
   const [health, setHealth] = useState<EngineHealth | null>(null);
+  const [copied, setCopied] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const startedRef = useRef(false);
 
-  // Активный поллинг после скачивания установщика
+  // Активный поллинг
   useEffect(() => {
     if (!polling) return;
 
@@ -169,52 +189,49 @@ export function LocalEngineStep({ onSkip }: { onSkip: () => void }) {
   }, [polling, setEngineServerOnline, setEngineServerHealth]);
 
   /**
-   * Magic button: инициирует скачивание установщика через fetch + Blob,
-   * что гарантирует сохранение файла без навигации (в отличие от прямого <a href>).
-   * После скачивания показывается инструкция с указанием где найти файл и как запустить.
+   * Копирование команды в буфер обмена пользователя.
+   * Использует navigator.clipboard.writeText (Chrome 66+, Firefox 63+, Safari 13.1+).
+   * Fallback на document.execCommand('copy') для старых браузеров.
    */
-  async function installEngine() {
-    if (platform === "unknown" || startedRef.current) return;
-    startedRef.current = true;
-    setPhase("downloading");
-
-    const filename = PLATFORM_INFO[platform].filename;
-
+  async function copyCommand() {
+    const cmd = PLATFORM_INFO[platform].command;
     try {
-      // Скачиваем скрипт через fetch — получаем Blob, который точно сохранится
-      // как файл, без навигации на страницу с исходником.
-      const resp = await fetch(`${RAW_BASE}/${filename}`);
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      const blob = await resp.blob();
-
-      // Создаём objectURL и триггерим скачивание
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      a.rel = "noopener noreferrer";
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      await navigator.clipboard.writeText(cmd);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 3000);
+      // Начинаем поллинг — пользователь, скорее всего, сейчас вставит команду
+      if (phase === "idle") {
+        setPhase("waiting");
+        setPolling(true);
+      }
     } catch (err) {
-      console.error("Ошибка скачивания установщика:", err);
-      // Fallback на прямой <a download> — может привести к навигации,
-      // но если fetch заблокирован CORS, это единственный вариант
-      const a = document.createElement("a");
-      a.href = `${RAW_BASE}/${filename}`;
-      a.download = filename;
-      a.rel = "noopener noreferrer";
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
+      // Fallback
+      const textarea = document.createElement("textarea");
+      textarea.value = cmd;
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
+      document.body.appendChild(textarea);
+      textarea.select();
+      try {
+        document.execCommand("copy");
+        setCopied(true);
+        setTimeout(() => setCopied(false), 3000);
+        if (phase === "idle") {
+          setPhase("waiting");
+          setPolling(true);
+        }
+      } catch (e) {
+        console.error("Не удалось скопировать:", e);
+      }
+      document.body.removeChild(textarea);
     }
+  }
 
-    // Через 3 секунды переходим в фазу "waiting" с инструкциями
-    setTimeout(() => {
+  function startPolling() {
+    if (phase === "idle") {
       setPhase("waiting");
       setPolling(true);
-    }, 3000);
+    }
   }
 
   function retryCheck() {
@@ -225,7 +242,6 @@ export function LocalEngineStep({ onSkip }: { onSkip: () => void }) {
   function skip() {
     if (timerRef.current) clearInterval(timerRef.current);
     setPolling(false);
-    startedRef.current = false;
     onSkip();
   }
 
@@ -252,7 +268,7 @@ export function LocalEngineStep({ onSkip }: { onSkip: () => void }) {
             <CheckCircle2 className="w-6 h-6 text-emerald-500" />
           ) : phase === "error" ? (
             <XCircle className="w-6 h-6 text-red-500" />
-          ) : phase === "waiting" || phase === "downloading" ? (
+          ) : phase === "waiting" ? (
             <Loader2 className="w-6 h-6 text-amber-400 animate-spin" />
           ) : (
             <Server className="w-6 h-6 text-amber-400" />
@@ -268,14 +284,15 @@ export function LocalEngineStep({ onSkip }: { onSkip: () => void }) {
             {phase === "online" ? (
               <>
                 Движок online на{" "}
-                <code className="font-mono">127.0.0.1:8765</code>. Теперь доступны
-                URL-задачи (YouTube, TikTok), скачивание видео/аудио, hardsub.
+                <code className="font-mono">127.0.0.1:8765</code>. URL-задачи и
+                скачивание с YouTube/TikTok доступны.
               </>
             ) : (
               <>
-                Локальный движок — это Python-сервер на вашем компьютере. Он
-                скачивает контент с YouTube/TikTok (обходя блокировки) и
-                запускает нативный Whisper.
+                Никаких файлов скачивать не нужно — вы копируете{" "}
+                <strong className="text-foreground">одну команду</strong> и
+                вставляете её в {info.terminalName}. Скрипт сам скачает и установит
+                всё необходимое.
               </>
             )}
           </p>
@@ -283,14 +300,15 @@ export function LocalEngineStep({ onSkip }: { onSkip: () => void }) {
       </div>
 
       <AnimatePresence mode="wait">
-        {phase === "idle" && (
+        {(phase === "idle" || phase === "waiting") && (
           <motion.div
-            key="idle"
+            key="command"
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
             className="space-y-4"
           >
+            {/* Платформа */}
             <div className="flex items-center gap-2 text-sm">
               <span className="text-muted-foreground">Ваша платформа:</span>
               <span className="px-2 py-0.5 rounded-md bg-[#7c5bf5]/15 text-[#7c5bf5] text-xs font-medium">
@@ -298,159 +316,91 @@ export function LocalEngineStep({ onSkip }: { onSkip: () => void }) {
               </span>
             </div>
 
-            {/* MAGIC BUTTON */}
-            <button
-              onClick={installEngine}
-              disabled={platform === "unknown"}
-              className="w-full bg-gradient-primary text-white px-5 py-4 rounded-xl font-medium hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center justify-center gap-3 glow-primary text-lg"
-            >
-              <Zap className="w-5 h-5" />
-              Установить движок
-            </button>
-
-            <div className="text-xs text-muted-foreground bg-[#0b0f19]/40 rounded-lg p-3">
-              <div className="font-medium text-foreground mb-1.5 flex items-center gap-1.5">
-                <Zap className="w-3 h-3 text-amber-400" />
-                По клику произойдёт:
+            {/* Команда + кнопка копирования */}
+            <div className="bg-[#0b0f19] border border-[#263147] rounded-xl overflow-hidden">
+              <div className="flex items-center justify-between px-3 py-2 bg-[#1b2334] border-b border-[#263147]">
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <Terminal className="w-3.5 h-3.5" />
+                  <span>{info.terminalName}</span>
+                </div>
+                <button
+                  onClick={copyCommand}
+                  className={`text-xs px-2.5 py-1 rounded-md font-medium transition-colors inline-flex items-center gap-1.5 ${
+                    copied
+                      ? "bg-emerald-500/15 text-emerald-400"
+                      : "bg-[#7c5bf5]/15 text-[#7c5bf5] hover:bg-[#7c5bf5]/25"
+                  }`}
+                >
+                  {copied ? (
+                    <>
+                      <ClipboardCheck className="w-3 h-3" />
+                      Скопировано ✓
+                    </>
+                  ) : (
+                    <>
+                      <Clipboard className="w-3 h-3" />
+                      Скопировать команду
+                    </>
+                  )}
+                </button>
               </div>
-              <ol className="list-decimal list-inside space-y-0.5">
-                <li>Браузер скачает{" "}
-                  <code className="font-mono text-[11px] px-1 py-0.5 rounded bg-[#1b2334]">
-                    {info.filename || "установщик"}
-                  </code>{" "}
-                  (~{info.size || "5 КБ"}) в папку «Загрузки»
-                </li>
-                <li>Появится подробная инструкция — где найти файл и как его открыть</li>
-                <li>После запуска скрипт сам установит Whisper (~800 МБ) и запустит движок</li>
-                <li>Когда движок поднимется — этот индикатор станет зелёным автоматически</li>
-              </ol>
+              <pre className="p-3 text-xs font-mono text-foreground overflow-x-auto whitespace-pre-wrap break-all">
+                {info.command}
+              </pre>
             </div>
 
-            {platform === "mac" && (
-              <div className="text-xs text-amber-400 bg-amber-500/5 border border-amber-500/20 rounded-lg p-3">
-                <strong>macOS:</strong> при первом запуске скрипта из интернета
-                система может его заблокировать. Мы покажем, что делать —
-                инструкция появится после клика.
-              </div>
-            )}
-
-            {platform === "win" && (
-              <div className="text-xs text-amber-400 bg-amber-500/5 border border-amber-500/20 rounded-lg p-3">
-                <strong>Windows:</strong> SmartScreen может пометить скрипт как
-                «неопознанный» — это нормально. Мы покажем как обойти.
-              </div>
-            )}
-
-            <button
-              onClick={skip}
-              className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5"
-            >
-              Пропустить — продолжить без локального движка
-              <ArrowRight className="w-3 h-3" />
-            </button>
-          </motion.div>
-        )}
-
-        {phase === "downloading" && (
-          <motion.div
-            key="downloading"
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            className="space-y-3"
-          >
-            <div className="flex items-center gap-2 text-sm">
-              <Loader2 className="w-4 h-4 animate-spin text-amber-400" />
-              <span>Скачиваем установщик…</span>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Файл <code className="font-mono">{info.filename}</code> сохраняется в
-              папку «Загрузки». Если браузер показал диалог «Сохранить/Открыть» —
-              выберите «Сохранить». Через пару секунд появится инструкция.
-            </p>
-          </motion.div>
-        )}
-
-        {phase === "waiting" && (
-          <motion.div
-            key="waiting"
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            className="space-y-4"
-          >
-            {/* Статус поллинга */}
-            <div className="flex items-center justify-between p-3 rounded-lg bg-[#0b0f19]/60 border border-[#263147]">
-              <div className="flex items-center gap-2 text-sm">
-                <Loader2 className="w-4 h-4 animate-spin text-amber-400" />
-                <span>Ожидаем запуска движка…</span>
-              </div>
-              <span className="text-xs font-mono text-muted-foreground">
-                {waitTime}с
-              </span>
-            </div>
-
-            {/* Инструкция по открытию файла */}
-            <div className="bg-[#0b0f19]/40 rounded-xl p-4 border border-[#7c5bf5]/20">
+            {/* Инструкция — 4 шага */}
+            <div className="bg-[#0b0f19]/40 rounded-xl p-4 border border-[#263147]">
               <div className="flex items-center gap-2 mb-3">
-                <FileCheck className="w-4 h-4 text-[#7c5bf5]" />
-                <h4 className="font-medium text-sm">
-                  Как запустить установщик ({info.label})
-                </h4>
+                <Info className="w-4 h-4 text-[#7c5bf5]" />
+                <h4 className="font-medium text-sm">Пошаговая инструкция</h4>
               </div>
-
               <div className="space-y-3">
-                {info.openInstruction.map((step, i) => (
+                {info.steps.map((s, i) => (
                   <div key={i} className="flex items-start gap-3">
                     <span className="flex-shrink-0 w-6 h-6 rounded-full bg-[#7c5bf5]/20 text-[#7c5bf5] text-xs font-bold flex items-center justify-center mt-0.5">
                       {i + 1}
                     </span>
                     <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium">{step.step}</div>
+                      <div className="text-sm font-medium">{s.step}</div>
                       <div className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
-                        {step.detail}
+                        {s.detail}
                       </div>
                     </div>
                   </div>
                 ))}
               </div>
+            </div>
 
-              {/* Подсказка про местоположение файла */}
-              <div className="mt-3 pt-3 border-t border-[#263147] flex items-start gap-2 text-xs">
-                <Folder className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0 mt-0.5" />
-                <div>
-                  <span className="text-muted-foreground">Файл </span>
-                  <code className="font-mono px-1 py-0.5 rounded bg-[#1b2334] text-foreground">
-                    {info.fileLabel}
-                  </code>
-                  <span className="text-muted-foreground"> лежит в </span>
-                  <span className="text-foreground font-medium">{info.downloadFolder}</span>
-                </div>
+            {/* Подсказка как открыть терминал */}
+            <div className="text-xs text-muted-foreground bg-amber-500/5 border border-amber-500/20 rounded-lg p-3 flex items-start gap-2">
+              <Terminal className="w-3.5 h-3.5 text-amber-400 flex-shrink-0 mt-0.5" />
+              <div>
+                <span className="text-foreground font-medium">Как открыть {info.terminalName}:</span>{" "}
+                {info.openTerminalHint}
               </div>
             </div>
 
-            {/* Предупреждение для macOS Gatekeeper */}
-            {info.gatekeeper && (
-              <div className="bg-amber-500/5 border border-amber-500/30 rounded-xl p-4">
-                <div className="flex items-start gap-2 mb-2">
-                  <ShieldAlert className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
-                  <h4 className="font-medium text-sm text-amber-300">
-                    {info.gatekeeper.title}
-                  </h4>
+            {/* Статус поллинга (когда уже нажали скопировать) */}
+            {phase === "waiting" && (
+              <div className="flex items-center justify-between p-3 rounded-lg bg-[#0b0f19]/60 border border-[#263147]">
+                <div className="flex items-center gap-2 text-sm">
+                  <Loader2 className="w-4 h-4 animate-spin text-amber-400" />
+                  <span>Ожидаем запуска движка…</span>
                 </div>
-                <p className="text-xs text-amber-200/80 leading-relaxed">
-                  {info.gatekeeper.body}
-                </p>
+                <span className="text-xs font-mono text-muted-foreground">
+                  {waitTime}с
+                </span>
               </div>
             )}
 
             {/* Что будет делать скрипт */}
-            <div className="bg-[#0b0f19]/40 rounded-xl p-4">
-              <div className="flex items-center gap-2 mb-3">
-                <Terminal className="w-4 h-4 text-[#7c5bf5]" />
-                <h4 className="font-medium text-sm">Что будет делать скрипт</h4>
-              </div>
-              <ol className="list-decimal list-inside text-xs text-muted-foreground space-y-1">
+            <details className="text-xs text-muted-foreground">
+              <summary className="cursor-pointer hover:text-foreground inline-flex items-center gap-1.5">
+                <Info className="w-3 h-3" />
+                Что будет делать скрипт
+              </summary>
+              <ol className="list-decimal list-inside mt-2 space-y-1 ml-2">
                 <li>Проверит Python 3.10+ и ffmpeg</li>
                 <li>Создаст изолированное окружение в{" "}
                   <code className="font-mono text-[11px]">~/.transcrypt-engine/</code>
@@ -463,16 +413,27 @@ export function LocalEngineStep({ onSkip }: { onSkip: () => void }) {
                 <li>Настроит автозапуск с системой (LaunchAgent/systemd/Registry)</li>
                 <li>Откроет этот сайт в браузере — индикатор станет зелёным</li>
               </ol>
-            </div>
+            </details>
 
-            <div className="flex gap-2">
-              <button
-                onClick={retryCheck}
-                className="text-xs bg-[#1b2334] hover:bg-[#263147] text-muted-foreground hover:text-foreground px-3 py-1.5 rounded-lg inline-flex items-center gap-1.5"
-              >
-                <RefreshCw className="w-3 h-3" />
-                Проверить снова
-              </button>
+            <div className="flex gap-2 pt-2">
+              {phase === "idle" && (
+                <button
+                  onClick={startPolling}
+                  className="text-xs bg-[#1b2334] hover:bg-[#263147] text-muted-foreground hover:text-foreground px-3 py-1.5 rounded-lg inline-flex items-center gap-1.5"
+                >
+                  <RefreshCw className="w-3 h-3" />
+                  Я уже вставил — проверить
+                </button>
+              )}
+              {phase === "waiting" && (
+                <button
+                  onClick={retryCheck}
+                  className="text-xs bg-[#1b2334] hover:bg-[#263147] text-muted-foreground hover:text-foreground px-3 py-1.5 rounded-lg inline-flex items-center gap-1.5"
+                >
+                  <RefreshCw className="w-3 h-3" />
+                  Проверить снова
+                </button>
+              )}
               <button
                 onClick={skip}
                 className="text-xs text-muted-foreground hover:text-foreground px-3 py-1.5"
