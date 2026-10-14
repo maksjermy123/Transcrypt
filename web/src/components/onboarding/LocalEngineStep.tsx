@@ -39,6 +39,7 @@ const PLATFORM_INFO: Record<
   {
     label: string;
     command: string;
+    uninstallCommand: string;
     terminalName: string;
     openTerminalHint: string;
     steps: { step: string; detail: string }[];
@@ -49,6 +50,8 @@ const PLATFORM_INFO: Record<
     // Команда, которую пользователь копирует и вставляет в Terminal
     command:
       'bash -c "$(curl -fsSL https://raw.githubusercontent.com/maksjermy123/Transcrypt/main/engine-install/install-mac.command)"',
+    uninstallCommand:
+      'bash -c "$(curl -fsSL https://raw.githubusercontent.com/maksjermy123/Transcrypt/main/engine-install/uninstall-mac.command)"',
     terminalName: "Terminal.app",
     openTerminalHint:
       "Cmd+Space → введите «Terminal» → Enter. Или откройте Finder → Программы → Утилиты → Terminal",
@@ -79,6 +82,8 @@ const PLATFORM_INFO: Record<
     label: "Linux",
     command:
       'bash -c "$(curl -fsSL https://raw.githubusercontent.com/maksjermy123/Transcrypt/main/engine-install/install-linux.sh)"',
+    uninstallCommand:
+      'bash -c "$(curl -fsSL https://raw.githubusercontent.com/maksjermy123/Transcrypt/main/engine-install/uninstall-linux.sh)"',
     terminalName: "Терминал",
     openTerminalHint:
       "Ctrl+Alt+T в большинстве дистрибутивов, или найдите «Терминал» в меню приложений",
@@ -108,6 +113,8 @@ const PLATFORM_INFO: Record<
     // PowerShell one-liner — запускается из существующего PowerShell, никаких скачиваний
     command:
       "iwr -useb https://raw.githubusercontent.com/maksjermy123/Transcrypt/main/engine-install/install-win.ps1 | iex",
+    uninstallCommand:
+      "iwr -useb https://raw.githubusercontent.com/maksjermy123/Transcrypt/main/engine-install/uninstall-win.ps1 | iex",
     terminalName: "PowerShell",
     openTerminalHint:
       "Win+R → введите «powershell» → Enter. Или: Пуск → найдите «PowerShell»",
@@ -138,6 +145,8 @@ const PLATFORM_INFO: Record<
     label: "Неизвестная платформа",
     command:
       'bash -c "$(curl -fsSL https://raw.githubusercontent.com/maksjermy123/Transcrypt/main/engine-install/install-linux.sh)"',
+    uninstallCommand:
+      'bash -c "$(curl -fsSL https://raw.githubusercontent.com/maksjermy123/Transcrypt/main/engine-install/uninstall-linux.sh)"',
     terminalName: "терминал",
     openTerminalHint: "Откройте терминал вашей системы",
     steps: [
@@ -481,6 +490,57 @@ export function LocalEngineStep({ onSkip }: { onSkip: () => void }) {
                 </span>
               </div>
             </div>
+
+            {/* Кнопка удаления движка — показывается когда движок online */}
+            <details className="text-xs">
+              <summary className="cursor-pointer text-red-400 hover:text-red-300 inline-flex items-center gap-1.5">
+                <XCircle className="w-3 h-3" />
+                Удалить движок (полное удаление)
+              </summary>
+              <div className="mt-3 space-y-3">
+                <p className="text-muted-foreground leading-relaxed">
+                  Это полностью удалит локальный движок с компьютера:
+                  ~800 МБ Whisper, venv, <code className="font-mono text-[11px] px-1 py-0.5 rounded bg-[#1b2334]">engine_server.py</code>,
+                  <code className="font-mono text-[11px] px-1 py-0.5 rounded bg-[#1b2334] mx-1">src/</code>,
+                  автозапуск с системой. Браузерный Whisper останется работать для локальных файлов.
+                </p>
+                <div className="bg-[#0b0f19] border border-red-500/30 rounded-xl overflow-hidden">
+                  <div className="flex items-center justify-between px-3 py-2 bg-red-500/10 border-b border-red-500/20">
+                    <div className="flex items-center gap-2 text-xs text-red-300">
+                      <Terminal className="w-3.5 h-3.5" />
+                      <span>Команда удаления для {info.terminalName}</span>
+                    </div>
+                    <button
+                      onClick={async () => {
+                        try {
+                          await navigator.clipboard.writeText(info.uninstallCommand);
+                          alert("Команда удаления скопирована. Откройте " + info.terminalName + " и вставьте (Cmd+V / Ctrl+Shift+V / правый клик).");
+                        } catch {
+                          const textarea = document.createElement("textarea");
+                          textarea.value = info.uninstallCommand;
+                          document.body.appendChild(textarea);
+                          textarea.select();
+                          document.execCommand("copy");
+                          document.body.removeChild(textarea);
+                          alert("Команда удаления скопирована. Откройте " + info.terminalName + " и вставьте.");
+                        }
+                      }}
+                      className="text-xs px-2.5 py-1 rounded-md bg-red-500/15 text-red-300 hover:bg-red-500/25 inline-flex items-center gap-1.5"
+                    >
+                      <Clipboard className="w-3 h-3" />
+                      Скопировать команду удаления
+                    </button>
+                  </div>
+                  <pre className="p-3 text-xs font-mono text-foreground overflow-x-auto whitespace-pre-wrap break-all">
+                    {info.uninstallCommand}
+                  </pre>
+                </div>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  Скрипт спросит подтверждение (yes/no) перед удалением. После удаления
+                  индикатор в шапке этого сайта позеленеет → снова станет оранжевым.
+                </p>
+              </div>
+            </details>
           </motion.div>
         )}
       </AnimatePresence>
