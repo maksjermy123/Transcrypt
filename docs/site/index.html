@@ -3,558 +3,964 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VoxPaperAi Pro — Транскрибация, перевод, конвертация</title>
+    <title>VoxPaperAi Pro — Web & Desktop Symbiosis</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎙</text></svg>">
     <style>
         :root {
-            --bg-dark: #0d1117;
-            --bg-card: #161b22;
-            --bg-card-hover: #1c2333;
+            --bg-dark: #0b0f19;
+            --bg-card: #151b28;
+            --bg-card-sub: #1b2334;
+            --border: #263147;
             --accent: #7c5bf5;
-            --accent-light: #a78bfa;
-            --accent-glow: rgba(124, 91, 245, 0.3);
-            --text: #e6edf3;
-            --text-muted: #8b949e;
-            --border: #30363d;
-            --success: #3fb950;
-            --warning: #d29922;
-            --info: #58a6ff;
+            --accent-hover: #9070ff;
+            --accent-glow: rgba(124, 91, 245, 0.25);
+            --text: #f0f4fc;
+            --text-muted: #8b99b5;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --info: #3b82f6;
         }
 
         * { margin: 0; padding: 0; box-sizing: border-box; }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
             background: var(--bg-dark);
             color: var(--text);
             line-height: 1.6;
-            overflow-x: hidden;
+            min-height: 100vh;
         }
 
-        /* ── Animated background ── */
-        .bg-grid {
-            position: fixed;
-            inset: 0;
-            background-image:
-                linear-gradient(rgba(124, 91, 245, 0.03) 1px, transparent 1px),
-                linear-gradient(90deg, rgba(124, 91, 245, 0.03) 1px, transparent 1px);
-            background-size: 60px 60px;
-            z-index: 0;
-            pointer-events: none;
-        }
-
-        .glow-orb {
-            position: fixed;
-            width: 600px;
-            height: 600px;
-            border-radius: 50%;
-            filter: blur(120px);
-            opacity: 0.15;
-            pointer-events: none;
-            z-index: 0;
-        }
-        .glow-orb.purple { background: #7c5bf5; top: -200px; left: -100px; }
-        .glow-orb.blue { background: #58a6ff; bottom: -200px; right: -100px; }
-
-        /* ── Nav ── */
-        nav {
+        /* ── Header ── */
+        header {
             position: sticky; top: 0; z-index: 100;
-            background: rgba(13, 17, 23, 0.85);
-            backdrop-filter: blur(16px);
+            background: rgba(11, 15, 25, 0.92);
+            backdrop-filter: blur(12px);
             border-bottom: 1px solid var(--border);
-            padding: 0 2rem;
+            padding: 0.75rem 1.5rem;
         }
-        .nav-inner {
+        .header-inner {
             max-width: 1200px; margin: 0 auto;
             display: flex; align-items: center; justify-content: space-between;
-            height: 64px;
+            gap: 1rem;
         }
-        .nav-brand {
+        .brand {
             display: flex; align-items: center; gap: 0.75rem;
-            font-size: 1.25rem; font-weight: 700;
-            text-decoration: none; color: var(--text);
+            font-size: 1.25rem; font-weight: 700; color: var(--text);
+            text-decoration: none;
         }
-        .nav-brand img { width: 36px; height: 36px; border-radius: 8px; }
-        .nav-links { display: flex; gap: 2rem; list-style: none; }
-        .nav-links a {
-            color: var(--text-muted); text-decoration: none;
-            font-size: 0.9rem; transition: color 0.2s;
+        .brand img { width: 34px; height: 34px; border-radius: 8px; }
+        .engine-badge {
+            display: inline-flex; align-items: center; gap: 0.5rem;
+            padding: 0.4rem 0.9rem; border-radius: 999px;
+            font-size: 0.85rem; font-weight: 600;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border);
+            transition: all 0.3s;
         }
-        .nav-links a:hover { color: var(--text); }
-        .nav-cta {
-            background: var(--accent);
-            color: #fff; padding: 0.5rem 1.25rem;
-            border-radius: 8px; text-decoration: none;
-            font-size: 0.9rem; font-weight: 600;
+        .engine-badge.online {
+            background: rgba(16, 185, 129, 0.15);
+            border-color: rgba(16, 185, 129, 0.4);
+            color: var(--success);
+        }
+        .engine-badge.offline {
+            background: rgba(245, 158, 11, 0.15);
+            border-color: rgba(245, 158, 11, 0.4);
+            color: var(--warning);
+        }
+        .dot {
+            width: 8px; height: 8px; border-radius: 50%;
+            background: currentColor;
+        }
+        .dot.pulse { animation: pulse 2s infinite; }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.4; transform: scale(0.85); }
+        }
+
+        /* ── Main Layout ── */
+        .container {
+            max-width: 1200px; margin: 0 auto;
+            padding: 2rem 1.5rem 4rem;
+        }
+
+        /* ── Engine Notice Banner ── */
+        .engine-banner {
+            background: linear-gradient(135deg, rgba(124, 91, 245, 0.12), rgba(59, 130, 246, 0.08));
+            border: 1px solid rgba(124, 91, 245, 0.3);
+            border-radius: 12px;
+            padding: 1rem 1.5rem;
+            margin-bottom: 2rem;
+            display: flex; align-items: center; justify-content: space-between;
+            gap: 1rem; flex-wrap: wrap;
+        }
+        .engine-banner-text h4 { font-size: 1rem; margin-bottom: 0.2rem; }
+        .engine-banner-text p { font-size: 0.88rem; color: var(--text-muted); }
+        .engine-banner-btn {
+            background: var(--accent); color: #fff;
+            padding: 0.5rem 1.2rem; border-radius: 8px;
+            text-decoration: none; font-size: 0.88rem; font-weight: 600;
+            display: inline-flex; align-items: center; gap: 0.4rem;
+            border: none; cursor: pointer; transition: background 0.2s;
+        }
+        .engine-banner-btn:hover { background: var(--accent-hover); }
+
+        /* ── Tabs Navigation ── */
+        .nav-tabs {
+            display: flex; gap: 0.5rem;
+            border-bottom: 1px solid var(--border);
+            margin-bottom: 2rem; overflow-x: auto;
+            padding-bottom: 2px;
+        }
+        .tab-btn {
+            background: transparent; color: var(--text-muted);
+            border: none; outline: none;
+            padding: 0.85rem 1.25rem; font-size: 0.95rem; font-weight: 600;
+            cursor: pointer; border-radius: 8px 8px 0 0;
+            display: inline-flex; align-items: center; gap: 0.5rem;
+            position: relative; white-space: nowrap;
             transition: all 0.2s;
         }
-        .nav-cta:hover { background: var(--accent-light); transform: translateY(-1px); }
+        .tab-btn:hover { color: var(--text); background: rgba(255, 255, 255, 0.03); }
+        .tab-btn.active {
+            color: var(--accent);
+            border-bottom: 2px solid var(--accent);
+        }
 
-        /* ── Hero ── */
-        .hero {
-            position: relative; z-index: 1;
-            max-width: 1200px; margin: 0 auto;
-            padding: 6rem 2rem 4rem;
-            text-align: center;
+        /* ── Tab Panels ── */
+        .tab-panel { display: none; }
+        .tab-panel.active { display: block; animation: fadeIn 0.25s ease; }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(6px); }
+            to { opacity: 1; transform: translateY(0); }
         }
-        .hero-badge {
-            display: inline-flex; align-items: center; gap: 0.5rem;
-            background: rgba(124, 91, 245, 0.1);
-            border: 1px solid rgba(124, 91, 245, 0.3);
-            border-radius: 999px; padding: 0.35rem 1rem;
-            font-size: 0.85rem; color: var(--accent-light);
-            margin-bottom: 1.5rem;
-        }
-        .hero-badge .dot {
-            width: 8px; height: 8px; border-radius: 50%;
-            background: var(--success);
-            animation: pulse 2s infinite;
-        }
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.4; }
-        }
-        .hero h1 {
-            font-size: clamp(2.5rem, 6vw, 4rem);
-            font-weight: 800;
-            background: linear-gradient(135deg, var(--text) 0%, var(--accent-light) 50%, var(--info) 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-            line-height: 1.15;
-            margin-bottom: 1.5rem;
-        }
-        .hero p {
-            font-size: 1.2rem; color: var(--text-muted);
-            max-width: 640px; margin: 0 auto 2.5rem;
-        }
-        .hero-actions {
-            display: flex; gap: 1rem;
-            justify-content: center; flex-wrap: wrap;
-        }
-        .btn {
-            display: inline-flex; align-items: center; gap: 0.5rem;
-            padding: 0.85rem 2rem;
-            border-radius: 12px;
-            font-size: 1rem; font-weight: 600;
-            text-decoration: none;
-            transition: all 0.25s;
-            cursor: pointer; border: none;
-        }
-        .btn-primary {
-            background: var(--accent); color: #fff;
-            box-shadow: 0 4px 24px var(--accent-glow);
-        }
-        .btn-primary:hover { background: var(--accent-light); transform: translateY(-2px); }
-        .btn-secondary {
-            background: var(--bg-card); color: var(--text);
+
+        /* ── Cards & Inputs ── */
+        .card {
+            background: var(--bg-card);
             border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
         }
-        .btn-secondary:hover { background: var(--bg-card-hover); border-color: var(--accent); }
+        .card-header {
+            display: flex; justify-content: space-between; align-items: center;
+            margin-bottom: 1.25rem;
+        }
+        .card-header h3 { font-size: 1.15rem; font-weight: 700; }
 
-        /* ── Sections ── */
-        section {
-            position: relative; z-index: 1;
-            max-width: 1200px; margin: 0 auto;
-            padding: 4rem 2rem;
-        }
-        .section-header {
-            text-align: center; margin-bottom: 3rem;
-        }
-        .section-header h2 {
-            font-size: 2rem; font-weight: 700; margin-bottom: 0.75rem;
-        }
-        .section-header p { color: var(--text-muted); font-size: 1.05rem; }
-
-        /* ── Feature cards ── */
-        .features-grid {
+        .form-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-            gap: 1.5rem;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 1rem; margin-bottom: 1.25rem;
         }
-        .feature-card {
-            background: var(--bg-card);
+        .form-group { display: flex; flex-direction: column; gap: 0.4rem; }
+        .form-group label {
+            font-size: 0.85rem; font-weight: 600; color: var(--text-muted);
+        }
+        .form-input, .form-select, .form-textarea {
+            background: var(--bg-card-sub);
             border: 1px solid var(--border);
-            border-radius: 16px;
-            padding: 2rem;
-            transition: all 0.3s;
-            position: relative;
-            overflow: hidden;
+            color: var(--text);
+            border-radius: 8px;
+            padding: 0.65rem 0.85rem;
+            font-size: 0.92rem;
+            outline: none; transition: border-color 0.2s;
         }
-        .feature-card::before {
-            content: '';
-            position: absolute; top: 0; left: 0; right: 0;
-            height: 3px;
-            background: linear-gradient(90deg, var(--accent), var(--info));
-            opacity: 0;
-            transition: opacity 0.3s;
-        }
-        .feature-card:hover {
+        .form-input:focus, .form-select:focus, .form-textarea:focus {
             border-color: var(--accent);
-            transform: translateY(-4px);
-            box-shadow: 0 8px 32px rgba(124, 91, 245, 0.15);
         }
-        .feature-card:hover::before { opacity: 1; }
-        .feature-icon {
-            font-size: 2.5rem; margin-bottom: 1rem;
-        }
-        .feature-card h3 {
-            font-size: 1.2rem; margin-bottom: 0.5rem;
-        }
-        .feature-card p {
-            color: var(--text-muted); font-size: 0.95rem;
-        }
-        .feature-tag {
-            display: inline-block;
-            background: rgba(124, 91, 245, 0.1);
-            color: var(--accent-light);
-            padding: 0.15rem 0.6rem;
-            border-radius: 6px;
-            font-size: 0.75rem;
-            margin-top: 0.75rem;
-        }
+        .form-textarea { resize: vertical; min-height: 120px; font-family: inherit; }
 
-        /* ── Pipeline ── */
-        .pipeline {
-            display: flex; align-items: center; justify-content: center;
-            gap: 0.5rem; flex-wrap: wrap;
-            margin: 2rem 0;
+        .input-row {
+            display: flex; gap: 0.75rem; margin-bottom: 1.25rem;
         }
-        .pipe-step {
-            display: flex; align-items: center; gap: 0.5rem;
-            background: var(--bg-card);
+        .input-row input { flex: 1; }
+
+        .btn {
+            background: var(--accent); color: #fff;
+            border: none; border-radius: 8px;
+            padding: 0.7rem 1.4rem; font-size: 0.92rem; font-weight: 600;
+            cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
+            transition: all 0.2s; text-decoration: none;
+        }
+        .btn:hover { background: var(--accent-hover); transform: translateY(-1px); }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+        .btn-secondary {
+            background: var(--bg-card-sub); color: var(--text);
+            border: 1px solid var(--border);
+        }
+        .btn-secondary:hover { background: rgba(255, 255, 255, 0.08); border-color: var(--accent); }
+        .btn-danger { background: var(--danger); }
+        .btn-danger:hover { background: #dc2626; }
+
+        /* ── File Upload Dropzone ── */
+        .dropzone {
+            border: 2px dashed var(--border);
+            border-radius: 12px;
+            padding: 2rem;
+            text-align: center;
+            background: rgba(255, 255, 255, 0.01);
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-bottom: 1.25rem;
+        }
+        .dropzone:hover, .dropzone.dragover {
+            border-color: var(--accent);
+            background: rgba(124, 91, 245, 0.05);
+        }
+        .dropzone-icon { font-size: 2.2rem; margin-bottom: 0.5rem; }
+        .dropzone-text { font-size: 0.95rem; font-weight: 600; margin-bottom: 0.25rem; }
+        .dropzone-hint { font-size: 0.8rem; color: var(--text-muted); }
+
+        /* ── Live Progress Section ── */
+        .progress-box {
+            background: var(--bg-card-sub);
             border: 1px solid var(--border);
             border-radius: 10px;
-            padding: 0.75rem 1.25rem;
-            font-size: 0.9rem;
-        }
-        .pipe-arrow { color: var(--accent); font-size: 1.5rem; }
-
-        /* ── Tech stack ── */
-        .tech-grid {
-            display: flex; flex-wrap: wrap; gap: 0.75rem;
-            justify-content: center;
-        }
-        .tech-pill {
-            display: inline-flex; align-items: center; gap: 0.4rem;
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: 999px;
-            padding: 0.5rem 1rem;
-            font-size: 0.85rem;
-            color: var(--text-muted);
-            transition: border-color 0.2s;
-        }
-        .tech-pill:hover { border-color: var(--accent); color: var(--text); }
-
-        /* ── Requirements table ── */
-        .req-card {
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: 16px;
-            padding: 2rem;
-            max-width: 600px;
-            margin: 0 auto;
-        }
-        .req-row {
-            display: flex; justify-content: space-between;
-            padding: 0.75rem 0;
-            border-bottom: 1px solid var(--border);
-            font-size: 0.95rem;
-        }
-        .req-row:last-child { border-bottom: none; }
-        .req-label { color: var(--text-muted); }
-        .req-value { font-weight: 600; }
-
-        /* ── Install steps ── */
-        .install-steps {
-            max-width: 700px; margin: 0 auto;
-            counter-reset: step;
-        }
-        .install-step {
-            display: flex; gap: 1.25rem;
+            padding: 1.25rem;
             margin-bottom: 1.5rem;
-            position: relative;
+            display: none;
         }
-        .step-num {
-            flex-shrink: 0;
-            width: 40px; height: 40px;
-            border-radius: 50%;
-            background: var(--accent);
-            color: #fff;
-            display: flex; align-items: center; justify-content: center;
-            font-weight: 700; font-size: 1rem;
+        .progress-box.active { display: block; }
+        .progress-header {
+            display: flex; justify-content: space-between;
+            font-size: 0.9rem; font-weight: 600; margin-bottom: 0.5rem;
         }
-        .step-content h4 { margin-bottom: 0.25rem; }
-        .step-content p { color: var(--text-muted); font-size: 0.9rem; }
-        .code-block {
-            background: #0d1117;
+        .progress-bar-bg {
+            background: rgba(255, 255, 255, 0.08);
+            border-radius: 999px; height: 8px; overflow: hidden;
+            margin-bottom: 0.75rem;
+        }
+        .progress-bar-fill {
+            background: linear-gradient(90deg, var(--accent), var(--info));
+            height: 100%; width: 0%;
+            transition: width 0.3s ease;
+        }
+        .stage-pill {
+            display: inline-block;
+            background: rgba(124, 91, 245, 0.15);
+            color: var(--accent);
+            padding: 0.2rem 0.6rem;
+            border-radius: 6px;
+            font-size: 0.78rem; font-weight: 700;
+        }
+        .terminal-log {
+            background: #060911;
             border: 1px solid var(--border);
             border-radius: 8px;
-            padding: 0.75rem 1rem;
+            padding: 0.75rem;
             font-family: 'SF Mono', Consolas, monospace;
-            font-size: 0.85rem;
-            color: var(--info);
-            margin-top: 0.5rem;
-            overflow-x: auto;
+            font-size: 0.82rem;
+            color: #93c5fd;
+            max-height: 150px;
+            overflow-y: auto;
+            margin-top: 0.75rem;
+            line-height: 1.5;
         }
+
+        /* ── Result Display ── */
+        .result-box {
+            display: none;
+            margin-top: 1.5rem;
+        }
+        .result-box.active { display: block; }
+        .result-actions {
+            display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.75rem;
+        }
+
+        /* ── Diagnostics Grid ── */
+        .diag-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 1rem;
+        }
+        .diag-item {
+            background: var(--bg-card-sub);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 1rem;
+        }
+        .diag-label { font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.25rem; }
+        .diag-val { font-size: 1.05rem; font-weight: 700; }
 
         /* ── Footer ── */
         footer {
-            position: relative; z-index: 1;
             border-top: 1px solid var(--border);
-            padding: 3rem 2rem;
+            padding: 2rem 1.5rem;
             text-align: center;
             color: var(--text-muted);
             font-size: 0.85rem;
         }
-        footer a { color: var(--accent-light); text-decoration: none; }
+        footer a { color: var(--accent); text-decoration: none; }
         footer a:hover { text-decoration: underline; }
-
-        /* ── Responsive ── */
-        @media (max-width: 768px) {
-            .nav-links { display: none; }
-            .hero { padding: 4rem 1.5rem 2rem; }
-            .pipeline { flex-direction: column; }
-            .pipe-arrow { transform: rotate(90deg); }
-        }
     </style>
 </head>
 <body>
 
-<div class="bg-grid"></div>
-<div class="glow-orb purple"></div>
-<div class="glow-orb blue"></div>
-
-<!-- ═══ NAV ═══ -->
-<nav>
-    <div class="nav-inner">
-        <a class="nav-brand" href="#">
+<!-- ════════ HEADER ════════ -->
+<header>
+    <div class="header-inner">
+        <a class="brand" href="#">
             <img src="https://raw.githubusercontent.com/maksjermy123/Transcrypt/main/src/ui/assets/logo.png" alt="Logo">
-            VoxPaperAi Pro
+            <span>VoxPaperAi Pro</span>
         </a>
-        <ul class="nav-links">
-            <li><a href="#features">Возможности</a></li>
-            <li><a href="#pipeline">Пайплайн</a></li>
-            <li><a href="#tech">Технологии</a></li>
-            <li><a href="#install">Установка</a></li>
-        </ul>
-        <a class="nav-cta" href="https://github.com/maksjermy123/Transcrypt/releases">⬇ Скачать</a>
+        <div id="engineStatusBadge" class="engine-badge offline">
+            <span class="dot pulse"></span>
+            <span id="engineStatusText">Движок не обнаружен</span>
+        </div>
     </div>
-</nav>
+</header>
 
-<!-- ═══ HERO ═══ -->
-<div class="hero">
-    <div class="hero-badge">
-        <span class="dot"></span>
-        Версия 1.0.0 — macOS
+<div class="container">
+
+    <!-- ════════ ENGINE BANNER (Shows when local engine is not connected) ════════ -->
+    <div id="engineNoticeBanner" class="engine-banner">
+        <div class="engine-banner-text">
+            <h4>💡 Для работы функций запустите локальный движок на компьютере</h4>
+            <p>Движок использует домашний IP (обход блокировок YouTube), процессор/видеокарту и ffmpeg. Скачайте лаунчер в 1 клик:</p>
+        </div>
+        <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+            <a class="engine-banner-btn" href="https://raw.githubusercontent.com/maksjermy123/Transcrypt/main/run_mac.command" download>
+                🍎 macOS (run_mac.command)
+            </a>
+            <a class="engine-banner-btn" style="background:#0284c7;" href="https://raw.githubusercontent.com/maksjermy123/Transcrypt/main/run_windows.bat" download>
+                🪟 Windows (run_windows.bat)
+            </a>
+        </div>
     </div>
-    <h1>Транскрибация. Перевод.<br>Конвертация. Всё в одном.</h1>
-    <p>Локальное десктопное приложение для обработки медиа: транскрибация через Whisper, перевод через Google&nbsp;/&nbsp;DeepL, конвертация форматов — без облачных зависимостей.</p>
-    <div class="hero-actions">
-        <a class="btn btn-primary" href="https://github.com/maksjermy123/Transcrypt/releases">
-            ⬇ Скачать .dmg
-        </a>
-        <a class="btn btn-secondary" href="https://github.com/maksjermy123/Transcrypt">
-            ⭐ GitHub
-        </a>
+
+    <!-- ════════ TABS NAV ════════ -->
+    <div class="nav-tabs">
+        <button class="tab-btn active" onclick="switchTab('transcribe')">🎙 Транскрибация</button>
+        <button class="tab-btn" onclick="switchTab('media')">🎬 Медиа</button>
+        <button class="tab-btn" onclick="switchTab('converter')">🔄 Конвертер</button>
+        <button class="tab-btn" onclick="switchTab('translate')">🌍 Перевод</button>
+        <button class="tab-btn" onclick="switchTab('diag')">⚙️ Диагностика</button>
     </div>
+
+    <!-- ════════════════════════════════════════════════════════════ -->
+    <!--  TAB 1: ТРАНСКРИБАЦИЯ                                      -->
+    <!-- ════════════════════════════════════════════════════════════ -->
+    <div id="tab-transcribe" class="tab-panel active">
+        <div class="card">
+            <div class="card-header">
+                <h3>🎙 Транскрибация речи (Whisper + Subtitles First)</h3>
+                <span class="stage-pill">⚡ Субтитры за 2 сек или Whisper AI</span>
+            </div>
+
+            <!-- YouTube URL input -->
+            <div class="form-group" style="margin-bottom:1rem;">
+                <label>YouTube ссылка или видео-URL:</label>
+                <div class="input-row">
+                    <input type="text" id="transcribeUrl" class="form-input" placeholder="https://www.youtube.com/watch?v=...">
+                    <button class="btn btn-secondary" onclick="pasteClipboard('transcribeUrl')">📋 Вставить</button>
+                </div>
+            </div>
+
+            <!-- OR Upload Local File -->
+            <div class="dropzone" id="audioDropzone" onclick="document.getElementById('audioFileInput').click()">
+                <div class="dropzone-icon">📁</div>
+                <div class="dropzone-text" id="audioDropzoneText">Или нажмите сюда, чтобы выбрать аудио/видео с диска</div>
+                <div class="dropzone-hint">Поддерживаются MP3, WAV, M4A, FLAC, MP4, MKV, WEBM (до любых размеров)</div>
+                <input type="file" id="audioFileInput" style="display:none" accept="audio/*,video/*" onchange="handleFileSelect(event, 'audioDropzoneText', 'selectedAudioPath')">
+            </div>
+            <input type="hidden" id="selectedAudioPath" value="">
+
+            <!-- Parameters Grid -->
+            <div class="form-grid">
+                <div class="form-group">
+                    <label>Модель Whisper:</label>
+                    <select id="transcribeModel" class="form-select">
+                        <option value="base" selected>base (быстро и точно)</option>
+                        <option value="tiny">tiny (ультра-быстро)</option>
+                        <option value="small">small (повышенная точность)</option>
+                        <option value="medium">medium (высокая точность)</option>
+                        <option value="large-v3">large-v3 (студийное качество)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Язык аудио:</label>
+                    <select id="transcribeSourceLang" class="form-select">
+                        <option value="auto" selected>auto (автоопределение)</option>
+                        <option value="ru">Русский (ru)</option>
+                        <option value="en">Английский (en)</option>
+                        <option value="uk">Украинский (uk)</option>
+                        <option value="de">Немецкий (de)</option>
+                        <option value="fr">Французский (fr)</option>
+                        <option value="es">Испанский (es)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Перевод на (опционально):</label>
+                    <select id="transcribeTargetLang" class="form-select">
+                        <option value="-" selected>- Без перевода -</option>
+                        <option value="ru">Русский (ru)</option>
+                        <option value="en">Английский (en)</option>
+                        <option value="uk">Украинский (uk)</option>
+                        <option value="de">Немецкий (de)</option>
+                        <option value="fr">Французский (fr)</option>
+                        <option value="es">Испанский (es)</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Start / Stop Button -->
+            <div style="display:flex; gap:0.75rem;">
+                <button id="btnStartTranscribe" class="btn" style="flex:1;" onclick="startTranscribe()">
+                    ▶ НАЧАТЬ ОБРАБОТКУ
+                </button>
+                <button id="btnStopTranscribe" class="btn btn-danger" style="display:none;" onclick="stopOperation()">
+                    🛑 СТОП
+                </button>
+            </div>
+        </div>
+
+        <!-- Live Progress Section -->
+        <div id="transcribeProgressBox" class="progress-box">
+            <div class="progress-header">
+                <span id="transcribeStageText">Инициализация...</span>
+                <span id="transcribePercentText">0%</span>
+            </div>
+            <div class="progress-bar-bg">
+                <div id="transcribeProgressBar" class="progress-bar-fill"></div>
+            </div>
+            <div class="terminal-log" id="transcribeTerminalLog">Ожидание...</div>
+        </div>
+
+        <!-- Result Section -->
+        <div id="transcribeResultBox" class="card result-box">
+            <div class="card-header">
+                <h3>✅ Результат транскрибации</h3>
+                <span id="resultSourceTag" class="stage-pill"></span>
+            </div>
+            <div class="result-actions">
+                <button class="btn btn-secondary" onclick="copyResultText()">📋 Копировать текст</button>
+                <a id="btnDownloadTxt" class="btn btn-secondary" href="#" download>📥 TXT</a>
+                <a id="btnDownloadSrt" class="btn btn-secondary" href="#" download>📥 SRT (Субтитры)</a>
+                <a id="btnDownloadVtt" class="btn btn-secondary" href="#" download>📥 VTT</a>
+                <a id="btnDownloadJson" class="btn btn-secondary" href="#" download>📥 JSON</a>
+            </div>
+            <textarea id="transcribeResultText" class="form-textarea" style="min-height:280px;" readonly></textarea>
+        </div>
+    </div>
+
+    <!-- ════════════════════════════════════════════════════════════ -->
+    <!--  TAB 2: МЕДИА                                              -->
+    <!-- ════════════════════════════════════════════════════════════ -->
+    <div id="tab-media" class="tab-panel">
+        <div class="card">
+            <div class="card-header">
+                <h3>🎬 Медиа операции (YouTube, ffmpeg)</h3>
+            </div>
+
+            <div class="form-group" style="margin-bottom:1rem;">
+                <label>Действие:</label>
+                <select id="mediaAction" class="form-select" onchange="updateMediaFields()">
+                    <option value="download_video">🎬 Скачать ВИДЕО (MP4 H.264/AAC)</option>
+                    <option value="download_audio">🎵 Скачать АУДИО (MP3 192k)</option>
+                    <option value="clean_audio">🎧 Очистить аудио (FFmpeg фильтры: afftdn + loudnorm)</option>
+                    <option value="hardsub">🎥 Вшить субтитры в видео (Hardsub)</option>
+                </select>
+            </div>
+
+            <div class="form-group" style="margin-bottom:1rem;">
+                <label>Ссылка на YouTube или онлайн-видео:</label>
+                <div class="input-row">
+                    <input type="text" id="mediaUrl" class="form-input" placeholder="https://www.youtube.com/watch?v=...">
+                    <button class="btn btn-secondary" onclick="pasteClipboard('mediaUrl')">📋 Вставить</button>
+                </div>
+            </div>
+
+            <div id="mediaFileGroup" class="dropzone" style="display:none;" onclick="document.getElementById('mediaFileInput').click()">
+                <div class="dropzone-icon">🎧</div>
+                <div class="dropzone-text" id="mediaDropText">Выберите локальный файл для обработки</div>
+                <input type="file" id="mediaFileInput" style="display:none" onchange="handleFileSelect(event, 'mediaDropText', 'mediaUploadedPath')">
+            </div>
+            <input type="hidden" id="mediaUploadedPath" value="">
+
+            <button id="btnStartMedia" class="btn" style="width:100%;" onclick="startMediaAction()">
+                ▶ ВЫПОЛНИТЬ ДЕЙСТВИЕ
+            </button>
+        </div>
+
+        <div id="mediaResultBox" class="card result-box">
+            <h3>✅ Готово!</h3>
+            <p style="margin: 0.75rem 0;" id="mediaResultMsg">Файл успешно обработан.</p>
+            <a id="btnMediaDownload" class="btn" href="#" download>📥 Скачать результат</a>
+        </div>
+    </div>
+
+    <!-- ════════════════════════════════════════════════════════════ -->
+    <!--  TAB 3: КОНВЕРТЕР                                          -->
+    <!-- ════════════════════════════════════════════════════════════ -->
+    <div id="tab-converter" class="tab-panel">
+        <div class="card">
+            <div class="card-header">
+                <h3>🔄 Пакетный конвертер форматов</h3>
+                <span class="stage-pill">Медиа · Документы · Картинки</span>
+            </div>
+
+            <div class="dropzone" onclick="document.getElementById('convertFileInput').click()">
+                <div class="dropzone-icon">🔄</div>
+                <div class="dropzone-text" id="convertDropText">Выберите файл для конвертации</div>
+                <div class="dropzone-hint">Видео, аудио, PDF, DOCX, TXT, PNG, JPG, WEBP</div>
+                <input type="file" id="convertFileInput" style="display:none" onchange="handleFileSelect(event, 'convertDropText', 'convertFilePath')">
+            </div>
+            <input type="hidden" id="convertFilePath" value="">
+
+            <div class="form-group" style="margin-bottom:1.25rem;">
+                <label>Целевой формат:</label>
+                <select id="convertTargetFmt" class="form-select">
+                    <optgroup label="Аудио">
+                        <option value="mp3" selected>MP3</option>
+                        <option value="wav">WAV</option>
+                        <option value="aac">AAC</option>
+                        <option value="flac">FLAC</option>
+                        <option value="ogg">OGG</option>
+                    </optgroup>
+                    <optgroup label="Видео">
+                        <option value="mp4">MP4 (H.264/AAC)</option>
+                        <option value="mkv">MKV</option>
+                        <option value="webm">WEBM</option>
+                        <option value="mov">MOV</option>
+                    </optgroup>
+                    <optgroup label="Документы">
+                        <option value="pdf">PDF</option>
+                        <option value="docx">DOCX (Word)</option>
+                        <option value="txt">TXT</option>
+                    </optgroup>
+                    <optgroup label="Изображения">
+                        <option value="png">PNG</option>
+                        <option value="jpg">JPG</option>
+                        <option value="webp">WEBP</option>
+                    </optgroup>
+                </select>
+            </div>
+
+            <button class="btn" style="width:100%;" onclick="startConvert()">
+                🔄 КОНВЕРТИРОВАТЬ
+            </button>
+        </div>
+
+        <div id="convertResultBox" class="card result-box">
+            <h3>✅ Конвертация завершена</h3>
+            <p style="margin: 0.75rem 0;">Сконвертированный файл готов к скачиванию:</p>
+            <a id="btnConvertDownload" class="btn" href="#" download>📥 Скачать сконвертированный файл</a>
+        </div>
+    </div>
+
+    <!-- ════════════════════════════════════════════════════════════ -->
+    <!--  TAB 4: ПЕРЕВОД                                            -->
+    <!-- ════════════════════════════════════════════════════════════ -->
+    <div id="tab-translate" class="tab-panel">
+        <div class="card">
+            <div class="card-header">
+                <h3>🌍 Перевод текста и документов</h3>
+                <span class="stage-pill">Google Translate</span>
+            </div>
+
+            <div class="form-group" style="margin-bottom:1rem;">
+                <label>Целевой язык:</label>
+                <select id="textTargetLang" class="form-select" style="max-width:260px;">
+                    <option value="ru" selected>Русский (ru)</option>
+                    <option value="en">Английский (en)</option>
+                    <option value="uk">Украинский (uk)</option>
+                    <option value="de">Немецкий (de)</option>
+                    <option value="fr">Французский (fr)</option>
+                    <option value="es">Испанский (es)</option>
+                </select>
+            </div>
+
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:1rem; margin-bottom:1rem;">
+                <div class="form-group">
+                    <label>Исходный текст:</label>
+                    <textarea id="translateSourceText" class="form-textarea" placeholder="Вставьте текст..."></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Перевод:</label>
+                    <textarea id="translateResultArea" class="form-textarea" placeholder="Перевод появится здесь..." readonly></textarea>
+                </div>
+            </div>
+
+            <button class="btn" onclick="startTranslateText()">🌍 Перевести текст</button>
+        </div>
+    </div>
+
+    <!-- ════════════════════════════════════════════════════════════ -->
+    <!--  TAB 5: ДИАГНОСТИКА                                        -->
+    <!-- ════════════════════════════════════════════════════════════ -->
+    <div id="tab-diag" class="tab-panel">
+        <div class="card">
+            <div class="card-header">
+                <h3>⚙️ Статус локального движка и оборудования</h3>
+                <button class="btn btn-secondary" onclick="checkEngineHealth()">🔄 Обновить статус</button>
+            </div>
+
+            <div class="diag-grid">
+                <div class="diag-item">
+                    <div class="diag-label">Статус связи</div>
+                    <div class="diag-val" id="diagStatus">—</div>
+                </div>
+                <div class="diag-item">
+                    <div class="diag-label">Операционная система</div>
+                    <div class="diag-val" id="diagOS">—</div>
+                </div>
+                <div class="diag-item">
+                    <div class="diag-label">Устройство вычислений</div>
+                    <div class="diag-val" id="diagDevice">—</div>
+                </div>
+                <div class="diag-item">
+                    <div class="diag-label">Потоки CPU</div>
+                    <div class="diag-val" id="diagThreads">—</div>
+                </div>
+                <div class="diag-item">
+                    <div class="diag-label">ffmpeg / ffprobe</div>
+                    <div class="diag-val" id="diagFFmpeg">—</div>
+                </div>
+                <div class="diag-item">
+                    <div class="diag-label">LibreOffice (PDF LAYOUT)</div>
+                    <div class="diag-val" id="diagLibre">—</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3>📥 Кроссплатформенные лаунчеры</h3>
+            <p style="color:var(--text-muted); margin:0.5rem 0 1rem;">
+                Запустите один раз на компьютере — откроется этот сайт со всеми вашими вычислительными мощностями:
+            </p>
+            <div style="display:flex; gap:0.75rem; flex-wrap:wrap;">
+                <a class="btn" href="https://raw.githubusercontent.com/maksjermy123/Transcrypt/main/run_mac.command" download>
+                    🍎 Скачать для macOS (run_mac.command)
+                </a>
+                <a class="btn" style="background:#0284c7;" href="https://raw.githubusercontent.com/maksjermy123/Transcrypt/main/run_windows.bat" download>
+                    🪟 Скачать для Windows (run_windows.bat)
+                </a>
+                <a class="btn btn-secondary" href="https://raw.githubusercontent.com/maksjermy123/Transcrypt/main/run_linux.sh" download>
+                    🐧 Скачать для Linux (run_linux.sh)
+                </a>
+            </div>
+        </div>
+    </div>
+
 </div>
 
-<!-- ═══ FEATURES ═══ -->
-<section id="features">
-    <div class="section-header">
-        <h2>Что умеет VoxPaperAi Pro</h2>
-        <p>Четыре мощных модуля в одном окне</p>
-    </div>
-    <div class="features-grid">
-        <div class="feature-card">
-            <div class="feature-icon">🎙</div>
-            <h3>Транскрибация</h3>
-            <p>Локальные аудио/видео файлы, YouTube-ссылки, импорт URL из <code>.txt</code>. Автовыбор CPU-потоков и модели Whisper.</p>
-            <span class="feature-tag">Whisper · OpenAI</span>
-        </div>
-        <div class="feature-card">
-            <div class="feature-icon">🎬</div>
-            <h3>Медиа-обработка</h3>
-            <p>Скачивание видео/аудио с YouTube, очистка аудио-дорожки, вшивание субтитров в видео.</p>
-            <span class="feature-tag">yt-dlp · ffmpeg</span>
-        </div>
-        <div class="feature-card">
-            <div class="feature-icon">🔄</div>
-            <h3>Конвертер</h3>
-            <p>Конвертация медиа-файлов, документов и базовых форматов изображений между любыми популярными форматами.</p>
-            <span class="feature-tag">ffmpeg · LibreOffice</span>
-        </div>
-        <div class="feature-card">
-            <div class="feature-icon">🌍</div>
-            <h3>Перевод</h3>
-            <p>Google и DeepL переводчики. Режимы <strong>PDF FAST</strong> и <strong>PDF LAYOUT</strong> с сохранением форматирования.</p>
-            <span class="feature-tag">Google · DeepL</span>
-        </div>
-        <div class="feature-card">
-            <div class="feature-icon">📋</div>
-            <h3>Живая очередь</h3>
-            <p>Единый блок очереди задач: цветные статусы, прогресс пайплайна, последовательное выполнение без конфликтов.</p>
-            <span class="feature-tag">Task Queue</span>
-        </div>
-        <div class="feature-card">
-            <div class="feature-icon">🛡</div>
-            <h3>Устойчивость</h3>
-            <p>Автоматические ретраи с backoff, резервный Chrome-TLS канал при HTTP&nbsp;429 от Google, TLS-impersonation для YouTube.</p>
-            <span class="feature-tag">curl-cffi · Deno</span>
-        </div>
-    </div>
-</section>
-
-<!-- ═══ PIPELINE ═══ -->
-<section id="pipeline">
-    <div class="section-header">
-        <h2>Пайплайн обработки</h2>
-        <p>Автоматическая цепочка от входного файла до готового результата</p>
-    </div>
-    <div class="pipeline">
-        <div class="pipe-step">📁 Файл / URL</div>
-        <span class="pipe-arrow">→</span>
-        <div class="pipe-step">⬇ Загрузка</div>
-        <span class="pipe-arrow">→</span>
-        <div class="pipe-step">🎙 Whisper</div>
-        <span class="pipe-arrow">→</span>
-        <div class="pipe-step">📝 Субтитры</div>
-        <span class="pipe-arrow">→</span>
-        <div class="pipe-step">🌍 Перевод</div>
-        <span class="pipe-arrow">→</span>
-        <div class="pipe-step">✅ Результат</div>
-    </div>
-</section>
-
-<!-- ═══ TECH ═══ -->
-<section id="tech">
-    <div class="section-header">
-        <h2>Технологии</h2>
-        <p>Надёжный стек для локальной обработки</p>
-    </div>
-    <div class="tech-grid">
-        <span class="tech-pill">🐍 Python 3.12</span>
-        <span class="tech-pill">🖼 PyQt6</span>
-        <span class="tech-pill">🎙 OpenAI Whisper</span>
-        <span class="tech-pill">🎬 ffmpeg / ffprobe</span>
-        <span class="tech-pill">⬇ yt-dlp</span>
-        <span class="tech-pill">🔒 curl-cffi</span>
-        <span class="tech-pill">🦕 Deno</span>
-        <span class="tech-pill">🌍 Google Translate</span>
-        <span class="tech-pill">📘 DeepL API</span>
-        <span class="tech-pill">📄 python-docx</span>
-        <span class="tech-pill">📕 PyMuPDF</span>
-        <span class="tech-pill">🍎 macOS native</span>
-    </div>
-</section>
-
-<!-- ═══ INSTALL ═══ -->
-<section id="install">
-    <div class="section-header">
-        <h2>Установка</h2>
-        <p>Два варианта: готовый .dmg или запуск из исходников</p>
-    </div>
-
-    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(320px,1fr)); gap: 2rem; max-width:900px; margin:0 auto;">
-        <!-- DMG -->
-        <div class="req-card">
-            <h3 style="margin-bottom:1rem">📦 Готовый установщик</h3>
-            <div class="install-step">
-                <div class="step-num">1</div>
-                <div class="step-content">
-                    <h4>Скачайте .dmg</h4>
-                    <p>Из раздела <a href="https://github.com/maksjermy123/Transcrypt/releases" style="color:var(--accent-light)">Releases</a> на GitHub</p>
-                </div>
-            </div>
-            <div class="install-step">
-                <div class="step-num">2</div>
-                <div class="step-content">
-                    <h4>Перетащите в Applications</h4>
-                    <p>Стандартная установка macOS</p>
-                </div>
-            </div>
-            <div class="install-step">
-                <div class="step-num">3</div>
-                <div class="step-content">
-                    <h4>Запустите</h4>
-                    <p>При первом запуске: ПКМ → Открыть</p>
-                </div>
-            </div>
-        </div>
-
-        <!-- Dev -->
-        <div class="req-card">
-            <h3 style="margin-bottom:1rem">👨‍💻 Из исходников</h3>
-            <div class="install-step">
-                <div class="step-num">1</div>
-                <div class="step-content">
-                    <h4>Клонируйте репо</h4>
-                    <div class="code-block">git clone https://github.com/maksjermy123/Transcrypt.git</div>
-                </div>
-            </div>
-            <div class="install-step">
-                <div class="step-num">2</div>
-                <div class="step-content">
-                    <h4>Запустите</h4>
-                    <div class="code-block">cd Transcrypt && ./run_dev.command</div>
-                </div>
-            </div>
-            <div class="install-step">
-                <div class="step-num">3</div>
-                <div class="step-content">
-                    <h4>Тесты</h4>
-                    <div class="code-block">./run_dev.command --tests</div>
-                </div>
-            </div>
-        </div>
-    </div>
-</section>
-
-<!-- ═══ REQUIREMENTS ═══ -->
-<section>
-    <div class="section-header">
-        <h2>Системные требования</h2>
-    </div>
-    <div class="req-card">
-        <div class="req-row">
-            <span class="req-label">ОС</span>
-            <span class="req-value">macOS 12+ (Monterey и выше)</span>
-        </div>
-        <div class="req-row">
-            <span class="req-label">Python</span>
-            <span class="req-value">3.10 – 3.12</span>
-        </div>
-        <div class="req-row">
-            <span class="req-label">Процессор</span>
-            <span class="req-value">Intel или Apple Silicon</span>
-        </div>
-        <div class="req-row">
-            <span class="req-label">ОЗУ</span>
-            <span class="req-value">8 GB+ (16 GB для large модели)</span>
-        </div>
-        <div class="req-row">
-            <span class="req-label">Диск</span>
-            <span class="req-value">~2 GB (с моделями Whisper)</span>
-        </div>
-        <div class="req-row">
-            <span class="req-label">Дополнительно</span>
-            <span class="req-value">ffmpeg, Deno (brew install)</span>
-        </div>
-    </div>
-</section>
-
-<!-- ═══ FOOTER ═══ -->
+<!-- ════════ FOOTER ════════ -->
 <footer>
     <p>
-        <strong>VoxPaperAi Pro</strong> v1.0.0 · 
-        <a href="https://github.com/maksjermy123/Transcrypt">GitHub</a> · 
-        <a href="https://github.com/maksjermy123/Transcrypt/issues">Issues</a> · 
-        <a href="https://github.com/maksjermy123/Transcrypt/blob/main/LICENSE">MIT License</a>
+        <strong>VoxPaperAi Pro</strong> v1.0.0 ·
+        <a href="https://github.com/maksjermy123/Transcrypt">GitHub Репозиторий</a> ·
+        Симбиоз Web и Local Compute
     </p>
-    <p style="margin-top:0.5rem">© 2026 VoxPaperAi Pro</p>
 </footer>
+
+<!-- ════════ JAVASCRIPT LOGIC ════════ -->
+<script>
+const ENGINE_URL = "http://127.0.0.1:8765";
+let engineConnected = false;
+let pollInterval = null;
+
+// Switch tab
+function switchTab(tabId) {
+    document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    
+    event.currentTarget.classList.add('active');
+    document.getElementById('tab-' + tabId).classList.add('active');
+}
+
+// Paste from clipboard helper
+async function pasteClipboard(elementId) {
+    try {
+        const text = await navigator.clipboard.readText();
+        document.getElementById(elementId).value = text.trim();
+    } catch(e) {
+        alert("Пожалуйста, разрешите доступ к буферу обмена или вставьте ссылку через Ctrl+V / Cmd+V");
+    }
+}
+
+// Check engine health
+async function checkEngineHealth() {
+    try {
+        const res = await fetch(`${ENGINE_URL}/api/health`, { method: "GET" });
+        if (res.ok) {
+            const data = await res.json();
+            setEngineStatus(true, data);
+            return;
+        }
+    } catch(e) {}
+    setEngineStatus(false);
+}
+
+function setEngineStatus(online, data = null) {
+    engineConnected = online;
+    const badge = document.getElementById("engineStatusBadge");
+    const text = document.getElementById("engineStatusText");
+    const banner = document.getElementById("engineNoticeBanner");
+
+    if (online && data) {
+        badge.className = "engine-badge online";
+        text.innerText = `🟢 Подключён: ${data.system_name} (${data.device})`;
+        banner.style.display = "none";
+
+        document.getElementById("diagStatus").innerText = "Подключен (127.0.0.1:8765)";
+        document.getElementById("diagOS").innerText = data.system_name;
+        document.getElementById("diagDevice").innerText = data.device;
+        document.getElementById("diagThreads").innerText = data.recommended_threads;
+        document.getElementById("diagFFmpeg").innerText = data.ffmpeg ? "✅ Доступен" : "⚠️ Не найден";
+        document.getElementById("diagLibre").innerText = data.libreoffice ? "✅ Доступен" : "⚪ Не установлен (опционально)";
+    } else {
+        badge.className = "engine-badge offline";
+        text.innerText = "⚪ Движок не обнаружен";
+        banner.style.display = "flex";
+        document.getElementById("diagStatus").innerText = "Не подключен";
+    }
+}
+
+// File upload helper
+async function handleFileSelect(event, labelId, targetInputId) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    if (!engineConnected) {
+        alert("⚠️ Для загрузки файлов сначала запустите локальный движок (run_mac.command или run_windows.bat)");
+        return;
+    }
+
+    document.getElementById(labelId).innerText = `⏳ Загрузка: ${file.name}...`;
+
+    const formData = new FormData();
+    formData.append("file", file);
+
+    try {
+        const res = await fetch(`${ENGINE_URL}/api/upload`, {
+            method: "POST",
+            body: formData
+        });
+        const json = await res.json();
+        if (json.status === "success") {
+            document.getElementById(labelId).innerText = `✅ Выбран: ${file.name}`;
+            document.getElementById(targetInputId).value = json.file_path;
+        } else {
+            alert("Ошибка загрузки файла: " + json.message);
+        }
+    } catch(e) {
+        alert("Ошибка связи с движком: " + e);
+    }
+}
+
+// Start Transcription
+async function startTranscribe() {
+    if (!engineConnected) {
+        alert("⚠️ Локальный движок не запущен!\nЗапустите run_mac.command (на Mac) или run_windows.bat (на Windows).");
+        return;
+    }
+
+    const url = document.getElementById("transcribeUrl").value.trim();
+    const filePath = document.getElementById("selectedAudioPath").value.trim();
+
+    if (!url && !filePath) {
+        alert("Пожалуйста, введите YouTube ссылку или выберите файл с диска!");
+        return;
+    }
+
+    const payload = {
+        url: url,
+        file_path: filePath,
+        model: document.getElementById("transcribeModel").value,
+        language: document.getElementById("transcribeSourceLang").value,
+        translate_to: document.getElementById("transcribeTargetLang").value,
+    };
+
+    // UI state
+    document.getElementById("btnStartTranscribe").style.display = "none";
+    document.getElementById("btnStopTranscribe").style.display = "inline-flex";
+    document.getElementById("transcribeProgressBox").classList.add("active");
+    document.getElementById("transcribeResultBox").classList.remove("active");
+
+    startProgressPolling("transcribe");
+
+    try {
+        const res = await fetch(`${ENGINE_URL}/api/transcribe`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+
+        if (data.status === "success") {
+            document.getElementById("resultSourceTag").innerText = data.source;
+            document.getElementById("transcribeResultText").value = data.text;
+            
+            document.getElementById("btnDownloadTxt").href = ENGINE_URL + data.files.txt;
+            document.getElementById("btnDownloadSrt").href = ENGINE_URL + data.files.srt;
+            document.getElementById("btnDownloadVtt").href = ENGINE_URL + data.files.vtt;
+            document.getElementById("btnDownloadJson").href = ENGINE_URL + data.files.json;
+
+            document.getElementById("transcribeResultBox").classList.add("active");
+        } else {
+            alert("Ошибка транскрибации: " + data.message);
+        }
+    } catch(e) {
+        alert("Ошибка запроса: " + e);
+    } finally {
+        stopProgressPolling();
+        document.getElementById("btnStartTranscribe").style.display = "inline-flex";
+        document.getElementById("btnStopTranscribe").style.display = "none";
+    }
+}
+
+// Progress Polling
+function startProgressPolling(prefix) {
+    if (pollInterval) clearInterval(pollInterval);
+    pollInterval = setInterval(async () => {
+        try {
+            const res = await fetch(`${ENGINE_URL}/api/progress`);
+            if (res.ok) {
+                const p = await res.json();
+                document.getElementById(`${prefix}ProgressBar`).style.width = p.percent + "%";
+                document.getElementById(`${prefix}PercentText`).innerText = p.percent + "%";
+                document.getElementById(`${prefix}StageText`).innerText = p.stage + (p.eta ? ` (${p.eta})` : "");
+                
+                if (p.log && p.log.length > 0) {
+                    const term = document.getElementById(`${prefix}TerminalLog`);
+                    term.innerHTML = p.log.slice(-15).join("<br>");
+                    term.scrollTop = term.scrollHeight;
+                }
+            }
+        } catch(e) {}
+    }, 800);
+}
+
+function stopProgressPolling() {
+    if (pollInterval) {
+        clearInterval(pollInterval);
+        pollInterval = null;
+    }
+}
+
+async function stopOperation() {
+    try {
+        await fetch(`${ENGINE_URL}/api/stop`, { method: "POST" });
+    } catch(e) {}
+}
+
+function copyResultText() {
+    const text = document.getElementById("transcribeResultText").value;
+    navigator.clipboard.writeText(text);
+    alert("📋 Текст скопирован в буфер обмена!");
+}
+
+// Media Tab Helper
+function updateMediaFields() {
+    const action = document.getElementById("mediaAction").value;
+    const fileGroup = document.getElementById("mediaFileGroup");
+    fileGroup.style.display = (action === "clean_audio" || action === "hardsub") ? "block" : "none";
+}
+
+async function startMediaAction() {
+    if (!engineConnected) {
+        alert("Запустите локальный движок для выполнения медиа-операций!");
+        return;
+    }
+
+    const payload = {
+        action: document.getElementById("mediaAction").value,
+        url: document.getElementById("mediaUrl").value.trim(),
+        file_path: document.getElementById("mediaUploadedPath").value.trim(),
+    };
+
+    document.getElementById("btnStartMedia").disabled = true;
+    try {
+        const res = await fetch(`${ENGINE_URL}/api/media`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (data.status === "success") {
+            document.getElementById("btnMediaDownload").href = ENGINE_URL + data.file;
+            document.getElementById("mediaResultBox").classList.add("active");
+        } else {
+            alert("Ошибка: " + data.message);
+        }
+    } catch(e) {
+        alert("Ошибка: " + e);
+    } finally {
+        document.getElementById("btnStartMedia").disabled = false;
+    }
+}
+
+// Convert
+async function startConvert() {
+    if (!engineConnected) {
+        alert("Запустите локальный движок для конвертации!");
+        return;
+    }
+    const path = document.getElementById("convertFilePath").value;
+    if (!path) {
+        alert("Выберите файл для конвертации!");
+        return;
+    }
+
+    const payload = {
+        file_path: path,
+        target_format: document.getElementById("convertTargetFmt").value
+    };
+
+    try {
+        const res = await fetch(`${ENGINE_URL}/api/convert`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (data.status === "success") {
+            document.getElementById("btnConvertDownload").href = ENGINE_URL + data.file;
+            document.getElementById("convertResultBox").classList.add("active");
+        } else {
+            alert("Ошибка конвертации: " + data.message);
+        }
+    } catch(e) {
+        alert("Ошибка: " + e);
+    }
+}
+
+// Translate
+async function startTranslateText() {
+    if (!engineConnected) {
+        alert("Запустите локальный движок!");
+        return;
+    }
+    const text = document.getElementById("translateSourceText").value.trim();
+    if (!text) return;
+
+    try {
+        const res = await fetch(`${ENGINE_URL}/api/translate`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                text: text,
+                target_lang: document.getElementById("textTargetLang").value
+            })
+        });
+        const data = await res.json();
+        if (data.status === "success") {
+            document.getElementById("translateResultArea").value = data.translated_text;
+        } else {
+            alert("Ошибка перевода: " + data.message);
+        }
+    } catch(e) {
+        alert("Ошибка: " + e);
+    }
+}
+
+// Init
+checkEngineHealth();
+setInterval(checkEngineHealth, 3000);
+</script>
 
 </body>
 </html>
