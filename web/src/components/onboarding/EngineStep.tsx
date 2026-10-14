@@ -65,10 +65,6 @@ export function EngineStep({ onNext }: { onNext: () => void }) {
 
   const browserReady = phase === "ready" || engineStatus === "ready";
 
-  // Если пользователь выбрал "browser" — нужен только браузерный движок
-  // Если выбрал "engine" — после установки браузерного переходим к установке локального
-  const skipLocalEngine = mode === "browser" || (mode === "engine" && engineServerOnline);
-
   return (
     <motion.div
       initial={{ opacity: 0, y: 16 }}
@@ -177,13 +173,15 @@ export function EngineStep({ onNext }: { onNext: () => void }) {
         )}
       </div>
 
-      {/* Локальный движок — только если пользователь выбрал "engine" mode */}
-      {mode === "engine" && browserReady && (
+      {/* Локальный движок — показываем всегда после установки браузерного.
+          Если mode==='engine' и он уже online — кнопка "Продолжить".
+          Если mode==='browser' — пользователь добавляет движок опционально. */}
+      {browserReady && !engineServerOnline && (
         <LocalEngineStep onSkip={onNext} />
       )}
 
-      {/* Если режим "browser" — после установки браузерного движка можно сразу продолжить */}
-      {skipLocalEngine && browserReady && (
+      {/* Если движок уже online — даём продолжить */}
+      {browserReady && engineServerOnline && (
         <div className="mt-5 text-center">
           <button
             onClick={onNext}
