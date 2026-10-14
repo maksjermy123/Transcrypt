@@ -133,13 +133,24 @@ if !HEALTH_OK!==1 (
 )
 
 REM ─── 9. Открытие браузера ──────────────────────────────────────
-echo [9/9] Открываем веб-интерфейс...
+echo [9/10] Открываем веб-интерфейс...
 start "" "https://maksjermy123.github.io/Transcrypt/"
 
-echo.
-echo =======================================================
-echo ✓ Установка завершена!
-echo =======================================================
+REM ─── 9.5. Автозапуск с системой (запись в реестре) ────────────
+echo [9.5/10] Настраиваем автозапуск с системой (Windows Registry)...
+set AUTORUN_KEY=HKCU\Software\Microsoft\Windows\CurrentVersion\Run
+set AUTORUN_VALUE=TranscryptEngine
+set AUTORUN_DATA="%VENV_DIR%\Scripts\pythonw.exe" "%ENGINE_FILE%"
+reg add "%AUTORUN_KEY%" /v "%AUTORUN_VALUE%" /t REG_SZ /d "%AUTORUN_DATA%" /f >nul
+if not errorlevel 1 (
+    echo [OK] Автозапуск настроен — движок будет стартовать при входе в систему
+) else (
+    echo [!] Не удалось настроить автозапуск через реестр. Движок запущен вручную.
+    echo     Чтобы добавить автозапуск: Win+R → shell:startup → создать ярлык на:
+    echo     %VENV_DIR%\Scripts\pythonw.exe %ENGINE_FILE%
+)
+
+REM ─── 10. Финальное сообщение ──────────────────────────────────
 echo.
 echo Локальный движок запущен на http://127.0.0.1:8765
 echo Веб-интерфейс открыт в браузере.
@@ -151,9 +162,10 @@ echo   3. Теперь доступны URL-задачи (YouTube, TikTok, Insta
 echo.
 echo Управление движком:
 echo   • Лог:    type %LOG_FILE%
-echo   • Стоп:   taskkill /PID %ENGINE_PID% /F
+echo   • Стоп:   taskkill /im pythonw.exe /f
 echo   • Старт:  %VENV_DIR%\Scripts\pythonw.exe %ENGINE_FILE%
-echo   • Удалить: rmdir /s /q %INSTALL_DIR%
+echo   • Удалить автозапуск: reg delete HKCU\Software\Microsoft\Windows\CurrentVersion\Run /v TranscryptEngine /f
+echo   • Полное удаление:    rmdir /s /q %INSTALL_DIR% ^&^& reg delete HKCU\Software\Microsoft\Windows\CurrentVersion\Run /v TranscryptEngine /f
 echo.
 echo Это окно можно закрыть. Движок продолжит работать в фоне.
 echo.

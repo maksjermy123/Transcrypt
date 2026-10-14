@@ -170,10 +170,37 @@ else
     print_warn "Не удалось открыть браузер автоматически. Откройте вручную: https://maksjermy123.github.io/Transcrypt/"
 fi
 
-echo ""
-echo "═══════════════════════════════════════════════════════"
-echo -e "${GREEN}✓ Установка завершена!${NC}"
-echo "═══════════════════════════════════════════════════════"
+# ─── 10.5. Автозапуск с системой (systemd user unit) ─────────────
+print_step "Настраиваем автозапуск с системой (systemd user unit)..."
+SYSTEMD_USER_DIR="$HOME/.config/systemd/user"
+SYSTEMD_UNIT_FILE="$SYSTEMD_USER_DIR/transcrypt-engine.service"
+mkdir -p "$SYSTEMD_USER_DIR"
+
+# Создаём systemd unit
+cat > "$SYSTEMD_UNIT_FILE" << EOF
+[Unit]
+Description=Transcrypt Web Engine (local Python server)
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=$VENV_DIR/bin/python $ENGINE_FILE
+WorkingDirectory=$INSTALL_DIR
+StandardOutput=append:$LOG_FILE
+StandardError=append:$LOG_FILE
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
+EOF
+
+# Активируем и запускаем systemd unit
+systemctl --user daemon-reload 2>/dev/null || true
+systemctl --user enable transcrypt-engine.service 2>/dev/null || true
+print_ok "systemd unit создан и включён — движок будет стартовать при входе в систему"
+
+# ─── 11. Финальное сообщение ───────────────────────────────────────
 echo ""
 echo "Локальный движок запущен на http://127.0.0.1:8765"
 echo "Веб-интерфейс открыт в браузере."
@@ -185,7 +212,8 @@ echo "  3. Теперь доступны URL-задачи (YouTube, TikTok, Inst
 echo ""
 echo "Управление движком:"
 echo "  • Лог:    tail -f $LOG_FILE"
-echo "  • Стоп:   kill \$(cat $PID_FILE)"
-echo "  • Старт:  $VENV_DIR/bin/python $ENGINE_FILE"
-echo "  • Удалить: rm -rf $INSTALL_DIR"
+echo "  • Стоп:   systemctl --user stop transcrypt-engine"
+echo "  • Старт:  systemctl --user start transcrypt-engine"
+echo "  • Удалить автозапуск: systemctl --user disable transcrypt-engine && rm $SYSTEMD_UNIT_FILE"
+echo "  • Полное удаление:    rm -rf $INSTALL_DIR && rm $SYSTEMD_UNIT_FILE"
 echo ""

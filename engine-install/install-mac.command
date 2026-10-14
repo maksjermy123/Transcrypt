@@ -153,6 +153,47 @@ print_step "Открываем веб-интерфейс в браузере..."
 sleep 1
 open "https://maksjermy123.github.io/Transcrypt/"
 
+# ─── 9.5. Автозапуск с системой (LaunchAgent) ────────────────────
+print_step "Настраиваем автозапуск с системой (LaunchAgent)..."
+LAUNCH_AGENT_DIR="$HOME/Library/LaunchAgents"
+LAUNCH_AGENT_FILE="$LAUNCH_AGENT_DIR/com.transcrypt.engine.plist"
+mkdir -p "$LAUNCH_AGENT_DIR"
+
+# Создаём plist файл для LaunchAgent — macOS запустит движок при логине
+cat > "$LAUNCH_AGENT_FILE" << EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.transcrypt.engine</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>$VENV_DIR/bin/python</string>
+        <string>$ENGINE_FILE</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>$LOG_FILE</string>
+    <key>StandardErrorPath</key>
+    <string>$LOG_FILE</string>
+    <key>WorkingDirectory</key>
+    <string>$INSTALL_DIR</string>
+</dict>
+</plist>
+EOF
+
+# Загружаем LaunchAgent немедленно
+launchctl unload "$LAUNCH_AGENT_FILE" 2>/dev/null || true
+launchctl load "$LAUNCH_AGENT_FILE" 2>/dev/null || true
+print_ok "LaunchAgent создан — движок будет стартовать при входе в систему"
+
 # ─── 10. Финальное сообщение ──────────────────────────────────────
 echo ""
 echo "═══════════════════════════════════════════════════════"
@@ -169,9 +210,10 @@ echo "  3. Теперь доступны URL-задачи (YouTube, TikTok, Inst
 echo ""
 echo "Управление движком:"
 echo "  • Лог:    tail -f $LOG_FILE"
-echo "  • Стоп:   kill \$(cat $PID_FILE)"
-echo "  • Старт:  $VENV_DIR/bin/python $ENGINE_FILE"
-echo "  • Удалить: rm -rf $INSTALL_DIR"
+echo "  • Стоп:   launchctl unload $LAUNCH_AGENT_FILE"
+echo "  • Старт:  launchctl load $LAUNCH_AGENT_FILE"
+echo "  • Удалить автозапуск: rm $LAUNCH_AGENT_FILE"
+echo "  • Полное удаление:    rm -rf $INSTALL_DIR && rm $LAUNCH_AGENT_FILE"
 echo ""
 echo "Это окно можно закрыть. Движок продолжит работать в фоне."
 echo ""

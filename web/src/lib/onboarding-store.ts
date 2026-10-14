@@ -8,6 +8,8 @@ export type WhisperModelId = "tiny" | "base";
 
 export type OnboardingStep =
   | "welcome"
+  | "choice"
+  | "consent"
   | "resources"
   | "engine"
   | "model-choice"
@@ -30,6 +32,8 @@ export type ModelStatus =
   | "downloaded"
   | "error";
 
+type Mode = "browser" | "engine";
+
 interface HardwareInfo {
   cpuCores: number;
   deviceMemory: number | null; // ГБ, если доступно
@@ -41,6 +45,7 @@ interface HardwareInfo {
 
 interface OnboardingState {
   step: OnboardingStep;
+  mode: Mode | null; // выбор пользователя на шаге ChoiceStep
   engineStatus: EngineStatus;
   modelStatus: ModelStatus;
   selectedModel: WhisperModelId | null;
@@ -57,6 +62,7 @@ interface OnboardingState {
   engineServerHealth: EngineHealth | null; // последнее известное состояние
 
   setStep: (s: OnboardingStep) => void;
+  setMode: (m: Mode) => void;
   setEngineStatus: (s: EngineStatus) => void;
   setModelStatus: (s: ModelStatus) => void;
   setSelectedModel: (m: WhisperModelId) => void;
@@ -74,6 +80,7 @@ interface OnboardingState {
 
 const initialState = {
   step: "welcome" as OnboardingStep,
+  mode: null as Mode | null,
   engineStatus: "not-started" as EngineStatus,
   modelStatus: "not-downloaded" as ModelStatus,
   selectedModel: null as WhisperModelId | null,
@@ -93,6 +100,7 @@ export const useOnboarding = create<OnboardingState>()(
     (set) => ({
       ...initialState,
       setStep: (s) => set({ step: s }),
+      setMode: (mode) => set({ mode }),
       setEngineStatus: (engineStatus) => set({ engineStatus }),
       setModelStatus: (modelStatus) => set({ modelStatus }),
       setSelectedModel: (selectedModel) => set({ selectedModel }),
@@ -113,6 +121,7 @@ export const useOnboarding = create<OnboardingState>()(
         completed: state.completed,
         selectedModel: state.selectedModel,
         step: state.completed ? "done" : state.step,
+        mode: state.mode,
         engineStatus: state.engineStatus,
         modelStatus: state.modelStatus,
         engineServerOnline: state.engineServerOnline,

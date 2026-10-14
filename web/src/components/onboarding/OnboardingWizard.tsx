@@ -3,6 +3,8 @@
 import { AnimatePresence } from "framer-motion";
 import { useOnboarding, type OnboardingStep } from "@/lib/onboarding-store";
 import { WelcomeStep } from "./WelcomeStep";
+import { ChoiceStep } from "./ChoiceStep";
+import { ConsentStep } from "./ConsentStep";
 import { ResourcesStep } from "./ResourcesStep";
 import { EngineStep } from "./EngineStep";
 import { ModelChoiceStep } from "./ModelChoiceStep";
@@ -11,6 +13,8 @@ import { DoneStep } from "./DoneStep";
 
 const STEP_ORDER: OnboardingStep[] = [
   "welcome",
+  "choice",
+  "consent",
   "resources",
   "engine",
   "model-choice",
@@ -20,6 +24,8 @@ const STEP_ORDER: OnboardingStep[] = [
 
 const STEP_LABELS: Record<OnboardingStep, string> = {
   welcome: "Что умеет",
+  choice: "Режим",
+  consent: "Согласие",
   resources: "Ресурсы ПК",
   engine: "Движок",
   "model-choice": "Модель",
@@ -28,7 +34,7 @@ const STEP_LABELS: Record<OnboardingStep, string> = {
 };
 
 export function OnboardingWizard({ onStart }: { onStart: () => void }) {
-  const { step, setStep } = useOnboarding();
+  const { step, setStep, setMode } = useOnboarding();
   const idx = STEP_ORDER.indexOf(step);
 
   return (
@@ -46,29 +52,32 @@ export function OnboardingWizard({ onStart }: { onStart: () => void }) {
             </span>
           </div>
 
-          {/* Stepper */}
-          <div className="flex items-center gap-1.5">
-            {STEP_ORDER.map((s, i) => (
-              <div key={s} className="flex items-center">
-                <div
-                  className={`h-1.5 rounded-full transition-all ${
-                    i < idx
-                      ? "w-6 bg-[#7c5bf5]"
-                      : i === idx
-                      ? "w-10 bg-gradient-primary"
-                      : "w-6 bg-[#263147]"
-                  }`}
-                  title={STEP_LABELS[s]}
-                />
-                {i < STEP_ORDER.length - 1 && (
-                  <div className="w-1.5 h-px bg-transparent" />
-                )}
-              </div>
-            ))}
-          </div>
+          {/* Stepper — только после выбора режима (на шаге consent/resources/etc.) */}
+          {idx >= 2 && (
+            <div className="flex items-center gap-1.5">
+              {STEP_ORDER.slice(2).map((s, i) => {
+                const realIdx = i + 2;
+                return (
+                  <div key={s} className="flex items-center">
+                    <div
+                      className={`h-1.5 rounded-full transition-all ${
+                        realIdx < idx
+                          ? "w-6 bg-[#7c5bf5]"
+                          : realIdx === idx
+                          ? "w-10 bg-gradient-primary"
+                          : "w-6 bg-[#263147]"
+                      }`}
+                      title={STEP_LABELS[s]}
+                    />
+                    {i < STEP_ORDER.length - 3 && <div className="w-1.5 h-px bg-transparent" />}
+                  </div>
+                );
+              })}
+            </div>
+          )}
 
           <div className="text-xs text-muted-foreground hidden md:block">
-            {idx + 1} / {STEP_ORDER.length}
+            {idx >= 2 ? `${idx - 1} / ${STEP_ORDER.length - 3}` : ""}
           </div>
         </div>
       </header>
@@ -76,10 +85,32 @@ export function OnboardingWizard({ onStart }: { onStart: () => void }) {
       <main className="flex-1">
         <AnimatePresence mode="wait">
           {step === "welcome" && (
-            <WelcomeStep key="welcome" onNext={() => setStep("resources")} />
+            <WelcomeStep
+              key="welcome"
+              onNext={() => setStep("choice")}
+            />
+          )}
+          {step === "choice" && (
+            <ChoiceStep
+              key="choice"
+              onSelect={(mode) => {
+                setMode(mode);
+                setStep(mode === "engine" ? "consent" : "resources");
+              }}
+            />
+          )}
+          {step === "consent" && (
+            <ConsentStep
+              key="consent"
+              onAgree={() => setStep("resources")}
+              onBack={() => setStep("choice")}
+            />
           )}
           {step === "resources" && (
-            <ResourcesStep key="resources" onNext={() => setStep("engine")} />
+            <ResourcesStep
+              key="resources"
+              onNext={() => setStep("engine")}
+            />
           )}
           {step === "engine" && (
             <EngineStep key="engine" onNext={() => setStep("model-choice")} />
