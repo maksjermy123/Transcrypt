@@ -319,15 +319,18 @@
     <div id="engineNoticeBanner" class="engine-banner">
         <div class="engine-banner-text">
             <h4>💡 Для работы функций запустите локальный движок на компьютере</h4>
-            <p>Движок использует домашний IP (обход блокировок YouTube), процессор/видеокарту и ffmpeg. Скачайте лаунчер в 1 клик:</p>
+            <p style="margin-top:0.3rem;">Движок использует домашний IP (обход блокировок YouTube), чип Mac / видеокарту Windows и ffmpeg:</p>
+            <ol style="margin: 0.5rem 0 0.5rem 1.25rem; font-size: 0.88rem; color: var(--text-muted);">
+                <li>Скачайте архив проекта и распакуйте его</li>
+                <li>Запустите внутри файл <b>run_mac.command</b> (на Mac) или <b>run_windows.bat</b> (на Windows)</li>
+                <li>Этот статус автоматически станет <b style="color:var(--success);">🟢 Подключён</b></li>
+            </ol>
         </div>
-        <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
-            <a class="engine-banner-btn" href="https://raw.githubusercontent.com/maksjermy123/Transcrypt/main/run_mac.command" download>
-                🍎 macOS (run_mac.command)
+        <div style="display:flex; flex-direction:column; gap:0.5rem; justify-content:center;">
+            <a class="engine-banner-btn" style="font-size:0.95rem; padding:0.65rem 1.4rem;" href="https://github.com/maksjermy123/Transcrypt/archive/refs/heads/main.zip">
+                📦 Скачать движок (ZIP-архив)
             </a>
-            <a class="engine-banner-btn" style="background:#0284c7;" href="https://raw.githubusercontent.com/maksjermy123/Transcrypt/main/run_windows.bat" download>
-                🪟 Windows (run_windows.bat)
-            </a>
+            <span style="font-size:0.75rem; color:var(--text-muted); text-align:center;">Внутри: run_mac.command и run_windows.bat</span>
         </div>
     </div>
 
@@ -631,16 +634,22 @@
             <p style="color:var(--text-muted); margin:0.5rem 0 1rem;">
                 Запустите один раз на компьютере — откроется этот сайт со всеми вашими вычислительными мощностями:
             </p>
-            <div style="display:flex; gap:0.75rem; flex-wrap:wrap;">
-                <a class="btn" href="https://raw.githubusercontent.com/maksjermy123/Transcrypt/main/run_mac.command" download>
-                    🍎 Скачать для macOS (run_mac.command)
-                </a>
-                <a class="btn" style="background:#0284c7;" href="https://raw.githubusercontent.com/maksjermy123/Transcrypt/main/run_windows.bat" download>
-                    🪟 Скачать для Windows (run_windows.bat)
-                </a>
-                <a class="btn btn-secondary" href="https://raw.githubusercontent.com/maksjermy123/Transcrypt/main/run_linux.sh" download>
-                    🐧 Скачать для Linux (run_linux.sh)
-                </a>
+            <div style="display:flex; flex-direction:column; gap:1rem;">
+                <div style="display:flex; gap:0.75rem; flex-wrap:wrap;">
+                    <a class="btn" href="https://github.com/maksjermy123/Transcrypt/archive/refs/heads/main.zip">
+                        📦 Скачать полный архив с движком (.ZIP)
+                    </a>
+                </div>
+                <div style="background:var(--bg-card); border:1px solid var(--border); border-radius:8px; padding:1rem; font-size:0.9rem;">
+                    <b>Как запустить:</b>
+                    <ol style="margin: 0.5rem 0 0 1.25rem; color:var(--text-muted); line-height:1.7;">
+                        <li>Распакуйте скачанный ZIP-архив <code>Transcrypt-main.zip</code>.</li>
+                        <li>На <b>macOS</b>: запустите файл <code>run_mac.command</code> (при первом открытии: ПКМ → Открыть).</li>
+                        <li>На <b>Windows</b>: запустите файл <code>run_windows.bat</code>.</li>
+                        <li>На <b>Linux</b>: запустите <code>./run_linux.sh</code>.</li>
+                        <li>Сайт автоматически подключится к запущенному движку!</li>
+                    </ol>
+                </div>
             </div>
         </div>
     </div>
