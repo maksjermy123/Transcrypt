@@ -30,21 +30,24 @@ export const metadata: Metadata = {
     "приватность",
   ],
   authors: [{ name: "VoxPaperAi" }],
+  // Используем ОТНОСИТЕЛЬНЫЕ URL (без / в начале) — Next.js с output:"export"
+  // и basePath не подставляет basePath в metadata.icons автоматически.
+  // Относительные URL резолвятся от текущей страницы (с trailing slash).
   icons: {
     icon: [
-      { url: "/favicon.svg", type: "image/svg+xml" },
-      { url: "/favicon-32.png", type: "image/png", sizes: "32x32" },
-      { url: "/favicon-16.png", type: "image/png", sizes: "16x16" },
-      { url: "/favicon-48.png", type: "image/png", sizes: "48x48" },
-      { url: "/favicon-96.png", type: "image/png", sizes: "96x96" },
-      { url: "/favicon-192.png", type: "image/png", sizes: "192x192" },
+      { url: "favicon.svg", type: "image/svg+xml" },
+      { url: "favicon-32.png", type: "image/png", sizes: "32x32" },
+      { url: "favicon-16.png", type: "image/png", sizes: "16x16" },
+      { url: "favicon-48.png", type: "image/png", sizes: "48x48" },
+      { url: "favicon-96.png", type: "image/png", sizes: "96x96" },
+      { url: "favicon-192.png", type: "image/png", sizes: "192x192" },
     ],
-    shortcut: ["/favicon.ico"],
+    shortcut: ["favicon.ico"],
     apple: [
-      { url: "/apple-touch-icon.png", sizes: "180x180" },
+      { url: "apple-touch-icon.png", sizes: "180x180" },
     ],
   },
-  manifest: "/site.webmanifest",
+  manifest: "site.webmanifest",
 };
 
 export const viewport: Viewport = {
