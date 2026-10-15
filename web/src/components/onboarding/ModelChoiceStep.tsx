@@ -3,6 +3,7 @@
 import { motion } from "framer-motion";
 import { Zap, Gauge, HardDrive, Lock, Server } from "lucide-react";
 import { useOnboarding, MODEL_INFO, type WhisperModelId } from "@/lib/onboarding-store";
+import { useI18n } from "@/lib/i18n";
 
 type ModelCard = {
   id: WhisperModelId;
@@ -26,6 +27,7 @@ const BROWSER_MODELS: ModelCard[] = [
 ];
 
 export function ModelChoiceStep({ onNext }: { onNext: () => void }) {
+  const { t } = useI18n();
   const { setSelectedModel, selectedModel, modelStatus, mode } = useOnboarding();
   const isEngine = mode === "engine";
   const cards = isEngine ? ENGINE_MODELS : BROWSER_MODELS;
@@ -44,7 +46,7 @@ export function ModelChoiceStep({ onNext }: { onNext: () => void }) {
       className="max-w-5xl mx-auto px-6 py-10"
     >
       <div className="text-center mb-8">
-        <h2 className="text-3xl font-bold mb-3">Выберите уровень Whisper</h2>
+        <h2 className="text-3xl font-bold mb-3">{t("Выберите уровень Whisper")}</h2>
         <p className="text-muted-foreground max-w-2xl mx-auto">
           Модель — это «мозг» распознавателя. Чем выше уровень, тем точнее
           результат, но дольше обработка и больше расход ОЗУ. Уровень можно

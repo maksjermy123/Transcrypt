@@ -45,7 +45,7 @@
 
 :root {
   --radius: 0.875rem;
-  /* Transcrypt Dark Minimal — тёмная тема по умолчанию (светлая: html.light) */
+  /* VoxPaperAi Dark Minimal — тёмная тема по умолчанию (светлая: html.light) */
   --background: #0b0f19;
   --foreground: #f0f4fc;
   --card: #151b28;
@@ -180,7 +180,7 @@ html.light [class*="text-purple-300"] { color: #6d28d9; }
   }
 }
 
-/* Reusable utility classes for the Transcrypt theme */
+/* Reusable utility classes for the VoxPaperAi theme */
 @layer utilities {
   .glass-card {
     background: rgba(21, 27, 40, 0.7);

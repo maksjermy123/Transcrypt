@@ -110,11 +110,13 @@ const PLATFORM_INFO: Record<
   },
   win: {
     label: "Windows",
-    // PowerShell one-liner — запускается из существующего PowerShell, никаких скачиваний
+    // Скачиваем файл и запускаем с -NoExit: окно PowerShell НЕ схлопывается
+    // даже при ошибке. Python ставится автоматически, если его не было
+    // (раньше заглушка Microsoft Store обрывала установку после пары «?»).
     command:
-      "iwr -useb https://raw.githubusercontent.com/maksjermy123/Transcrypt/main/engine-install/install-win.ps1 | iex",
+      'iwr -useb https://raw.githubusercontent.com/maksjermy123/Transcrypt/main/engine-install/install-win.ps1 -OutFile "$env:TEMP\\vpai-install.ps1"; powershell -NoProfile -ExecutionPolicy Bypass -NoExit -File "$env:TEMP\\vpai-install.ps1"',
     uninstallCommand:
-      "iwr -useb https://raw.githubusercontent.com/maksjermy123/Transcrypt/main/engine-install/uninstall-win.ps1 | iex",
+      'iwr -useb https://raw.githubusercontent.com/maksjermy123/Transcrypt/main/engine-install/uninstall-win.ps1 -OutFile "$env:TEMP\\vpai-uninstall.ps1"; powershell -NoProfile -ExecutionPolicy Bypass -NoExit -File "$env:TEMP\\vpai-uninstall.ps1"',
     terminalName: "PowerShell",
     openTerminalHint:
       "Win+R → введите «powershell» → Enter. Или: Пуск → найдите «PowerShell»",
@@ -127,12 +129,12 @@ const PLATFORM_INFO: Record<
       {
         step: "Скопируйте команду ниже (кнопка «Скопировать команду»)",
         detail:
-          "Команда попадёт в буфер обмена. PowerShell подписан Microsoft, SmartScreen не мешает.",
+          "Команда попадёт в буфер обмена. Окно не закроется само: установщик ждёт Enter даже при ошибке.",
       },
       {
         step: "Вставьте команду в PowerShell и нажмите Enter",
         detail:
-          "Правый клик в окне PowerShell = вставка (или Ctrl+V в новых версиях). Запустится установка (~5 минут первый раз).",
+          "Правый клик в окне PowerShell = вставка (или Ctrl+V в новых версиях). Если Python не установлен — установщик поставит его сам (~5 минут первый раз).",
       },
       {
         step: "Дождитесь сообщения «Установка завершена!»",

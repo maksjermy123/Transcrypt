@@ -35,6 +35,7 @@ import {
   type MediaAction,
   type TaskResult,
 } from "@/lib/engine-bridge";
+import { useI18n } from "@/lib/i18n";
 
 const ACTIONS: { id: MediaAction; label: string; icon: React.ComponentType<{ className?: string }>; desc: string }[] = [
   { id: "download_video", label: "Скачать видео", icon: FileVideo, desc: "Скачать видео с YouTube/TikTok/Instagram в MP4 через yt-dlp (impersonate Chrome)" },
@@ -49,6 +50,7 @@ const VIDEO_EXT_RE = /\.(mp4|m4v|mkv|webm|mov|avi|flv|wmv|ts|3gp)$/i;
 const SUB_EXT_RE = /\.(srt|vtt)$/i;
 
 export function MediaTab() {
+  const { t } = useI18n();
   const { engineServerOnline, selectedModel, engineServerHealth } = useOnboarding();
   const supportsJobs = !!engineServerHealth?.jobs;
   const supportsQueue = !!engineServerHealth?.queue; // движок ≥ 1.2.0: очереди задач
@@ -402,7 +404,7 @@ export function MediaTab() {
     return (
       <div className="max-w-4xl mx-auto px-6 py-8">
         <div className="mb-6">
-          <h1 className="text-2xl font-bold mb-1">Медиа операции</h1>
+          <h1 className="text-2xl font-bold mb-1">{t("Медиа операции")}</h1>
           <p className="text-sm text-muted-foreground">
             Скачать видео/аудио, очистить аудио, вшить субтитры — через локальный движок с yt-dlp и ffmpeg.
           </p>
@@ -440,7 +442,7 @@ export function MediaTab() {
   return (
     <div className="max-w-4xl mx-auto px-6 py-8">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold mb-1">Медиа операции</h1>
+        <h1 className="text-2xl font-bold mb-1">{t("Медиа операции")}</h1>
         <p className="text-sm text-muted-foreground">
           Скачать видео/аудио, очистить звук, вшить субтитры. Все операции через локальный движок с yt-dlp (обходит блокировки YouTube) и ffmpeg.
         </p>

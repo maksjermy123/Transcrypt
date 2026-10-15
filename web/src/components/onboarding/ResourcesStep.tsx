@@ -13,8 +13,10 @@ import {
 import { useEffect, useState } from "react";
 import { detectHardware, detectWebGPU } from "@/lib/whisper";
 import { recommendedThreads, type HardwareInfo } from "@/lib/onboarding-store";
+import { useI18n } from "@/lib/i18n";
 
 export function ResourcesStep({ onNext }: { onNext: () => void }) {
+  const { t } = useI18n();
   const [hw, setHw] = useState<HardwareInfo | null>(null);
   const [webgpu, setWebgpu] = useState<boolean | null>(null);
 
@@ -51,9 +53,9 @@ export function ResourcesStep({ onNext }: { onNext: () => void }) {
         <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-amber-500/15 mb-5">
           <AlertTriangle className="w-8 h-8 text-amber-400" />
         </div>
-        <h2 className="text-3xl font-bold mb-3">Ресурсы вашего компьютера</h2>
+        <h2 className="text-3xl font-bold mb-3">{t("Ресурсы вашего компьютера")}</h2>
         <p className="text-muted-foreground max-w-xl mx-auto">
-          Transcrypt работает локально — все вычисления идут на вашем CPU и GPU.
+          VoxPaperAi работает локально — все вычисления идут на вашем CPU и GPU.
           Распознавание речи нагружает процессор, поэтому важно понимать, что вы
           готовы запустить.
         </p>

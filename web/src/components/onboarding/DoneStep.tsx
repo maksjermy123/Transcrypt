@@ -4,9 +4,11 @@ import { motion } from "framer-motion";
 import { Bookmark, BookmarkCheck, PartyPopper, ArrowRight } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useOnboarding } from "@/lib/onboarding-store";
+import { useI18n } from "@/lib/i18n";
 
 export function DoneStep({ onStart }: { onStart: () => void }) {
   const { selectedModel, setCompleted, mode } = useOnboarding();
+  const { t } = useI18n();
   const isEngine = mode === "engine";
   const [bookmarked, setBookmarked] = useState(false);
   const [canPress, setCanPress] = useState(false);
@@ -23,14 +25,14 @@ export function DoneStep({ onStart }: { onStart: () => void }) {
     // Открываем системный диалог добавления закладки, если поддерживается
     if (typeof window !== "undefined" && (window as any).sidebar?.addPanel) {
       // Firefox legacy
-      (window as any).sidebar.addPanel("Transcrypt", window.location.href, "");
+      (window as any).sidebar.addPanel("VoxPaperAi", window.location.href, "");
     } else if (typeof window !== "undefined" && (window.external as any)?.AddFavorite) {
       // IE
-      (window.external as any).AddFavorite(window.location.href, "Transcrypt");
+      (window.external as any).AddFavorite(window.location.href, "VoxPaperAi");
     } else {
       // Современные браузеры: показываем подсказку
       alert(
-        `Чтобы добавить Transcrypt в закладки:\n\n• Windows/Linux: нажмите Ctrl + D\n• macOS: нажмите Cmd + D\n\nЗатем в появившемся окне нажмите "Готово".`
+        `Чтобы добавить VoxPaperAi в закладки:\n\n• Windows/Linux: нажмите Ctrl + D\n• macOS: нажмите Cmd + D\n\nЗатем в появившемся окне нажмите "Готово".`
       );
     }
     setBookmarked(true);
@@ -58,22 +60,19 @@ export function DoneStep({ onStart }: { onStart: () => void }) {
         >
           <PartyPopper className="w-10 h-10 text-emerald-400" />
         </motion.div>
-        <h2 className="text-3xl font-bold mb-3">Готово! Всё настроено</h2>
+        <h2 className="text-3xl font-bold mb-3">{t("Готово! Всё настроено")}</h2>
         <p className="text-muted-foreground max-w-lg mx-auto">
           {isEngine ? (
             <>
-              Локальный движок установлен на компьютере. Уровень{" "}
+              {t("Локальный движок установлен на компьютере. Уровень")}{" "}
               <span className="text-foreground font-medium">Whisper {selectedModel}</span>{" "}
-              движок загрузит сам при первой задаче — вручную ничего скачивать не
-              нужно. Теперь страница готова к работе — каждый раз при открытии
-              движок будет подтягиваться автоматически.
+              {t("движок загрузит сам при первой задаче — вручную ничего скачивать не нужно. Теперь страница готова к работе — каждый раз при открытии движок будет подтягиваться автоматически.")}
             </>
           ) : (
             <>
-              Модель <span className="text-foreground font-medium">Whisper {selectedModel}</span>{" "}
-              загружена и кеширована. Движок установлен. Теперь страница готова к
-              работе — каждый раз при открытии движок будет подтягиваться
-              автоматически.
+              {t("Модель")}{" "}
+              <span className="text-foreground font-medium">Whisper {selectedModel}</span>{" "}
+              {t("загружена и кеширована. Теперь страница готова к работе — каждый раз при открытии движок будет подтягиваться автоматически.")}
             </>
           )}
         </p>
@@ -89,10 +88,9 @@ export function DoneStep({ onStart }: { onStart: () => void }) {
             )}
           </div>
           <div className="flex-1">
-            <h3 className="font-semibold mb-1">Добавьте страницу в закладки</h3>
+            <h3 className="font-semibold mb-1">{t("Добавьте страницу в закладки")}</h3>
             <p className="text-sm text-muted-foreground">
-              Так Transcrypt всегда будет под рукой — достаточно открыть
-              закладку, и движок сам подтянется из кеша браузера.
+              {t("Так VoxPaperAi всегда будет под рукой — достаточно открыть закладку, и движок сам подтянется из кеша браузера.")}
             </p>
           </div>
         </div>
@@ -104,26 +102,26 @@ export function DoneStep({ onStart }: { onStart: () => void }) {
               : "bg-[#1b2334] hover:bg-[#263147] text-foreground"
           }`}
         >
-          {bookmarked ? "Закладка добавлена ✓" : "Добавить в закладки"}
+          {bookmarked ? t("Закладка добавлена ✓") : t("Добавить в закладки")}
         </button>
       </div>
 
       <div className="glass-card rounded-2xl p-5 mb-8">
-        <h3 className="font-medium mb-3 text-sm">Что произойдёт при следующем открытии:</h3>
+        <h3 className="font-medium mb-3 text-sm">{t("Что произойдёт при следующем открытии:")}</h3>
         <ul className="space-y-2 text-sm text-muted-foreground">
           {isEngine ? (
             <>
-              <Step n={1} text="Движок стартует сам вместе с системой — автозапуск уже настроен установщиком" />
-              <Step n={2} text="Страница сама обнаружит его на 127.0.0.1:8765 — индикатор в шапке станет зелёным" />
-              <Step n={3} text="Выбранный уровень Whisper и настройки сохранены в браузере" />
-              <Step n={4} text="Вы сразу можете начать работать — без настройки" />
+              <Step n={1} text={t("Движок стартует сам вместе с системой — автозапуск уже настроен установщиком")} />
+              <Step n={2} text={t("Страница сама обнаружит его на 127.0.0.1:8765 — индикатор в шапке станет зелёным")} />
+              <Step n={3} text={t("Выбранный уровень Whisper и настройки сохранены в браузере")} />
+              <Step n={4} text={t("Вы сразу можете начать работать — без настройки")} />
             </>
           ) : (
             <>
-              <Step n={1} text="Браузер открывает страницу из кеша (даже без интернета)" />
-              <Step n={2} text="Движок transformers.js автоматически инициализируется из IndexedDB" />
-              <Step n={3} text="Модель Whisper берётся из кеша — повторной загрузки не будет" />
-              <Step n={4} text="Вы сразу можете начать работать — без настройки" />
+              <Step n={1} text={t("Браузер открывает страницу из кеша (даже без интернета)")} />
+              <Step n={2} text={t("Движок transformers.js автоматически инициализируется из IndexedDB")} />
+              <Step n={3} text={t("Модель Whisper берётся из кеша — повторной загрузки не будет")} />
+              <Step n={4} text={t("Вы сразу можете начать работать — без настройки")} />
             </>
           )}
         </ul>
@@ -135,7 +133,7 @@ export function DoneStep({ onStart }: { onStart: () => void }) {
           disabled={!canPress}
           className="bg-gradient-primary text-white px-10 py-4 rounded-xl font-semibold hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed glow-primary inline-flex items-center gap-2"
         >
-          Открыть рабочую страницу
+          {t("Открыть рабочую страницу")}
           <ArrowRight className="w-5 h-5" />
         </button>
       </div>

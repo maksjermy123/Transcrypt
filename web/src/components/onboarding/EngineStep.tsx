@@ -4,12 +4,14 @@ import { motion } from "framer-motion";
 import { Wrench, Loader2, CheckCircle2, AlertCircle, Globe, Server, ArrowRight } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useOnboarding } from "@/lib/onboarding-store";
+import { useI18n } from "@/lib/i18n";
 import { loadWhisperPipeline, type ProgressInfo } from "@/lib/whisper";
 import { LocalEngineStep } from "./LocalEngineStep";
 
 type Phase = "idle" | "downloading-wasm" | "downloading-model-base" | "ready" | "error";
 
 export function EngineStep({ onNext }: { onNext: () => void }) {
+  const { t } = useI18n();
   const { engineStatus, setEngineStatus, setEngineProgress, setEngineError, engineServerOnline, mode } =
     useOnboarding();
   const isEngine = mode === "engine";
@@ -110,9 +112,9 @@ export function EngineStep({ onNext }: { onNext: () => void }) {
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-[#7c5bf5]/15 mb-5">
             <Wrench className="w-8 h-8 text-[#7c5bf5]" />
           </div>
-          <h2 className="text-3xl font-bold mb-3">Установить движок</h2>
+          <h2 className="text-3xl font-bold mb-3">{t("Установить движок")}</h2>
           <p className="text-muted-foreground max-w-lg mx-auto">
-            Локальный движок — это сердце Transcrypt. Он будет работать на вашем
+            Локальный движок — это сердце VoxPaperAi. Он будет работать на вашем
             компьютере: распознавание через нативный Whisper, скачивание с
             YouTube/TikTok, ffmpeg-операции. Никаких архивов скачивать не нужно —{" "}
             <span className="text-foreground font-medium">одна команда, и всё установится само</span>.
@@ -223,7 +225,7 @@ export function EngineStep({ onNext }: { onNext: () => void }) {
         <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-[#7c5bf5]/15 mb-5">
           <Globe className="w-8 h-8 text-[#7c5bf5]" />
         </div>
-        <h2 className="text-3xl font-bold mb-3">Установить браузерный движок</h2>
+        <h2 className="text-3xl font-bold mb-3">{t("Установить браузерный движок")}</h2>
         <p className="text-muted-foreground max-w-lg mx-auto">
           Браузерный движок — это{" "}
           <span className="text-foreground font-mono text-sm">transformers.js</span>{" "}
@@ -253,7 +255,7 @@ export function EngineStep({ onNext }: { onNext: () => void }) {
             )}
           </div>
           <div className="flex-1">
-            <h3 className="font-semibold text-sm">Браузерный движок (Whisper)</h3>
+            <h3 className="font-semibold text-sm">{t("Браузерный движок (Whisper)")}</h3>
             <div className="text-xs text-muted-foreground">{phaseText}</div>
           </div>
           <div className="text-2xl font-mono font-bold text-[#7c5bf5]">

@@ -3,6 +3,7 @@
 import { Sun, Moon } from "lucide-react";
 import { useSyncExternalStore } from "react";
 import { getStoredTheme, toggleTheme, type Theme } from "@/lib/theme";
+import { useI18n } from "@/lib/i18n";
 
 /** Мини-стор темы: localStorage — источник истины, подписка — для перерисовки кнопки. */
 const themeStore = {
@@ -28,6 +29,7 @@ export function ThemeToggle() {
     themeStore.serverSnapshot
   );
   const isLight = theme === "light";
+  const { t } = useI18n();
 
   return (
     <button
@@ -35,8 +37,8 @@ export function ThemeToggle() {
         toggleTheme();
         themeStore.emit();
       }}
-      title={isLight ? "Включить тёмную тему" : "Включить светлую тему"}
-      aria-label={isLight ? "Включить тёмную тему" : "Включить светлую тему"}
+      title={isLight ? t("Включить тёмную тему") : t("Включить светлую тему")}
+      aria-label={isLight ? t("Включить тёмную тему") : t("Включить светлую тему")}
       className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-[#1b2334] transition-colors"
     >
       {isLight ? <Moon className="w-[18px] h-[18px]" /> : <Sun className="w-[18px] h-[18px]" />}

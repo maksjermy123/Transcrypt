@@ -53,6 +53,7 @@ import {
   formatDuration,
 } from "@/lib/subtitles";
 import { copyTextToClipboard } from "@/lib/clipboard";
+import { useI18n } from "@/lib/i18n";
 import { EngineUpdateGuide, isEngineOutdated } from "@/components/workbench/EngineUpdateGuide";
 import { ConspectBridge } from "@/components/workbench/ConspectBridge";
 import { BatchPanel, type BatchItem } from "@/components/workbench/BatchPanel";
@@ -95,11 +96,12 @@ function langLabel(code: string): string {
 }
 
 export function TranscribeTab({
+  /** Переход к шагу установки движка (из воркбенча) */
   onInstallEngine,
 }: {
-  /** Переход к шагу установки движка (из воркбенча) */
   onInstallEngine?: () => void;
 }) {
+  const { t } = useI18n();
   const { selectedModel, setSelectedModel, engineServerOnline, engineServerHealth } = useOnboarding();
   const { provider, deeplKey } = useSettings();
   const [mode, setMode] = useState<"file" | "url">("file");
@@ -1057,7 +1059,7 @@ export function TranscribeTab({
       {segments.length > 0 && (
         <div className="glass-card rounded-2xl p-5">
           <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-            <h3 className="font-semibold text-sm">Сегменты с таймкодами</h3>
+            <h3 className="font-semibold text-sm">{t("Сегменты с таймкодами")}</h3>
             <div className="flex items-center gap-2">
               {translatedSegments.length > 0 && (
                 <div className="flex bg-[#1b2334] rounded-lg p-0.5 text-xs">
@@ -1162,7 +1164,7 @@ export function TranscribeTab({
     <div className="max-w-5xl mx-auto px-6 py-8">
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-6">
         <div>
-          <h1 className="text-2xl font-bold mb-1">Транскрипция аудио и видео</h1>
+          <h1 className="text-2xl font-bold mb-1">{t("Транскрипция аудио и видео")}</h1>
           <p className="text-sm text-muted-foreground">
             Whisper превратит голос в текст с таймкодами. URL-задачи (YouTube и др.) — через локальный движок со стратегией «сначала субтитры».
           </p>
@@ -1254,12 +1256,12 @@ export function TranscribeTab({
 
       {!file && (
         <div className="flex gap-2 mb-5 bg-[#1b2334] p-1 rounded-xl w-fit">
-          <ModeBtn active={mode === "file"} onClick={() => setMode("file")} icon={Upload} label="Файл с компьютера" />
+          <ModeBtn active={mode === "file"} onClick={() => setMode("file")} icon={Upload} label={t("Файл с компьютера")} />
           <ModeBtn
             active={mode === "url"}
             onClick={() => setMode("url")}
             icon={Link2}
-            label={engineServerOnline ? "URL (YouTube и др.)" : "URL (нужен движок)"}
+            label={engineServerOnline ? t("URL (YouTube и др.)") : t("URL (нужен движок)")}
           />
         </div>
       )}
@@ -1366,12 +1368,12 @@ export function TranscribeTab({
           >
             <Upload className="w-8 h-8 text-[#7c5bf5]" />
           </motion.div>
-          <h3 className="font-semibold mb-1">Перетащите аудио или видео сюда</h3>
+          <h3 className="font-semibold mb-1">{t("Перетащите аудио или видео сюда")}</h3>
           <p className="text-sm text-muted-foreground mb-3">
             MP3, WAV, M4A, MP4, WebM, MOV — до 500 МБ (через движок) или 200 МБ (браузер)
           </p>
           <button className="text-[#7c5bf5] text-sm font-medium hover:underline">
-            или нажмите, чтобы выбрать файл
+            {t("или нажмите, чтобы выбрать файл")}
           </button>
         </div>
       )}

@@ -1,12 +1,12 @@
-# ═══════════════════════════════════════════════════════════════
-#  Transcrypt — ПОЛНОЕ удаление с компьютера (Windows)
+﻿# ═══════════════════════════════════════════════════════════════
+#  VoxPaperAi — ПОЛНОЕ удаление с компьютера (Windows)
 #
-#  Запуск (PowerShell):
-#    powershell -c "irm https://raw.githubusercontent.com/maksjermy123/Transcrypt/main/engine-install/uninstall-win.ps1 | iex"
+#  Запуск (PowerShell) — окно не закроется, пока не нажмёте Enter:
+#    iwr -useb https://raw.githubusercontent.com/maksjermy123/Transcrypt/main/engine-install/uninstall-win.ps1 -OutFile "$env:TEMP\vpai-uninstall.ps1"; powershell -NoProfile -ExecutionPolicy Bypass -NoExit -File "$env:TEMP\vpai-uninstall.ps1"
 #
 #  Что удаляет:
 #    1. Автозапуск: ключ реестра HKCU\...\Run\TranscryptEngine
-#    2. Папку движка: %LOCALAPPDATA%\TranscryptEngine (venv, код, логи)
+#    2. Папку движка: %USERPROFILE%\.transcrypt-engine (venv, код, логи)
 #    3. Данные программы: %LOCALAPPDATA%\VoxPaperAi
 #       (модели Whisper, скачанный ffmpeg, результаты, журнал задач)
 #    4. Останавливает работающие процессы движка
@@ -16,6 +16,13 @@
 
 $ErrorActionPreference = "SilentlyContinue"
 
+# UTF-8 в консоли (кириллица вместо «??»)
+try {
+    [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+    chcp 65001 | Out-Null
+} catch {}
+try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch {}
+
 $InstallDir = Join-Path $env:USERPROFILE ".transcrypt-engine"
 $AppSupport = Join-Path $env:LOCALAPPDATA "VoxPaperAi"
 $AutorunKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
@@ -23,7 +30,7 @@ $AutorunValue = "TranscryptEngine"
 
 Write-Host ""
 Write-Host "===================================================" -ForegroundColor Cyan
-Write-Host "  Transcrypt — полное удаление с компьютера (Windows)" -ForegroundColor Cyan
+Write-Host "  VoxPaperAi — полное удаление с компьютера (Windows)" -ForegroundColor Cyan
 Write-Host "===================================================" -ForegroundColor Cyan
 Write-Host ""
 
@@ -83,10 +90,11 @@ if (Test-Path $AppSupport) {
 
 Write-Host ""
 Write-Host "===================================================" -ForegroundColor Green
-Write-Host "  Transcrypt полностью удалён с этого компьютера" -ForegroundColor Green
+Write-Host "  VoxPaperAi полностью удалён с этого компьютера" -ForegroundColor Green
 Write-Host "  Освобождено: $freedMB МБ" -ForegroundColor Green
 Write-Host "===================================================" -ForegroundColor Green
 Write-Host ""
 Write-Host "Остался только кеш браузера — очистите его кнопкой"
 Write-Host "«Очистить данные в браузере» в Настройках сайта."
 Write-Host ""
+try { Read-Host "Нажмите Enter, чтобы закрыть это окно" | Out-Null } catch {}

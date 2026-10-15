@@ -12,7 +12,7 @@ export default function PrivacyPage() {
             <div className="w-8 h-8 rounded-xl bg-gradient-primary flex items-center justify-center">
               <span className="text-white font-bold text-sm">T</span>
             </div>
-            <span className="font-semibold">Transcrypt — Политика конфиденциальности</span>
+            <span className="font-semibold">VoxPaperAi — Политика конфиденциальности</span>
           </div>
           <a
             href="/Transcrypt/"
@@ -37,7 +37,7 @@ export default function PrivacyPage() {
             <div>
               <h1 className="text-3xl font-bold mb-2">Политика конфиденциальности</h1>
               <p className="text-sm text-muted-foreground">
-                Действует с 14 октября 2026. Transcrypt — opensource проект, лицензия MIT.
+                Действует с 14 октября 2026. VoxPaperAi — opensource проект, лицензия MIT.
               </p>
             </div>
           </div>
@@ -92,15 +92,15 @@ export default function PrivacyPage() {
           <Section icon={AlertTriangle} title="4. Что нужно знать про URL-задачи">
             <p className="text-sm text-muted-foreground leading-relaxed">
               Скачивание контента с YouTube, TikTok, Instagram и других платформ
-              может нарушать их Условия использования (ToS). Transcrypt использует
+              может нарушать их Условия использования (ToS). VoxPaperAi использует
               <code className="font-mono text-xs px-1 py-0.5 rounded bg-[#1b2334] mx-1">yt-dlp</code>
               — opensource инструмент, который обходит технические ограничения
-              платформ. Юридическая ответственность за использование Transcrypt для
+              платформ. Юридическая ответственность за использование VoxPaperAi для
               скачивания защищённого авторским правом контента лежит на
               пользователе.
             </p>
             <p className="text-sm text-muted-foreground leading-relaxed mt-3">
-              Рекомендуем использовать Transcrypt только для контента, на который
+              Рекомендуем использовать VoxPaperAi только для контента, на который
               у вас есть права, или который доступен под лицензией Creative Commons
               / Public Domain.
             </p>
@@ -113,7 +113,7 @@ export default function PrivacyPage() {
               ГАРАНТИЯМИ ТОВАРНОЙ ПРИГОДНОСТИ И ПРИГОДНОСТИ ДЛЯ КОНКРЕТНОЙ ЦЕЛИ.
             </p>
             <p className="text-sm text-muted-foreground leading-relaxed mt-3">
-              Разработчики Transcrypt не несут ответственности за:
+              Разработчики VoxPaperAi не несут ответственности за:
             </p>
             <ul className="space-y-1.5 list-disc list-inside text-sm text-muted-foreground mt-2">
               <li>Блокировки со стороны YouTube/TikTok/Instagram (HTTP 429, бан аккаунтов)</li>
@@ -123,14 +123,14 @@ export default function PrivacyPage() {
               <li>Любой ущерб, прямой или косвенный, возникший в результате использования программы</li>
             </ul>
             <p className="text-sm text-muted-foreground leading-relaxed mt-3">
-              Используя Transcrypt, вы соглашаетесь с настоящей политикой и
+              Используя VoxPaperAi, вы соглашаетесь с настоящей политикой и
               принимаете на себя всю ответственность за свои действия.
             </p>
           </Section>
 
           <Section icon={Lock} title="6. Контакты и исходный код">
             <p className="text-sm text-muted-foreground leading-relaxed">
-              Transcrypt — opensource проект. Полный исходный код доступен на{" "}
+              VoxPaperAi — opensource проект. Полный исходный код доступен на{" "}
               <a
                 href="https://github.com/maksjermy123/Transcrypt"
                 target="_blank"
@@ -152,7 +152,7 @@ export default function PrivacyPage() {
               href="/Transcrypt/"
               className="bg-gradient-primary text-white px-6 py-3 rounded-xl font-medium hover:opacity-90 inline-flex items-center gap-2"
             >
-              ← Понятно, вернуться к Transcrypt
+              ← Понятно, вернуться к VoxPaperAi
             </a>
           </div>
         </motion.div>

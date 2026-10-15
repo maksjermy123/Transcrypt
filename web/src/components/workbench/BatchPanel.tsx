@@ -38,6 +38,7 @@ import {
   type TranscribeResult,
 } from "@/lib/engine-bridge";
 import { downloadFile, buildMarkdown } from "@/lib/subtitles";
+import { useI18n } from "@/lib/i18n";
 
 const BATCH_KEY = "transcrypt.batchJobs";
 
@@ -114,6 +115,7 @@ interface BatchPanelProps {
 }
 
 export function BatchPanel({ engineOnline, supportsJobs, model, language, onOpenResult }: BatchPanelProps) {
+  const { t } = useI18n();
   const [items, setItems] = useState<BatchItem[]>([]);
   const [urlsText, setUrlsText] = useState("");
   const [busy, setBusy] = useState(false);
@@ -122,8 +124,11 @@ export function BatchPanel({ engineOnline, supportsJobs, model, language, onOpen
   const txtInputRef = useRef<HTMLInputElement>(null);
   const filesInputRef = useRef<HTMLInputElement>(null);
 
-  // Восстановление журнала при монтировании (перезагрузка страницы/возврат на вкладку)
+  // Восстановление журнала при монтировании (перезагрузка страницы/возврат на вкладку).
+  // Именно effect, а не ленивый useState: чтение localStorage в первом кадре
+  // расходится с серверным HTML (hydration mismatch). SSR-кадр пуст, журнал подставляется после.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setItems(readItems());
   }, []);
 
@@ -335,14 +340,14 @@ export function BatchPanel({ engineOnline, supportsJobs, model, language, onOpen
       >
         <span className="inline-flex items-center gap-2 text-sm font-semibold">
           <Layers className="w-4 h-4 text-[#7c5bf5]" />
-          Пакетная обработка
+          {t("Пакетная обработка")}
           {items.length > 0 && (
             <span className="text-xs font-normal text-muted-foreground">
               · {doneCount} готово{pendingCount ? `, ${pendingCount} в работе` : ""}
             </span>
           )}
         </span>
-        <span className="text-xs text-muted-foreground">{open ? "Свернуть ▲" : "Развернуть ▼"}</span>
+        <span className="text-xs text-muted-foreground">{open ? t("Свернуть ▲") : t("Развернуть ▼")}</span>
       </button>
 
       {open && (

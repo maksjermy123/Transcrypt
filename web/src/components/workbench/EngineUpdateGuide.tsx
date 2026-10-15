@@ -22,6 +22,7 @@ import {
   Wrench,
 } from "lucide-react";
 import type { EngineHealth } from "@/lib/engine-bridge";
+import { useI18n, type Lang } from "@/lib/i18n";
 
 /** Последняя версия движка, которую поддерживает сайт. */
 export const LATEST_ENGINE_VERSION = "1.3.0";
@@ -63,7 +64,10 @@ function detectOS(health: EngineHealth | null): OSInfo {
     label: "Windows",
     terminal: "PowerShell",
     openHint: "Win+R → введите «powershell» → Enter (НЕ обычный cmd)",
-    command: `iwr -useb ${REPO_RAW}/install-win.ps1 | iex`,
+    // Окно PowerShell больше не схлопывается: скачиваем файл и запускаем
+    // с -NoExit — даже при ошибке консоль остаётся открытой, а Python
+    // установится автоматически (winget/python.org), если его не было.
+    command: `iwr -useb ${REPO_RAW}/install-win.ps1 -OutFile "$env:TEMP\\vpai-install.ps1"; powershell -NoProfile -ExecutionPolicy Bypass -NoExit -File "$env:TEMP\\vpai-install.ps1"`,
   };
   const LINUX: OSInfo = {
     label: "Linux",
@@ -119,6 +123,35 @@ const REASONS: Record<
   },
 };
 
+/** EN-заголовки баннеров (динамика с версией — отдельные шаблоны) */
+const TITLES_EN: Record<EngineUpdateReason, (v: string) => string> = {
+  "no-jobs": (v) => `Engine ${v || "1.0.x"} — jobs don't survive tab switches`,
+  "no-queue": (v) => `Engine ${v || "1.1.0"} — no job queue`,
+  "no-docs": (v) => `Engine ${v || "1.2.x"} — no document conversion (Word ↔ PDF)`,
+  outdated: (v) => `Engine ${v || "1.2.0"} — update to ${LATEST_ENGINE_VERSION} available`,
+};
+
+/** EN-тексты «почему» */
+const WHY_EN: Record<EngineUpdateReason, string> = {
+  "no-jobs":
+    "Right now a job runs only while the tab is open. After the update, jobs run in the background on the engine: the result waits for you even after you close the browser.",
+  "no-queue":
+    "Jobs from different tabs fight each other. After the update, extra jobs queue up, and on a powerful machine heavy ones run in parallel — no result is lost.",
+  "no-docs":
+    "Word ↔ PDF ↔ TXT conversion and encoding fixes (no more mojibake) arrived in engine 1.3.0 — the old environment lacks the required libraries, so the Converter → Documents tab fails. Update the engine with the same install command — takes 1–3 minutes, Whisper models are kept.",
+  outdated: `Engine ${LATEST_ENGINE_VERSION} adds: Word ↔ PDF ↔ TXT document conversion without Microsoft Word or LibreOffice, proper UTF-8 Cyrillic instead of mojibake, and Windows-1251 file support. Update with the same install command — takes 1–3 minutes.`,
+};
+
+function bannerTitle(reason: EngineUpdateReason, version: string, lang: Lang): string {
+  return lang === "en"
+    ? TITLES_EN[reason](version)
+    : REASONS[reason].title(version);
+}
+
+function bannerWhy(reason: EngineUpdateReason, lang: Lang): string {
+  return lang === "en" ? WHY_EN[reason] : REASONS[reason].why;
+}
+
 async function copyText(text: string): Promise<boolean> {
   try {
     await navigator.clipboard.writeText(text);
@@ -150,6 +183,7 @@ interface EngineUpdateGuideProps {
 export function EngineUpdateGuide({ reason, health, embedded = false }: EngineUpdateGuideProps) {
   const [open, setOpen] = useState(embedded);
   const [copied, setCopied] = useState(false);
+  const { t, lang } = useI18n();
   const os = detectOS(health);
   const cfg = REASONS[reason];
 
@@ -247,7 +281,7 @@ export function EngineUpdateGuide({ reason, health, embedded = false }: EngineUp
   if (embedded) {
     return (
       <div>
-        <p className="text-xs text-muted-foreground leading-relaxed mb-1">{cfg.why}</p>
+        <p className="text-xs text-muted-foreground leading-relaxed mb-1">{bannerWhy(reason, lang)}</p>
         {guide}
       </div>
     );
@@ -263,15 +297,15 @@ export function EngineUpdateGuide({ reason, health, embedded = false }: EngineUp
     <div className={`mb-5 p-3 rounded-xl border ${tone} text-sm flex items-start gap-3`}>
       <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
       <div className="flex-1 min-w-0">
-        <p className="font-medium">{cfg.title(health?.version || "")}</p>
-        <p className={`text-xs ${toneSub} mt-1 leading-relaxed`}>{cfg.why}</p>
+        <p className="font-medium">{bannerTitle(reason, health?.version || "", lang)}</p>
+        <p className={`text-xs ${toneSub} mt-1 leading-relaxed`}>{bannerWhy(reason, lang)}</p>
         {open && guide}
       </div>
       <button
         onClick={() => setOpen((v) => !v)}
         className="bg-gradient-primary text-white px-3 py-1.5 rounded-lg text-xs font-medium hover:opacity-90 flex-shrink-0 inline-flex items-center gap-1.5 self-start"
       >
-        {open ? "Скрыть инструкцию" : "Как обновить"}
+        {open ? t("Скрыть инструкцию") : t("Как обновить")}
         <ChevronDown className={`w-3.5 h-3.5 transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
     </div>

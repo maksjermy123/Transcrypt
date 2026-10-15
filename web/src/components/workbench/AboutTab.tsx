@@ -7,6 +7,7 @@
 
 import { Mic, FileAudio, FileArchive, Languages, Wrench, ShieldCheck, Zap, Globe } from "lucide-react";
 import { useOnboarding, MODEL_INFO } from "@/lib/onboarding-store";
+import { useI18n } from "@/lib/i18n";
 
 const FEATURES = [
   {
@@ -42,6 +43,7 @@ const FEATURES = [
 ];
 
 export function AboutTab() {
+  const { t } = useI18n();
   const { selectedModel, engineServerOnline } = useOnboarding();
 
   return (
@@ -52,7 +54,7 @@ export function AboutTab() {
           <span className="text-white font-bold text-xl">T</span>
         </div>
         <div>
-          <h2 className="text-2xl font-bold">Transcrypt</h2>
+          <h2 className="text-2xl font-bold">VoxPaperAi</h2>
           <p className="text-sm text-muted-foreground">
             Транскрибация, медиа-обработка, конвертация и перевод — на ресурсах вашего
             компьютера, без серверов и без скачивания архивов.
@@ -87,7 +89,7 @@ export function AboutTab() {
                 <div className="w-8 h-8 rounded-lg bg-[#7c5bf5]/15 flex items-center justify-center flex-shrink-0">
                   <Icon className="w-4 h-4 text-[#7c5bf5]" />
                 </div>
-                <h3 className="font-semibold text-sm">{f.title}</h3>
+                <h3 className="font-semibold text-sm">{t(f.title)}</h3>
               </div>
               <p className="text-xs text-muted-foreground leading-relaxed">{f.text}</p>
             </div>

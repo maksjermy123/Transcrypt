@@ -2,6 +2,7 @@
 
 import { motion } from "framer-motion";
 import { Mic, Download, FileAudio, Film, Cpu, ShieldCheck } from "lucide-react";
+import { useI18n } from "@/lib/i18n";
 
 const features = [
   {
@@ -37,6 +38,7 @@ const features = [
 ];
 
 export function WelcomeStep({ onNext }: { onNext: () => void }) {
+  const { t } = useI18n();
   return (
     <motion.div
       initial={{ opacity: 0, y: 16 }}
@@ -50,12 +52,10 @@ export function WelcomeStep({ onNext }: { onNext: () => void }) {
           <Mic className="w-10 h-10 text-white" />
         </div>
         <h1 className="text-4xl md:text-5xl font-bold tracking-tight mb-4">
-          Привет! Это <span className="text-gradient">Transcrypt</span>
+          {t("Привет! Это")} <span className="text-gradient">VoxPaperAi</span>
         </h1>
         <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
-          Локальный инструмент для транскрипции, субтитров и перевода. Whisper
-          работает прямо в браузере, использует ресурсы вашего компьютера и
-          ничего не отправляет в интернет.
+          {t("Локальный инструмент для транскрипции, субтитров и перевода. Whisper работает прямо в браузере, использует ресурсы вашего компьютера и ничего не отправляет в интернет.")}
         </p>
       </div>
 
@@ -71,9 +71,9 @@ export function WelcomeStep({ onNext }: { onNext: () => void }) {
             <div className="w-10 h-10 rounded-xl bg-[#7c5bf5]/15 flex items-center justify-center mb-3">
               <f.icon className="w-5 h-5 text-[#7c5bf5]" />
             </div>
-            <h3 className="font-semibold mb-1.5">{f.title}</h3>
+            <h3 className="font-semibold mb-1.5">{t(f.title)}</h3>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              {f.text}
+              {t(f.text)}
             </p>
           </motion.div>
         ))}
@@ -84,10 +84,10 @@ export function WelcomeStep({ onNext }: { onNext: () => void }) {
           onClick={onNext}
           className="bg-gradient-primary text-white px-8 py-3.5 rounded-xl font-medium hover:opacity-90 transition-opacity glow-primary"
         >
-          Продолжить →
+          {t("Продолжить →")}
         </button>
         <p className="text-xs text-muted-foreground mt-4">
-          Настройка займёт ~3 минуты. Модель скачается один раз и останется в кеше браузера.
+          {t("Настройка займёт ~3 минуты. Модель скачается один раз и останется в кеше браузера.")}
         </p>
       </div>
     </motion.div>

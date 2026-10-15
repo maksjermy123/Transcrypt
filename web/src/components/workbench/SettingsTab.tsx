@@ -10,7 +10,7 @@
  *    устройство Whisper, кнопки установки/удаления (через онбординг)
  *  - Модели Whisper: 5 уровней, статус кеша браузера
  *  - Перевод: провайдер по умолчанию + ключ DeepL
- *  - Удаление Transcrypt: команда полного удаления с компьютера + очистка браузера
+ *  - Удаление VoxPaperAi: команда полного удаления с компьютера + очистка браузера
  *  - Сброс: онбординг заново / очистка настроек
  */
 
@@ -42,10 +42,12 @@ import { checkEngineHealth, type EngineHealth } from "@/lib/engine-bridge";
 import { EngineUpdateGuide, isEngineOutdated } from "@/components/workbench/EngineUpdateGuide";
 import { detectHardware, detectWebGPU, isModelCached } from "@/lib/whisper";
 import { recommendedThreads } from "@/lib/onboarding-store";
+import { useI18n } from "@/lib/i18n";
 
 const ALL_MODELS: WhisperModelId[] = ["tiny", "base", "small", "medium", "large-v3"];
 
 export function SettingsTab({ onInstallEngine }: { onInstallEngine: () => void }) {
+  const { t } = useI18n();
   const {
     selectedModel,
     setSelectedModel,
@@ -65,7 +67,7 @@ export function SettingsTab({ onInstallEngine }: { onInstallEngine: () => void }
   const [cacheStatus, setCacheStatus] = useState<Record<string, boolean | "checking">>({});
   const [showKey, setShowKey] = useState(false);
 
-  // ─── Удаление Transcrypt: команда под ОС + очистка браузера ───
+  // ─── Удаление VoxPaperAi: команда под ОС + очистка браузера ───
   const REPO_RAW = "https://raw.githubusercontent.com/maksjermy123/Transcrypt/main/engine-install";
   const detectedOS = (() => {
     const sysName = health?.system_name || "";
@@ -73,7 +75,8 @@ export function SettingsTab({ onInstallEngine }: { onInstallEngine: () => void }
     if (sysName === "Windows" || /Win/.test(ua)) {
       return {
         label: "Windows",
-        command: `powershell -c "irm ${REPO_RAW}/uninstall-win.ps1 | iex"`,
+        // -NoExit: окно не закроется, пользователь увидит результат удаления
+        command: `iwr -useb ${REPO_RAW}/uninstall-win.ps1 -OutFile "$env:TEMP\\vpai-uninstall.ps1"; powershell -NoProfile -ExecutionPolicy Bypass -NoExit -File "$env:TEMP\\vpai-uninstall.ps1"`,
       };
     }
     if (sysName === "Linux" || /Linux/.test(ua)) {
@@ -111,7 +114,7 @@ export function SettingsTab({ onInstallEngine }: { onInstallEngine: () => void }
    *  Cache API (модели браузерного Whisper transformers.js), IndexedDB. */
   async function clearBrowserData() {
     const ok = confirm(
-      "Удалить все данные Transcrypt из этого браузера?\n\n" +
+      "Удалить все данные VoxPaperAi из этого браузера?\n\n" +
       "· Кеш моделей браузерного Whisper\n" +
       "· Настройки и онбординг (пройдёте гайд заново)\n" +
       "· Историю результатов и активные задачи\n\n" +
@@ -119,7 +122,7 @@ export function SettingsTab({ onInstallEngine }: { onInstallEngine: () => void }
     );
     if (!ok) return;
     try {
-      // localStorage: ключи Transcrypt
+      // localStorage: ключи VoxPaperAi (технические ключи transcrypt-* сохранены)
       const keys = Object.keys(localStorage).filter(
         (k) => k.startsWith("transcrypt") || k === "mockEngine.jobs"
       );
@@ -472,10 +475,10 @@ export function SettingsTab({ onInstallEngine }: { onInstallEngine: () => void }
         </div>
       </section>
 
-      {/* ─── Удаление Transcrypt с компьютера ─── */}
+      {/* ─── Удаление VoxPaperAi с компьютера ─── */}
       <section className="rounded-2xl border border-red-500/20 bg-red-500/5 p-5">
         <h3 className="font-semibold text-sm mb-3 flex items-center gap-2 text-red-300/90">
-          <ShieldAlert className="w-4 h-4" /> Удаление Transcrypt
+          <ShieldAlert className="w-4 h-4" /> Удаление VoxPaperAi
         </h3>
         <div className="space-y-3">
           <div className="text-xs text-muted-foreground leading-relaxed">
@@ -521,7 +524,7 @@ export function SettingsTab({ onInstallEngine }: { onInstallEngine: () => void }
 
       {/* ─── Опасная зона ─── */}
       <section className="rounded-2xl border border-red-500/20 bg-red-500/5 p-5">
-        <h3 className="font-semibold text-sm mb-3 text-red-300/90">Сброс</h3>
+        <h3 className="font-semibold text-sm mb-3 text-red-300/90">{t("Сброс")}</h3>
         <div className="flex flex-wrap gap-2">
           <button
             onClick={() => {

@@ -4,11 +4,13 @@ import { motion } from "framer-motion";
 import { Loader2, CheckCircle2, AlertCircle, Server, ArrowRight, Info } from "lucide-react";
 import { useEffect, useState, useRef } from "react";
 import { useOnboarding, MODEL_INFO, browserSafeModel } from "@/lib/onboarding-store";
+import { useI18n } from "@/lib/i18n";
 import { loadWhisperPipeline, type ProgressInfo } from "@/lib/whisper";
 
 type Phase = "loading" | "ready" | "error";
 
 export function ModelDownloadStep({ onNext }: { onNext: () => void }) {
+  const { t } = useI18n();
   const {
     selectedModel,
     setModelStatus,
@@ -101,7 +103,7 @@ export function ModelDownloadStep({ onNext }: { onNext: () => void }) {
         className="max-w-2xl mx-auto px-6 py-10"
       >
         <div className="text-center mb-10">
-          <h2 className="text-3xl font-bold mb-3">Модель готова к работе</h2>
+          <h2 className="text-3xl font-bold mb-3">{t("Модель готова к работе")}</h2>
           <p className="text-muted-foreground max-w-lg mx-auto">
             Всё настроено — вручную ничего скачивать не нужно.
           </p>
@@ -166,7 +168,7 @@ export function ModelDownloadStep({ onNext }: { onNext: () => void }) {
       className="max-w-2xl mx-auto px-6 py-10"
     >
       <div className="text-center mb-10">
-        <h2 className="text-3xl font-bold mb-3">Загрузка модели Whisper</h2>
+        <h2 className="text-3xl font-bold mb-3">{t("Загрузка модели Whisper")}</h2>
         <p className="text-muted-foreground max-w-lg mx-auto">
           Модель скачивается один раз и кешируется в браузере. При следующем
           открытии страницы она загрузится мгновенно — без повторной загрузки из

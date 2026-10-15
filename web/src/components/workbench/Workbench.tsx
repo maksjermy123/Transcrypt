@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Mic, FileAudio, FileArchive, Home, Server, ServerOff, Zap, X, Languages, Wrench, Info, ShieldCheck } from "lucide-react";
 import { useOnboarding } from "@/lib/onboarding-store";
 import { checkEngineHealth } from "@/lib/engine-bridge";
+import { useI18n } from "@/lib/i18n";
 import { TranscribeTab } from "./TranscribeTab";
 import { MediaTab } from "./MediaTab";
 import { ConvertTab } from "./ConvertTab";
@@ -12,13 +13,15 @@ import { TranslateTab } from "./TranslateTab";
 import { SettingsTab } from "./SettingsTab";
 import { AboutTab } from "./AboutTab";
 import { ThemeToggle } from "./ThemeToggle";
+import { LangToggle } from "./LangToggle";
+import { SiteFooter } from "@/components/SiteFooter";
 
 type WorkTab = "transcribe" | "media" | "convert" | "translate" | "settings" | "about";
 
 const TABS: { id: WorkTab; label: string; icon: React.ComponentType<{ className?: string }>; hint: string }[] = [
   { id: "transcribe", label: "Транскрипция", icon: Mic, hint: "Whisper превратит голос в текст с таймкодами" },
   { id: "media", label: "Медиа", icon: FileAudio, hint: "Скачать видео/аудио, очистить аудио, вшить субтитры" },
-  { id: "convert", label: "Конвертер", icon: FileArchive, hint: "Медиа через ffmpeg, изображения, текст" },
+  { id: "convert", label: "Конвертер", icon: FileArchive, hint: "Медиа через ffmpeg, изображения, документы" },
   { id: "translate", label: "Перевод", icon: Languages, hint: "Текст и файлы TXT/DOCX/PDF, включая LAYOUT с разметкой" },
   { id: "settings", label: "Настройки", icon: Wrench, hint: "Железо, движок, модели Whisper, переводчик" },
   { id: "about", label: "О программе", icon: Info, hint: "Возможности, архитектура и ограничения" },
@@ -26,6 +29,7 @@ const TABS: { id: WorkTab; label: string; icon: React.ComponentType<{ className?
 
 export function Workbench({ onExit }: { onExit: () => void }) {
   const { selectedModel, reset, engineServerOnline, setEngineServerOnline, setEngineServerHealth, setStep } = useOnboarding();
+  const { t } = useI18n();
   const [tab, setTab] = useState<WorkTab>("transcribe");
   const [checking, setChecking] = useState(true);
   const [showBanner, setShowBanner] = useState(true);
@@ -64,36 +68,31 @@ export function Workbench({ onExit }: { onExit: () => void }) {
     <div className="min-h-screen flex flex-col">
       {/* Шапка */}
       <header className="sticky top-0 z-50 bg-[#0b0f19]/85 backdrop-blur-xl border-b border-[#263147]/60">
-        <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between gap-4">
+        <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between gap-4">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-xl bg-gradient-primary flex items-center justify-center">
-              <span className="text-white font-bold text-sm">T</span>
+              <span className="text-white font-bold text-sm">V</span>
             </div>
-            <div className="flex items-baseline gap-2">
-              <span className="font-semibold">Transcrypt</span>
-              <span className="text-xs text-muted-foreground hidden sm:inline">
-                · Whisper {selectedModel}
-              </span>
-            </div>
+            <span className="font-semibold">VoxPaperAi</span>
           </div>
 
           {/* Tabs */}
           <nav className="flex items-center gap-1 bg-[#1b2334] rounded-xl p-1 overflow-x-auto max-w-full">
-            {TABS.map((t) => {
-              const Icon = t.icon;
+            {TABS.map((t2) => {
+              const Icon = t2.icon;
               return (
                 <button
-                  key={t.id}
-                  onClick={() => setTab(t.id)}
-                  title={t.hint}
-                  className={`px-2.5 lg:px-3.5 py-1.5 rounded-lg text-sm font-medium transition-colors inline-flex items-center gap-2 flex-shrink-0 ${
-                    tab === t.id
+                  key={t2.id}
+                  onClick={() => setTab(t2.id)}
+                  title={t(t2.hint)}
+                  className={`px-2 xl:px-2.5 2xl:px-3 py-1.5 rounded-lg text-[13px] font-medium transition-colors inline-flex items-center gap-1.5 flex-shrink-0 ${
+                    tab === t2.id
                       ? "bg-gradient-primary text-white"
                       : "text-muted-foreground hover:text-foreground"
                   }`}
                 >
                   <Icon className="w-4 h-4" />
-                  <span className="hidden lg:inline">{t.label}</span>
+                  <span className="hidden xl:inline">{t(t2.label)}</span>
                 </button>
               );
             })}
@@ -101,7 +100,7 @@ export function Workbench({ onExit }: { onExit: () => void }) {
 
           <div className="flex items-center gap-2">
             {/* Индикатор движка — КЛИКАБЕЛЬНЫЙ */}
-            {/* Удаление движка перенесено в Настройки → «Удаление Transcrypt» */}
+            {/* Удаление движка перенесено в Настройки → «Удаление VoxPaperAi» */}
             <button
               onClick={engineServerOnline ? undefined : goToEngineInstall}
               disabled={engineServerOnline}
@@ -112,40 +111,42 @@ export function Workbench({ onExit }: { onExit: () => void }) {
               } ${checking ? "opacity-60" : ""}`}
               title={
                 engineServerOnline
-                  ? "Локальный Python-движок запущен — все функции доступны, включая URL-задачи с YouTube"
-                  : "Локальный движок не найден. Нажмите чтобы установить."
+                  ? t("Локальный Python-движок запущен — все функции доступны, включая URL-задачи с YouTube")
+                  : t("Локальный движок не найден. Нажмите чтобы установить.")
               }
             >
               {engineServerOnline ? (
                 <>
-                  <Server className="w-3.5 h-3.5" />
-                  <span className="hidden md:inline">Движок online</span>
-                  <Server className="w-3.5 h-3.5 md:hidden" />
+                  <Server className="w-3.5 h-3.5 hidden 2xl:block" />
+                  <span className="hidden 2xl:inline">{t("Движок online")}</span>
+                  <Server className="w-3.5 h-3.5 2xl:hidden" />
                 </>
               ) : (
                 <>
                   <ServerOff className="w-3.5 h-3.5" />
-                  <span className="hidden md:inline">Только браузер — нажмите чтобы установить движок</span>
-                  <span className="md:hidden">Только браузер</span>
+                  <span className="hidden 2xl:inline">{t("Только браузер — нажмите чтобы установить движок")}</span>
+                  <span className="2xl:hidden">{t("Только браузер")}</span>
                 </>
               )}
             </button>
 
             {/* Приватность: вся обработка на компьютере пользователя — ключевой аргумент для студентов */}
             <span
-              className="hidden lg:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-emerald-500/10 text-emerald-400 cursor-help"
-              title="Вся обработка идёт на вашем компьютере: аудио не загружается на серверы, записи не покидают устройство. Работает даже без интернета."
+              className="hidden 2xl:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-emerald-500/10 text-emerald-400 cursor-help"
+              title={t("Вся обработка идёт на вашем компьютере: аудио не загружается на серверы, записи не покидают устройство. Работает даже без интернета.")}
             >
               <ShieldCheck className="w-3.5 h-3.5" />
-              100% локально
+              {t("100% локально")}
             </span>
+
+            <LangToggle />
 
             <ThemeToggle />
 
             <button
               onClick={onExit}
               className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-[#1b2334]"
-              title="В начало / пройти онбординг заново"
+              title={t("В начало / пройти онбординг заново")}
             >
               <Home className="w-5 h-5" />
             </button>
@@ -159,20 +160,20 @@ export function Workbench({ onExit }: { onExit: () => void }) {
           <div className="max-w-6xl mx-auto px-6 py-3.5 flex items-center gap-3 text-sm">
             <Zap className="w-5 h-5 text-amber-400 flex-shrink-0" />
             <div className="flex-1 min-w-0">
-              <span className="text-amber-200 font-medium">Хотите URL-задачи с YouTube/TikTok и быструю транскрипцию длинных файлов?</span>{" "}
-              <span className="text-amber-300/80">Установите локальный движок — он работает в 5-10 раз быстрее и не зависает на длинных аудио.</span>
+              <span className="text-amber-200 font-medium">{t("Хотите URL-задачи с YouTube/TikTok и быструю транскрипцию длинных файлов?")}</span>{" "}
+              <span className="text-amber-300/80">{t("Установите локальный движок — он работает в 5-10 раз быстрее и не зависает на длинных аудио.")}</span>
             </div>
             <button
               onClick={goToEngineInstall}
               className="bg-gradient-primary text-white px-4 py-1.5 rounded-lg text-xs font-medium hover:opacity-90 whitespace-nowrap inline-flex items-center gap-1.5"
             >
               <Zap className="w-3 h-3" />
-              Установить движок
+              {t("Установить движок")}
             </button>
             <button
               onClick={() => setShowBanner(false)}
               className="p-1 rounded-md text-amber-400/70 hover:text-amber-400 hover:bg-amber-500/10"
-              title="Скрыть"
+              title={t("Скрыть")}
             >
               <X className="w-4 h-4" />
             </button>
@@ -201,17 +202,12 @@ export function Workbench({ onExit }: { onExit: () => void }) {
       </main>
 
       {/* Футер */}
-      <footer className="border-t border-[#263147]/60 py-4 px-6 text-center text-xs text-muted-foreground">
-        Transcrypt · работает локально на вашем компьютере · Whisper {selectedModel}
-        {engineServerOnline ? " · 🟢 Локальный движок online" : " · 🟡 Только браузерный режим"}
-        {" · "}
-        <button
-          onClick={reset}
-          className="text-[#7c5bf5] hover:underline"
-        >
-          Сбросить настройки
-        </button>
-      </footer>
+      <SiteFooter
+        localLine={`VoxPaperAi · ${t("работает локально на вашем компьютере")} · Whisper ${selectedModel}${
+          engineServerOnline ? ` · 🟢 ${t("Локальный движок online")}` : ` · 🟡 ${t("Только браузерный режим")}`
+        }`}
+        onReset={reset}
+      />
     </div>
   );
 }

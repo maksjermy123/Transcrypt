@@ -12,6 +12,7 @@ import {
   ArrowLeft,
 } from "lucide-react";
 import { useState } from "react";
+import { useI18n } from "@/lib/i18n";
 
 export function ConsentStep({
   onAgree,
@@ -20,6 +21,7 @@ export function ConsentStep({
   onAgree: () => void;
   onBack: () => void;
 }) {
+  const { t } = useI18n();
   const [consented, setConsented] = useState(false);
   const [acknowledged, setAcknowledged] = useState(false);
 
@@ -37,7 +39,7 @@ export function ConsentStep({
         <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-amber-500/15 mb-5">
           <AlertTriangle className="w-8 h-8 text-amber-400" />
         </div>
-        <h2 className="text-3xl font-bold mb-3">Внимание: ресурсы и ответственность</h2>
+        <h2 className="text-3xl font-bold mb-3">{t("Внимание: ресурсы и ответственность")}</h2>
         <p className="text-muted-foreground max-w-lg mx-auto">
           Локальный движок задействует ресурсы вашего компьютера. Перед установкой
           важно понять, что произойдёт.

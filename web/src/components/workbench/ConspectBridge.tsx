@@ -223,7 +223,7 @@ export function ConspectBridge({ text, segments, sourceLabel }: ConspectBridgePr
           </div>
           <p className="text-muted-foreground flex items-start gap-1.5 pt-0.5">
             <HelpCircle className="w-3 h-3 mt-0.5 flex-shrink-0" />
-            Логинимся к вашему AI — Transcrypt не видит ваш аккаунт: промт и файл остаются на вашем компьютере до отправки.
+            Логинимся к вашему AI — VoxPaperAi не видит ваш аккаунт: промт и файл остаются на вашем компьютере до отправки.
           </p>
         </div>
       )}

@@ -87,7 +87,7 @@ export function buildMarkdown(opts: {
   const head = [
     `# ${opts.title}`,
     "",
-    `> Транскрипт создан Transcrypt · ${date}${opts.source ? ` · Источник: ${opts.source}` : ""}`,
+    `> Транскрипт создан VoxPaperAi · ${date}${opts.source ? ` · Источник: ${opts.source}` : ""}`,
     "",
     "## Полный текст",
     "",

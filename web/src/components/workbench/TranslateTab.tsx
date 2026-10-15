@@ -30,6 +30,7 @@ import {
   Download,
 } from "lucide-react";
 import { useOnboarding } from "@/lib/onboarding-store";
+import { useI18n } from "@/lib/i18n";
 import { useSettings } from "@/lib/settings-store";
 import { translateText, translateBatch } from "@/lib/translate";
 import {
@@ -76,6 +77,10 @@ function formatSize(bytes: number): string {
 export function TranslateTab() {
   const { engineServerOnline } = useOnboarding();
   const { provider, deeplKey, pdfMode, setPdfMode } = useSettings();
+  const { t } = useI18n();
+  const [dragActive, setDragActive] = useState(false);
+  const dragDepth = useRef(0);
+  const sectionInputRef = useRef<HTMLInputElement>(null);
 
   // ─── Секция 1: перевод текста ───
   const [textIn, setTextIn] = useState("");
@@ -135,8 +140,9 @@ export function TranslateTab() {
   }
 
   // ─── Файлы: добавление / удаление ───
-  function addFiles(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(e.target.files ?? []);
+  // Единая точка приёма файлов: и через кнопку, и через drag&drop на секции
+  function addFileList(fileList: File[]) {
+    const files = Array.from(fileList);
     if (!files.length) return;
 
     const accepted: FileItem[] = [];
@@ -161,6 +167,11 @@ export function TranslateTab() {
     if (rejected.length) {
       pushLog(`⚠️ Пропущены файлы неподдерживаемого формата: ${rejected.slice(0, 3).join(", ")}${rejected.length > 3 ? ` и ещё ${rejected.length - 3}` : ""}`);
     }
+  }
+
+  function addFiles(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    addFileList(files);
     e.target.value = "";
   }
 
@@ -427,9 +438,39 @@ export function TranslateTab() {
       </section>
 
       {/* ═══════════ Секция 2: Перевод файлов ═══════════ */}
-      <section className="rounded-2xl border border-[#263147]/60 bg-[#111827]/40 overflow-hidden">
+      <section
+        className={`rounded-2xl border bg-[#111827]/40 overflow-hidden transition-colors ${
+          dragActive ? "border-[#7c5bf5] bg-[#7c5bf5]/10" : "border-[#263147]/60"
+        }`}
+        onDragOver={(e) => {
+          e.preventDefault(); // без этого браузер откроет файл вместо drop
+        }}
+        onDragEnter={(e) => {
+          e.preventDefault();
+          dragDepth.current += 1;
+          if (e.dataTransfer.items && Array.from(e.dataTransfer.items).some((i) => i.kind === "file")) {
+            setDragActive(true);
+          }
+        }}
+        onDragLeave={(e) => {
+          e.preventDefault();
+          dragDepth.current -= 1;
+          if (dragDepth.current <= 0) {
+            dragDepth.current = 0;
+            setDragActive(false);
+          }
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          dragDepth.current = 0;
+          setDragActive(false);
+          if (e.dataTransfer.files?.length) {
+            addFileList(Array.from(e.dataTransfer.files));
+          }
+        }}
+      >
         <div className="px-5 py-3.5 border-b border-[#263147]/60 flex flex-wrap items-center gap-3">
-          <h3 className="font-semibold text-sm">2. Перевод файлов (TXT / DOCX / PDF)</h3>
+          <h3 className="font-semibold text-sm">{t("2. Перевод файлов (TXT / DOCX / PDF)")}</h3>
           <div className="flex items-center gap-2 ml-auto">
             <label className="text-xs text-muted-foreground">PDF режим:</label>
             <select
@@ -460,8 +501,9 @@ export function TranslateTab() {
           <div className="flex flex-wrap items-center gap-2">
             <label className="inline-flex items-center gap-2 bg-[#1b2334] hover:bg-[#232c40] border border-[#263147] px-4 py-2.5 rounded-xl text-sm cursor-pointer transition-colors">
               <FilePlus2 className="w-4 h-4 text-[#7c5bf5]" />
-              Добавить файл(ы)
+              {t("Добавить файл(ы)")}
               <input
+                ref={sectionInputRef}
                 type="file"
                 multiple
                 accept=".txt,.md,.docx,.pdf"
@@ -480,8 +522,23 @@ export function TranslateTab() {
               </button>
             )}
             <span className="text-xs text-muted-foreground ml-auto">
-              Файлы обрабатываются локально в браузере, в сеть уходит только текст для перевода
+              {t("Файлы обрабатываются локально в браузере, в сеть уходит только текст для перевода")}
             </span>
+          </div>
+
+          {/* Drag&drop зона — видна всегда, клик открывает выбор файлов */}
+          <div
+            className={`rounded-xl border border-dashed px-4 py-5 text-center text-xs cursor-pointer transition-colors ${
+              dragActive
+                ? "border-[#7c5bf5] text-[#b9a8f7] bg-[#7c5bf5]/10"
+                : "border-[#263147]/60 text-muted-foreground hover:border-[#7c5bf5]/50 hover:text-foreground"
+            }`}
+            onClick={() => {
+              const inp = sectionInputRef.current;
+              if (inp) inp.click();
+            }}
+          >
+            {t("или перетащите файлы сюда")} · TXT / DOCX / PDF
           </div>
 
           {/* Список файлов */}

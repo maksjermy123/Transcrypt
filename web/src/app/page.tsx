@@ -1,9 +1,11 @@
 "use client";
 
-import { useSyncExternalStore } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import { useOnboarding } from "@/lib/onboarding-store";
 import { OnboardingWizard } from "@/components/onboarding/OnboardingWizard";
 import { Workbench } from "@/components/workbench/Workbench";
+import { applyTheme, getStoredTheme } from "@/lib/theme";
+import { useI18n } from "@/lib/i18n";
 
 const emptySubscribe = () => () => {};
 
@@ -13,6 +15,7 @@ export default function Home() {
     setCompleted,
     selectedModel,
   } = useOnboarding();
+  const { t } = useI18n();
   // Гидратация: на сервере mounted=false (рендер заглушки), на клиенте true.
   // useSyncExternalStore безопасно различает SSR и клиент без setState в эффекте —
   // первый клиентский кадр совпадает с серверным, затем показываем реальный UI.
@@ -28,10 +31,21 @@ export default function Home() {
   const ready = mounted && completed && !!selectedModel;
   const view = ready ? "workbench" : "onboarding";
 
+  // Домашняя страница (приветствие/онбординг) — всегда ТЁМНАЯ: это брендовая
+  // идентичность. Сохранённый выбор темы не трогаем — при входе в рабочую
+  // область возвращаем то, что выбрал пользователь.
+  useEffect(() => {
+    if (view === "onboarding") {
+      applyTheme("dark");
+    } else {
+      applyTheme(getStoredTheme());
+    }
+  }, [view]);
+
   if (!mounted) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="text-muted-foreground text-sm">Загрузка Transcrypt…</div>
+        <div className="text-muted-foreground text-sm">{t("Загрузка VoxPaperAi…")}</div>
       </div>
     );
   }

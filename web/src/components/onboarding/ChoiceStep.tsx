@@ -2,6 +2,7 @@
 
 import { motion } from "framer-motion";
 import { Check, X, Globe, Server, ArrowRight, ShieldCheck } from "lucide-react";
+import { useI18n } from "@/lib/i18n";
 
 type Mode = "browser" | "engine";
 
@@ -22,6 +23,7 @@ const COMPARISON: Array<{ feature: string; browser: string | boolean; engine: st
 ];
 
 export function ChoiceStep({ onSelect }: { onSelect: (mode: Mode) => void }) {
+  const { t } = useI18n();
   return (
     <motion.div
       initial={{ opacity: 0, y: 16 }}
@@ -31,10 +33,9 @@ export function ChoiceStep({ onSelect }: { onSelect: (mode: Mode) => void }) {
       className="max-w-4xl mx-auto px-6 py-10"
     >
       <div className="text-center mb-10">
-        <h2 className="text-3xl font-bold mb-3">Выберите режим работы</h2>
+        <h2 className="text-3xl font-bold mb-3">{t("Выберите режим работы")}</h2>
         <p className="text-muted-foreground max-w-xl mx-auto">
-          Transcrypt можно использовать двумя способами. Выберите подходящий —
-          сменить режим можно в любой момент в настройках.
+          {t("VoxPaperAi можно использовать двумя способами. Выберите подходящий — сменить режим можно в любой момент в настройках.")}
         </p>
       </div>
 
@@ -43,20 +44,20 @@ export function ChoiceStep({ onSelect }: { onSelect: (mode: Mode) => void }) {
         <ChoiceCard
           mode="browser"
           icon={Globe}
-          title="Только браузер"
-          subtitle="Без установки"
-          desc="Whisper работает прямо в браузере через WebAssembly. Подходит для коротких локальных файлов, не требует установки Python."
-          cta="Продолжить без установки"
+          title={t("Только браузер")}
+          subtitle={t("Без установки")}
+          desc={t("Whisper работает прямо в браузере через WebAssembly. Подходит для коротких локальных файлов, не требует установки Python.")}
+          cta={t("Продолжить без установки")}
           recommended={false}
           onSelect={() => onSelect("browser")}
         />
         <ChoiceCard
           mode="engine"
           icon={Server}
-          title="С локальным движком"
-          subtitle="Полный функционал"
-          desc="Установка локального Python-движка (~800 МБ). Доступны URL-задачи (YouTube, TikTok), скачивание, очистка аудио, hardsub, нативный Whisper (в 5+ раз быстрее)."
-          cta="Установить движок →"
+          title={t("С локальным движком")}
+          subtitle={t("Полный функционал")}
+          desc={t("Установка локального Python-движка (~800 МБ). Доступны URL-задачи (YouTube, TikTok), скачивание, очистка аудио, hardsub, нативный Whisper (в 5+ раз быстрее).")}
+          cta={t("Установить движок →")}
           recommended={true}
           onSelect={() => onSelect("engine")}
         />
@@ -64,25 +65,25 @@ export function ChoiceStep({ onSelect }: { onSelect: (mode: Mode) => void }) {
 
       {/* Таблица сравнения */}
       <div className="glass-card rounded-2xl p-6 overflow-x-auto">
-        <h3 className="font-semibold mb-4 text-sm">Подробное сравнение</h3>
+        <h3 className="font-semibold mb-4 text-sm">{t("Подробное сравнение")}</h3>
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-[#263147]">
-              <th className="text-left py-2 px-3 text-muted-foreground font-medium">Функция</th>
+              <th className="text-left py-2 px-3 text-muted-foreground font-medium">{t("Функция")}</th>
               <th className="text-center py-2 px-3 text-muted-foreground font-medium w-32">
                 <Globe className="w-4 h-4 mx-auto mb-1" />
-                Только браузер
+                {t("Только браузер")}
               </th>
               <th className="text-center py-2 px-3 text-[#7c5bf5] font-medium w-32">
                 <Server className="w-4 h-4 mx-auto mb-1" />
-                С движком
+                {t("С движком")}
               </th>
             </tr>
           </thead>
           <tbody>
             {COMPARISON.map((row, i) => (
               <tr key={i} className={i % 2 === 0 ? "bg-[#1b2334]/30" : ""}>
-                <td className="py-2.5 px-3 text-foreground/90">{row.feature}</td>
+                <td className="py-2.5 px-3 text-foreground/90">{t(row.feature)}</td>
                 <td className="py-2.5 px-3 text-center">
                   <FeatureCell value={row.browser} />
                 </td>
@@ -98,14 +99,14 @@ export function ChoiceStep({ onSelect }: { onSelect: (mode: Mode) => void }) {
       <div className="mt-6 text-center text-xs text-muted-foreground flex items-center justify-center gap-2">
         <ShieldCheck className="w-3.5 h-3.5 text-[#7c5bf5]" />
         <span>
-          В любом режиме ваши файлы не покидают устройство. Подробнее —{" "}
+          {t("В любом режиме ваши файлы не покидают устройство. Подробнее —")}{" "}
           <a
             href="/Transcrypt/privacy"
             target="_blank"
             rel="noopener noreferrer"
             className="text-[#7c5bf5] hover:underline"
           >
-            Политика конфиденциальности
+            {t("Политика конфиденциальности")}
           </a>
         </span>
       </div>
@@ -131,6 +132,7 @@ function ChoiceCard({
   recommended: boolean;
   onSelect: () => void;
 }) {
+  const { t } = useI18n();
   return (
     <motion.button
       whileHover={{ scale: 1.02 }}
@@ -146,7 +148,7 @@ function ChoiceCard({
         </div>
         {recommended && (
           <span className="text-xs px-2 py-1 rounded-full bg-[#7c5bf5]/20 text-[#7c5bf5] font-medium">
-            Рекомендуется
+            {t("Рекомендуется")}
           </span>
         )}
       </div>
@@ -164,7 +166,8 @@ function ChoiceCard({
 }
 
 function FeatureCell({ value }: { value: string | boolean }) {
+  const { t } = useI18n();
   if (value === true) return <Check className="w-4 h-4 text-emerald-500 mx-auto" />;
   if (value === false) return <X className="w-4 h-4 text-red-500/70 mx-auto" />;
-  return <span className="text-xs text-muted-foreground">{value}</span>;
+  return <span className="text-xs text-muted-foreground">{t(value)}</span>;
 }

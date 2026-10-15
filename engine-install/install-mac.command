@@ -203,6 +203,19 @@ else
 fi
 
 # ─── 7. Установка зависимостей ───────────────────────────────────
+# Intel Mac (x86_64): свежие torch (2.3+) собираются только под Apple Silicon,
+# последняя версия с колесами для macOS x86_64 — 2.2.2. Ставим её ПЕРЕД
+# requirements, иначе pip упадёт «No matching distribution for torch».
+ARCH="$(uname -m)"
+if [ "$ARCH" != "arm64" ]; then
+    print_step "MacBook Intel ($ARCH): ставим torch 2.2.2 (последняя с поддержкой x86_64 macOS)..."
+    if "$VENV_DIR/bin/pip" install "torch==2.2.2" --quiet --no-cache-dir; then
+        print_ok "torch 2.2.2 установлен (Intel)"
+    else
+        print_warn "torch 2.2.2 не установился — pip попробует сам найти совместимую версию"
+    fi
+fi
+
 print_step "Установка зависимостей (это займёт несколько минут при первом запуске)..."
 "$VENV_DIR/bin/pip" install --upgrade pip --quiet
 # ВАЖНО: сначала отдельно setuptools<81, потом остальные пакеты.

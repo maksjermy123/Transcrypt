@@ -11,16 +11,15 @@
   </defs>
   <!-- Rounded square background -->
   <rect x="2" y="2" width="60" height="60" rx="14" fill="url(#bg)" filter="url(#shadow)"/>
-  <!-- Letter T -->
+  <!-- Letter V (VoxPaperAi) -->
   <path d="
-    M 14 18
-    L 50 18
-    L 50 25
-    L 38 25
-    L 38 50
-    L 26 50
-    L 26 25
-    L 14 25
+    M 15 17
+    L 23 17
+    L 32 44
+    L 41 17
+    L 49 17
+    L 37 50
+    L 27 50
     Z
   " fill="#ffffff"/>
 </svg>
