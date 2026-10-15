@@ -480,9 +480,32 @@ class Converter:
             self.logger.error(f"Audio enhancement failed: {err_msg}")
             raise e
 
+    def _probe_video_height(self, video_path):
+        """Высота видео через ffprobe (для масштабирования шрифта субтитров)."""
+        try:
+            probe_cmd = [
+                self._ffprobe(), "-v", "error", "-select_streams", "v:0",
+                "-show_entries", "stream=height",
+                "-of", "default=noprint_wrappers=1:nokey=1",
+                video_path,
+            ]
+            res = subprocess.run(probe_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=10)
+            h = int(float(res.stdout.strip()))
+            return h if h > 0 else None
+        except Exception:
+            return None
+
     def hardsub_video(self, video_path, srt_path, output_path=None, progress_callback=None, worker_obj=None):
         """Burns SRT subtitles directly into the video using ffmpeg subtitles filter.
         This requires full video re-encoding and is a slow process.
+
+        Умное встраивание (force_style):
+          - субтитры ВНИЗУ по центру (Alignment=2), а не по-середине кадра;
+          - отступ от нижнего края ~5% высоты — не липнут к краю;
+          - боковые поля ~6% — строки не прилипают к краям экрана;
+          - размер шрифта масштабируется от высоты видео (~3.5%), 16–52;
+          - чёрная обводка + тень — читаемо на любом фоне;
+          - умный перенос длинных строк (WrapStyle=0) — максимум 2-3 строки внизу.
         """
         import time
         import re
@@ -502,9 +525,28 @@ class Converter:
         # Escape special characters in srt_path for ffmpeg filter
         escaped_srt = srt_path.replace("\\", "\\\\").replace(":", "\\:").replace("'", "\\'")
         
-        cmd = [self._ffmpeg(), "-y", "-i", video_path, "-vf", f"subtitles='{escaped_srt}'", output_path]
+        # ─── Умный стиль: низ по центру, отступы, шрифт от высоты видео ───
+        video_height = self._probe_video_height(video_path)
+        if video_height:
+            font_size = max(16, min(52, round(video_height * 0.035)))
+            margin_v = max(10, round(video_height * 0.05))
+            margin_lr = max(20, round(video_height * 0.11))
+        else:
+            font_size, margin_v, margin_lr = 22, 26, 60
+
+        force_style = (
+            f"FontName=Arial,FontSize={font_size},"
+            "PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BackColour=&H80000000,"
+            "BorderStyle=1,Outline=2,Shadow=1,"
+            f"Alignment=2,MarginV={margin_v},MarginL={margin_lr},MarginR={margin_lr},"
+            "WrapStyle=0"
+        )
+        sub_filter = f"subtitles='{escaped_srt}':force_style='{force_style}'"
+
+        cmd = [self._ffmpeg(), "-y", "-i", video_path, "-vf", sub_filter, output_path]
         
         self.logger.info(f"Hardsubbing: {video_path} + {srt_path} -> {output_path}")
+        self.logger.info(f"Стиль субтитров: FontSize={font_size}, MarginV={margin_v} (высота видео: {video_height})")
         
         # Get duration for ETA
         duration = None

@@ -17,6 +17,7 @@ import {
   History,
   X,
   Square,
+  AlertTriangle,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useOnboarding } from "@/lib/onboarding-store";
@@ -50,6 +51,8 @@ export function MediaTab() {
   const [subtitleFile, setSubtitleFile] = useState<File | null>(null);
   const [subtitleName, setSubtitleName] = useState("");
   const [subLang, setSubLang] = useState("ru");
+  // Перевод субтитров при вшивании ("-" — без перевода)
+  const [subTranslate, setSubTranslate] = useState("-");
   const [phase, setPhase] = useState<"idle" | "running" | "done" | "error">("idle");
   const [progress, setProgress] = useState(0);
   const [progressText, setProgressText] = useState("");
@@ -278,6 +281,7 @@ export function MediaTab() {
           sub_file: subFilePath,
           sub_lang: subLang,
           model: selectedModel ?? "base",
+          translate_to: action === "hardsub" ? subTranslate : undefined,
         },
         (p: EngineProgress) => {
           setProgress(p.percent);
@@ -516,27 +520,75 @@ export function MediaTab() {
             </div>
           )}
 
-          <div className="mt-3 flex items-center gap-2">
-            <Settings2 className="w-3.5 h-3.5 text-muted-foreground" />
-            <label className="text-xs text-muted-foreground">Язык субтитров для поиска на YouTube:</label>
-            <select
-              value={subLang}
-              onChange={(e) => setSubLang(e.target.value)}
-              className="bg-[#0b0f19] border border-[#263147] rounded-lg px-2 py-1 text-xs"
-            >
-              <option value="ru">Русский</option>
-              <option value="en">English</option>
-              <option value="uk">Українська</option>
-              <option value="de">Deutsch</option>
-              <option value="fr">Français</option>
-              <option value="es">Español</option>
-              <option value="it">Italiano</option>
-              <option value="pt">Português</option>
-              <option value="pl">Polski</option>
-              <option value="tr">Türkçe</option>
-            </select>
+          <div className="mt-3 flex flex-wrap items-center gap-4">
+            <div className="flex items-center gap-2">
+              <Settings2 className="w-3.5 h-3.5 text-muted-foreground" />
+              <label className="text-xs text-muted-foreground">Язык субтитров для поиска на YouTube:</label>
+              <select
+                value={subLang}
+                onChange={(e) => setSubLang(e.target.value)}
+                className="bg-[#0b0f19] border border-[#263147] rounded-lg px-2 py-1 text-xs"
+              >
+                <option value="ru">Русский</option>
+                <option value="en">English</option>
+                <option value="uk">Українська</option>
+                <option value="de">Deutsch</option>
+                <option value="fr">Français</option>
+                <option value="es">Español</option>
+                <option value="it">Italiano</option>
+                <option value="pt">Português</option>
+                <option value="pl">Polski</option>
+                <option value="tr">Türkçe</option>
+              </select>
+            </div>
+            <div className="flex items-center gap-2">
+              <label className="text-xs text-muted-foreground">Перевести субтитры на:</label>
+              <select
+                value={subTranslate}
+                onChange={(e) => setSubTranslate(e.target.value)}
+                className="bg-[#0b0f19] border border-[#263147] rounded-lg px-2 py-1 text-xs"
+              >
+                <option value="-">Без перевода</option>
+                <option value="ru">Русский</option>
+                <option value="en">English</option>
+                <option value="uk">Українська</option>
+                <option value="de">Deutsch</option>
+                <option value="fr">Français</option>
+                <option value="es">Español</option>
+                <option value="it">Italiano</option>
+                <option value="pt">Português</option>
+                <option value="pl">Polski</option>
+                <option value="tr">Türkçe</option>
+              </select>
+            </div>
           </div>
         </motion.div>
+      )}
+
+      {/* ffmpeg отсутствует на движке — hardsub/очистка не сработают */}
+      {(action === "hardsub" || action === "clean_audio") && engineServerHealth && engineServerHealth.ffmpeg === false && (
+        <div className="glass-card rounded-2xl p-4 mb-4 border-amber-500/30 bg-amber-500/5">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="text-sm text-amber-200 font-medium mb-1">На движке нет ffmpeg</p>
+              <p className="text-xs text-amber-200/80 leading-relaxed">
+                Эта операция требует ffmpeg. Переустановите движок той же командой — установщик
+                скачает его автоматически. Или вручную: <code className="font-mono">brew install ffmpeg</code> (macOS) /{" "}
+                <code className="font-mono">apt install ffmpeg</code> (Linux).
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Описание конвейера hardsub */}
+      {action === "hardsub" && (
+        <div className="text-xs text-muted-foreground mb-4 px-1 leading-relaxed">
+          Конвейер: скачивание видео → субтитры (YouTube или Whisper) → перевод (по желанию) →{" "}
+          <span className="text-foreground">умное вшивание</span>: субтитры внизу по центру с отступами
+          и обводкой — не перекрывают центр кадра, размер шрифта подстраивается под разрешение.
+        </div>
       )}
 
       {/* Run button */}

@@ -86,8 +86,37 @@ try {
     }
 } catch {}
 if (-not $ffmpegFound) {
-    Write-Warn "ffmpeg не найден — медиа-операции (конвертация, hardsub) не будут работать"
-    Write-Host "    Установите: winget install ffmpeg"
+    # ffmpeg нужен для hardsub / конвертации / очистки аудио.
+    # Скачиваем статическую сборку gyan.dev в %LOCALAPPDATA%\VoxPaperAi\runtime\bin —
+    # движок сам находит её там (find_ffmpeg_executable), PATH менять не нужно.
+    Write-Step "ffmpeg не найден — скачиваем статический ffmpeg (~80 МБ)..."
+    $FfmpegBinDir = Join-Path $env:LOCALAPPDATA "VoxPaperAi\runtime\bin"
+    $TmpZip = Join-Path $env:TEMP "ffmpeg-release-essentials.zip"
+    $FfOk = $false
+    try {
+        New-Item -ItemType Directory -Path $FfmpegBinDir -Force | Out-Null
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+        Invoke-WebRequest -Uri "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip" -OutFile $TmpZip -UseBasicParsing -TimeoutSec 600
+        $ExtractDir = Join-Path $env:TEMP "ffmpeg-extract-$(Get-Random)"
+        Expand-Archive -Path $TmpZip -DestinationPath $ExtractDir -Force
+        $binDir = Get-ChildItem $ExtractDir -Directory | Where-Object { Test-Path (Join-Path $_.FullName "bin\ffmpeg.exe") } | Select-Object -First 1
+        if ($binDir) {
+            Copy-Item (Join-Path $binDir.FullName "bin\ffmpeg.exe") $FfmpegBinDir -Force
+            Copy-Item (Join-Path $binDir.FullName "bin\ffprobe.exe") $FfmpegBinDir -Force -ErrorAction SilentlyContinue
+            $ffver = & (Join-Path $FfmpegBinDir "ffmpeg.exe") -version 2>&1 | Select-Object -First 1
+            if ($ffver -match "ffmpeg version") { $FfOk = $true }
+        }
+        Remove-Item $ExtractDir -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item $TmpZip -Force -ErrorAction SilentlyContinue
+    } catch {
+        Write-Host "    Скачивание не удалось: $($_.Exception.Message)" -ForegroundColor Gray
+    }
+    if ($FfOk) {
+        Write-Ok "ffmpeg установлен: $FfmpegBinDir\ffmpeg.exe"
+    } else {
+        Write-Warn "ffmpeg не установлен — hardsub/конвертация будут недоступны (остальное работает)"
+        Write-Host "    Установите: winget install ffmpeg"
+    }
 }
 
 # ─── 3. Создание директории ──────────────────────────────────────

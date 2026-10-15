@@ -10,6 +10,7 @@
  *    устройство Whisper, кнопки установки/удаления (через онбординг)
  *  - Модели Whisper: 5 уровней, статус кеша браузера
  *  - Перевод: провайдер по умолчанию + ключ DeepL
+ *  - Удаление Transcrypt: команда полного удаления с компьютера + очистка браузера
  *  - Сброс: онбординг заново / очистка настроек
  */
 
@@ -30,6 +31,10 @@ import {
   Loader2,
   Download,
   Wrench,
+  ShieldAlert,
+  Copy,
+  Check,
+  Globe,
 } from "lucide-react";
 import { useOnboarding, MODEL_INFO, isBrowserModel, type WhisperModelId } from "@/lib/onboarding-store";
 import { useSettings } from "@/lib/settings-store";
@@ -58,6 +63,84 @@ export function SettingsTab({ onInstallEngine }: { onInstallEngine: () => void }
   const [health, setHealth] = useState<EngineHealth | null>(null);
   const [cacheStatus, setCacheStatus] = useState<Record<string, boolean | "checking">>({});
   const [showKey, setShowKey] = useState(false);
+
+  // ─── Удаление Transcrypt: команда под ОС + очистка браузера ───
+  const REPO_RAW = "https://raw.githubusercontent.com/maksjermy123/Transcrypt/main/engine-install";
+  const detectedOS = (() => {
+    const sysName = health?.system_name || "";
+    const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
+    if (sysName === "Windows" || /Win/.test(ua)) {
+      return {
+        label: "Windows",
+        command: `powershell -c "irm ${REPO_RAW}/uninstall-win.ps1 | iex"`,
+      };
+    }
+    if (sysName === "Linux" || /Linux/.test(ua)) {
+      return {
+        label: "Linux",
+        command: `bash -c "$(curl -fsSL ${REPO_RAW}/uninstall-linux.sh)"`,
+      };
+    }
+    return {
+      label: "macOS",
+      command: `bash -c "$(curl -fsSL ${REPO_RAW}/uninstall-mac.command)"`,
+    };
+  })();
+  const [copiedCmd, setCopiedCmd] = useState(false);
+
+  async function copyUninstallCommand() {
+    try {
+      await navigator.clipboard.writeText(detectedOS.command);
+    } catch {
+      const ta = document.createElement("textarea");
+      ta.value = detectedOS.command;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand("copy"); } catch { /* ignore */ }
+      document.body.removeChild(ta);
+    }
+    setCopiedCmd(true);
+    setTimeout(() => setCopiedCmd(false), 2000);
+  }
+
+  /** Полная очистка данных программы в этом браузере:
+   *  localStorage (онбординг, настройки, результаты, активная задача),
+   *  Cache API (модели браузерного Whisper transformers.js), IndexedDB. */
+  async function clearBrowserData() {
+    const ok = confirm(
+      "Удалить все данные Transcrypt из этого браузера?\n\n" +
+      "· Кеш моделей браузерного Whisper\n" +
+      "· Настройки и онбординг (пройдёте гайд заново)\n" +
+      "· Историю результатов и активные задачи\n\n" +
+      "Данные на компьютере (движок) не трогаются — для них есть команда Шага 1."
+    );
+    if (!ok) return;
+    try {
+      // localStorage: ключи Transcrypt
+      const keys = Object.keys(localStorage).filter(
+        (k) => k.startsWith("transcrypt") || k === "mockEngine.jobs"
+      );
+      keys.forEach((k) => localStorage.removeItem(k));
+    } catch { /* ignore */ }
+    try {
+      // Cache API: модели transformers.js и прочие кеши
+      if (typeof caches !== "undefined") {
+        const names = await caches.keys();
+        await Promise.all(names.map((n) => caches.delete(n)));
+      }
+    } catch { /* ignore */ }
+    try {
+      // IndexedDB (если использовался)
+      if (typeof indexedDB !== "undefined" && indexedDB.databases) {
+        const dbs = await indexedDB.databases();
+        dbs.forEach((d) => d.name && indexedDB.deleteDatabase(d.name));
+      }
+    } catch { /* ignore */ }
+    alert("Данные браузера очищены. Страница перезагрузится — вы увидите приветственный гайд.");
+    window.location.reload();
+  }
 
   // Определение железа
   useEffect(() => {
@@ -363,6 +446,53 @@ export function SettingsTab({ onInstallEngine }: { onInstallEngine: () => void }
               хранится только в вашем браузере (localStorage)
             </span>
           </div>
+        </div>
+      </section>
+
+      {/* ─── Удаление Transcrypt с компьютера ─── */}
+      <section className="rounded-2xl border border-red-500/20 bg-red-500/5 p-5">
+        <h3 className="font-semibold text-sm mb-3 flex items-center gap-2 text-red-300/90">
+          <ShieldAlert className="w-4 h-4" /> Удаление Transcrypt
+        </h3>
+        <div className="space-y-3">
+          <div className="text-xs text-muted-foreground leading-relaxed">
+            <p className="mb-2">
+              <strong className="text-foreground">Шаг 1 — команда на компьютере</strong> удаляет всё, что
+              создавала программа: папку движка <code className="px-1 rounded bg-[#1b2334] font-mono">~/.transcrypt-engine</code> (venv, код, логи),
+              автозапуск, модели Whisper, скачанный ffmpeg и результаты задач. Освободившееся место покажет сам скрипт.
+            </p>
+            <p>
+              <strong className="text-foreground">Шаг 2 — кнопка ниже</strong> чистит данные в этом браузере:
+              кеш моделей браузерного Whisper, настройки онбординга, историю результатов.
+            </p>
+          </div>
+
+          <div className="rounded-xl bg-[#0b0f19] border border-[#263147]/60 p-3">
+            <div className="flex items-center justify-between gap-2 mb-2">
+              <span className="text-xs text-muted-foreground inline-flex items-center gap-1.5">
+                <Globe className="w-3.5 h-3.5" />
+                Команда полного удаления ({detectedOS.label}) — выполните в Терминале
+              </span>
+              <button
+                onClick={() => copyUninstallCommand()}
+                className="px-2.5 py-1 rounded-lg bg-[#1b2334] hover:bg-[#263147] text-xs font-medium inline-flex items-center gap-1.5 transition-colors flex-shrink-0"
+              >
+                {copiedCmd ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                {copiedCmd ? "Скопировано" : "Копировать"}
+              </button>
+            </div>
+            <code className="block text-[11px] font-mono text-emerald-300/90 break-all leading-relaxed select-all">
+              {detectedOS.command}
+            </code>
+          </div>
+
+          <button
+            onClick={clearBrowserData}
+            className="text-xs px-4 py-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-300 inline-flex items-center gap-2 transition-colors"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            Шаг 2 · Очистить данные в браузере
+          </button>
         </div>
       </section>
 

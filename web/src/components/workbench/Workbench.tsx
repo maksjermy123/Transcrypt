@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Mic, FileAudio, FileArchive, Home, Server, ServerOff, Zap, X, Trash2, Languages, Wrench, Info } from "lucide-react";
+import { Mic, FileAudio, FileArchive, Home, Server, ServerOff, Zap, X, Languages, Wrench, Info } from "lucide-react";
 import { useOnboarding } from "@/lib/onboarding-store";
 import { checkEngineHealth } from "@/lib/engine-bridge";
 import { TranscribeTab } from "./TranscribeTab";
@@ -100,6 +100,7 @@ export function Workbench({ onExit }: { onExit: () => void }) {
 
           <div className="flex items-center gap-2">
             {/* Индикатор движка — КЛИКАБЕЛЬНЫЙ */}
+            {/* Удаление движка перенесено в Настройки → «Удаление Transcrypt» */}
             <button
               onClick={engineServerOnline ? undefined : goToEngineInstall}
               disabled={engineServerOnline}
@@ -128,17 +129,6 @@ export function Workbench({ onExit }: { onExit: () => void }) {
                 </>
               )}
             </button>
-
-            {/* Кнопка удаления движка — показывается когда движок online */}
-            {engineServerOnline && (
-              <button
-                onClick={goToEngineInstall}
-                className="p-1.5 rounded-lg text-red-400/70 hover:text-red-400 hover:bg-red-500/10 transition-colors"
-                title="Удалить локальный движок (полное удаление)"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-              </button>
-            )}
 
             <button
               onClick={onExit}

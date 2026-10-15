@@ -88,6 +88,7 @@ export type MediaParams = {
   sub_lang?: string;
   sub_file?: string;
   model?: string;
+  translate_to?: string; // hardsub: перевод субтитров перед вшиванием ("-" — без перевода)
 };
 
 export type TaskResult = {

@@ -81,13 +81,61 @@ else
     exit 1
 fi
 
-# ─── 2. Проверка ffmpeg (опционально, но рекомендуем) ──────────────
+# ─── 2. Проверка ffmpeg — при отсутствии скачиваем статический ──────
 print_step "Проверка ffmpeg..."
 if command -v ffmpeg &> /dev/null; then
     print_ok "ffmpeg найден: $(which ffmpeg)"
 else
-    print_warn "ffmpeg не найден — некоторые медиа-операции (конвертация, hardsub) не будут работать"
-    echo "    Установите через brew: brew install ffmpeg"
+    # ffmpeg нужен для hardsub / конвертации / очистки аудио.
+    # Скачиваем статическую сборку в Application Support/VoxPaperAi/runtime/bin —
+    # движок сам находит её там (find_ffmpeg_executable), PATH менять не нужно.
+    FFMPEG_BIN_DIR="$HOME/Library/Application Support/VoxPaperAi/runtime/bin"
+    TMPFF="$(mktemp -d)"
+    ARCH="$(uname -m)"
+    print_step "ffmpeg не найден — скачиваем статический ffmpeg (~40 МБ, архитектура: $ARCH)..."
+    mkdir -p "$FFMPEG_BIN_DIR"
+    FF_OK=0
+    if [ "$ARCH" = "arm64" ]; then
+        # Нативная сборка для Apple Silicon (osxexperts), фолбэк — evermeet (Intel + Rosetta)
+        if curl -fsSL --max-time 300 "https://www.osxexperts.net/FFmpeg7ARM.zip" -o "$TMPFF/ffmpeg.zip" 2>/dev/null \
+           && unzip -o -q "$TMPFF/ffmpeg.zip" -d "$FFMPEG_BIN_DIR" 2>/dev/null; then
+            FF_OK=1
+        fi
+        if [ "$FF_OK" = "1" ]; then
+            # ffprobe отдельным архивом; если не выйдет — не критично (прогресс hardsub без ETA)
+            curl -fsSL --max-time 180 "https://www.osxexperts.net/FFprobe7ARM.zip" -o "$TMPFF/ffprobe.zip" 2>/dev/null \
+                && unzip -o -q "$TMPFF/ffprobe.zip" -d "$FFMPEG_BIN_DIR" 2>/dev/null || true
+        else
+            if curl -fsSL --max-time 300 "https://evermeet.cx/ffmpeg/get/ffmpeg.zip" -o "$TMPFF/ffmpeg.zip" 2>/dev/null \
+               && unzip -o -q "$TMPFF/ffmpeg.zip" -d "$FFMPEG_BIN_DIR" 2>/dev/null \
+               && curl -fsSL --max-time 180 "https://evermeet.cx/ffmpeg/get/ffprobe.zip" -o "$TMPFF/ffprobe.zip" 2>/dev/null \
+               && unzip -o -q "$TMPFF/ffprobe.zip" -d "$FFMPEG_BIN_DIR" 2>/dev/null; then
+                FF_OK=1
+            fi
+        fi
+    else
+        if curl -fsSL --max-time 300 "https://evermeet.cx/ffmpeg/get/ffmpeg.zip" -o "$TMPFF/ffmpeg.zip" 2>/dev/null \
+           && unzip -o -q "$TMPFF/ffmpeg.zip" -d "$FFMPEG_BIN_DIR" 2>/dev/null \
+           && curl -fsSL --max-time 180 "https://evermeet.cx/ffmpeg/get/ffprobe.zip" -o "$TMPFF/ffprobe.zip" 2>/dev/null \
+           && unzip -o -q "$TMPFF/ffprobe.zip" -d "$FFMPEG_BIN_DIR" 2>/dev/null; then
+            FF_OK=1
+        fi
+    fi
+    chmod +x "$FFMPEG_BIN_DIR/ffmpeg" "$FFMPEG_BIN_DIR/ffprobe" 2>/dev/null || true
+    rm -rf "$TMPFF"
+    if [ "$FF_OK" = "1" ] && "$FFMPEG_BIN_DIR/ffmpeg" -version &> /dev/null; then
+        print_ok "ffmpeg установлен: $FFMPEG_BIN_DIR/ffmpeg"
+    elif command -v brew &> /dev/null; then
+        print_warn "Скачивание не удалось — пробуем brew install ffmpeg (может занять время)..."
+        if brew install ffmpeg &> /dev/null; then
+            print_ok "ffmpeg установлен через Homebrew"
+        else
+            print_warn "ffmpeg не установлен — hardsub/конвертация будут недоступны (остальное работает)"
+        fi
+    else
+        print_warn "ffmpeg не установлен — hardsub/конвертация будут недоступны (остальное работает)"
+        echo "    Установите вручную: brew install ffmpeg"
+    fi
     echo "    Продолжаем установку движка..."
 fi
 

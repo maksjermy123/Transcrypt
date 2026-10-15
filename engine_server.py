@@ -435,6 +435,15 @@ def task_media(data: dict, log, worker=None) -> dict:
     converter = Converter()
     worker = worker or DummyWorker()
 
+    # ffmpeg нужен для clean_audio и hardsub — проверяем ДО скачивания видео,
+    # чтобы не тратить минуты и не падать с непонятным Errno 2 в конце
+    if action in ("clean_audio", "hardsub") and not find_ffmpeg_executable():
+        raise ValueError(
+            "ffmpeg не найден на этом компьютере — эта операция невозможна. "
+            "Переустановите движок той же командой установки: установщик скачает ffmpeg автоматически. "
+            "Либо установите вручную: brew install ffmpeg (macOS) / apt install ffmpeg (Linux)."
+        )
+
     if action == "download_video":
         log(f"🎬 Скачивание видео в максимальном качестве: {url}...", stage="Скачивание видео", percent=20)
         out_file, _ = downloader.download(url, video_only=True, worker_obj=worker)
@@ -460,34 +469,79 @@ def task_media(data: dict, log, worker=None) -> dict:
         return {"status": "success", "file": f"/api/download?file={urllib.parse.quote(cleaned)}"}
 
     elif action == "hardsub":
-        log("🎥 Вшивание субтитров в видео...", stage="Hardsub", percent=30)
+        # Полный конвейер: проверка ffmpeg → скачивание видео → субтитры
+        # (YouTube или Whisper) → перевод (опционально) → умное вшивание вниз кадра
+        ffmpeg_path = find_ffmpeg_executable()
+        log(f"🎥 Вшивание субтитров: ffmpeg найден ({os.path.basename(ffmpeg_path)}), запускаем конвейер...", stage="Hardsub", percent=10)
         sub_lang = data.get("sub_lang", "ru")
+        translate_to = (data.get("translate_to") or "-").strip().lower()
         # If YouTube URL, first check/download subtitles
         video_file = file_path
         sub_file = data.get("sub_file")
 
         if url.startswith("http"):
-            subs_info = downloader.list_subtitles(url)
-            choice = downloader.choose_subtitle_track(subs_info, preferred_lang=sub_lang)
-            if choice:
-                sub_file = downloader.download_subtitles(url, choice["lang"], auto=choice["auto"])
+            # ─── 1. Скачивание видео (нужно в любом случае — и для Whisper, и для вшивания) ───
+            log("📥 Шаг 1/4: Скачивание видео...", stage="Скачивание видео", percent=15)
             video_file, _ = downloader.download(url, video_only=True, worker_obj=worker)
+            log(f"✅ Видео скачано: {os.path.basename(video_file)}", stage="Видео готово", percent=45)
+
+            # ─── 2. Субтитры: сначала YouTube, если нет — Whisper ниже ───
+            if not sub_file or not os.path.exists(sub_file):
+                log(f"🔎 Шаг 2/4: Поиск субтитров YouTube ({sub_lang})...", stage="Поиск субтитров", percent=50)
+                try:
+                    subs_info = downloader.list_subtitles(url)
+                    choice = downloader.choose_subtitle_track(subs_info, preferred_lang=sub_lang)
+                    if choice:
+                        sub_file = downloader.download_subtitles(url, choice["lang"], auto=choice["auto"])
+                        if sub_file and os.path.exists(sub_file):
+                            log(f"✅ Субтитры YouTube ({choice['lang']}) скачаны", percent=60)
+                except Exception as e:
+                    log(f"⚠️ Субтитры YouTube недоступны ({e}) — сгенерируем через Whisper", percent=52)
+                    sub_file = None
 
         if not video_file or not os.path.exists(video_file):
             raise ValueError("Укажите ссылку на видео или загрузите локальный видео-файл для вшивания субтитров")
 
         if not sub_file or not os.path.exists(sub_file):
-            # Generate via Whisper
-            log("Генерация субтитров через Whisper для вшивания...", stage="Генерация субтитров", percent=50)
+            # ─── 2b. Субтитров нет — генерируем через Whisper (вся дорожка) ───
+            log("🧠 Шаг 2/4: Генерация субтитров через Whisper (вся дорожка — это долго)...", stage="Whisper", percent=50)
             engine = WhisperEngine(model_name=data.get("model", "base"))
             w_res = engine.transcribe(video_file, worker_obj=worker)
-            # Create temp srt
+            w_segments = w_res.get("segments", [])
             sub_file = os.path.join(OUTPUT_DIR, f"temp_sub_{int(time.time())}.srt")
             with open(sub_file, "w", encoding="utf-8") as f:
-                for i, seg in enumerate(w_res.get("segments", []), 1):
+                for i, seg in enumerate(w_segments, 1):
                     f.write(f"{i}\n{format_ts(seg['start'])} --> {format_ts(seg['end'])}\n{seg['text'].strip()}\n\n")
+            log(f"✅ Сгенерировано реплик: {len(w_segments)}", percent=65)
 
-        out_video = converter.hardsub_video(video_file, sub_file, OUTPUT_DIR)
+        # ─── 3. Перевод субтитров (опционально) ───
+        if translate_to and translate_to not in ("-", "", "auto"):
+            log(f"🌍 Шаг 3/4: Перевод субтитров на {translate_to}...", stage="Перевод субтитров", percent=70)
+            translator = Translator()
+            sub_segs = parse_subtitles(sub_file) or []
+            done_cnt = 0
+            for s in sub_segs:
+                try:
+                    s["text"] = translator.translate_text(s["text"], translate_to)
+                    done_cnt += 1
+                except Exception:
+                    pass  # непереведённые реплики остаются в оригинале
+            new_sub = os.path.join(OUTPUT_DIR, f"sub_translated_{int(time.time())}.srt")
+            with open(new_sub, "w", encoding="utf-8") as f:
+                for i, s in enumerate(sub_segs, 1):
+                    f.write(f"{i}\n{format_ts(s.get('start', 0))} --> {format_ts(s.get('end', 0))}\n{s['text'].strip()}\n\n")
+            sub_file = new_sub
+            log(f"✅ Переведено реплик: {done_cnt} из {len(sub_segs)}", percent=80)
+
+        # ─── 4. Умное вшивание: внизу по центру, отступы, шрифт от высоты видео ───
+        log("🎬 Шаг 4/4: Встраивание субтитров в кадр (низ экрана, центр, без перекрытия видео)...", stage="Встраивание субтитров", percent=85)
+        out_video = converter.hardsub_video(
+            video_file, sub_file, OUTPUT_DIR,
+            progress_callback=lambda pct, eta="": log(
+                f"Рендер: {pct}% ({eta})",
+                percent=min(85 + int(pct * 0.14), 99),
+            ),
+        )
         log(f"✅ Видео с субтитрами готово: {os.path.basename(out_video)}", stage="Готово", percent=100)
         return {"status": "success", "file": f"/api/download?file={urllib.parse.quote(out_video)}"}
 
@@ -501,6 +555,15 @@ def task_convert(data: dict, log, worker=None) -> dict:
 
     if not file_path or not os.path.exists(file_path):
         raise ValueError("Файл для конвертации не найден")
+
+    # Медиа- и часть image-конвертаций требуют ffmpeg — проверяем заранее
+    from src.utils.fs import find_ffmpeg_executable as _ffe
+    media_exts_pre = {"mp3", "wav", "aac", "flac", "ogg", "mp4", "mkv", "webm", "avi", "mov", "m4a"}
+    if os.path.splitext(file_path)[1].lower().strip(".") in media_exts_pre and not _ffe():
+        raise ValueError(
+            "ffmpeg не найден на этом компьютере — конвертация невозможна. "
+            "Переустановите движок той же командой установки: установщик скачает ffmpeg автоматически."
+        )
 
     converter = Converter()
     ext = os.path.splitext(file_path)[1].lower().strip(".")

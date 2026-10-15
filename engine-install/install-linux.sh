@@ -89,16 +89,46 @@ if ! python3 -c "import venv" &> /dev/null; then
 fi
 print_ok "venv доступен"
 
-# ─── 3. Проверка ffmpeg ───────────────────────────────────────────
+# ─── 3. Проверка ffmpeg — при отсутствии скачиваем статический ────
 print_step "Проверка ffmpeg..."
 if command -v ffmpeg &> /dev/null; then
     print_ok "ffmpeg найден: $(which ffmpeg)"
 else
-    print_warn "ffmpeg не найден — медиа-операции не будут работать"
-    echo "    Установите через:"
-    echo "    Ubuntu/Debian:  sudo apt install ffmpeg"
-    echo "    Fedora:         sudo dnf install ffmpeg"
-    echo "    Arch:           sudo pacman -S ffmpeg"
+    # Скачиваем статическую сборку johnvansickle в ~/.local/share/VoxPaperAi/runtime/bin —
+    # движок сам находит её там (find_ffmpeg_executable), sudo и apt не нужны
+    FFMPEG_BIN_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/VoxPaperAi/runtime/bin"
+    ARCH="$(uname -m)"
+    case "$ARCH" in
+        x86_64)  FF_TARBALL="ffmpeg-release-amd64-static.tar.xz" ;;
+        aarch64|arm64) FF_TARBALL="ffmpeg-release-arm64-static.tar.xz" ;;
+        *)       FF_TARBALL="" ;;
+    esac
+    print_step "ffmpeg не найден — скачиваем статический ffmpeg (~35 МБ, $ARCH)..."
+    FF_OK=0
+    if [ -n "$FF_TARBALL" ]; then
+        TMPFF="$(mktemp -d)"
+        if curl -fsSL --max-time 600 "https://johnvansickle.com/ffmpeg/releases/${FF_TARBALL}" -o "$TMPFF/ff.tar.xz" 2>/dev/null \
+           && tar -xf "$TMPFF/ff.tar.xz" -C "$TMPFF" 2>/dev/null; then
+            mkdir -p "$FFMPEG_BIN_DIR"
+            find "$TMPFF" -type d -name "ffmpeg-*-static" | head -1 | while read -r SRC; do
+                cp "$SRC/ffmpeg" "$SRC/ffprobe" "$FFMPEG_BIN_DIR/" 2>/dev/null
+            done
+            chmod +x "$FFMPEG_BIN_DIR/ffmpeg" "$FFMPEG_BIN_DIR/ffprobe" 2>/dev/null || true
+            [ -x "$FFMPEG_BIN_DIR/ffmpeg" ] && FF_OK=1
+        fi
+        rm -rf "$TMPFF"
+    fi
+    if [ "$FF_OK" = "1" ] && "$FFMPEG_BIN_DIR/ffmpeg" -version &> /dev/null; then
+        print_ok "ffmpeg установлен: $FFMPEG_BIN_DIR/ffmpeg"
+    elif command -v apt-get &> /dev/null || command -v dnf &> /dev/null || command -v pacman &> /dev/null; then
+        print_warn "Скачивание не удалось — попробуйте установить пакет вручную:"
+        echo "    Ubuntu/Debian:  sudo apt install ffmpeg"
+        echo "    Fedora:         sudo dnf install ffmpeg"
+        echo "    Arch:           sudo pacman -S ffmpeg"
+        print_warn "Без ffmpeg hardsub/конвертация будут недоступны (остальное работает)"
+    else
+        print_warn "ffmpeg не установлен — hardsub/конвертация будут недоступны (остальное работает)"
+    fi
 fi
 
 # ─── 4. Создание директории ───────────────────────────────────────

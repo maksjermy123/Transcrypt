@@ -1,101 +1,102 @@
 #!/bin/bash
-# ════════════════════════════════════════════════════════════════════
-# Transcrypt Web Engine — Удаление для Linux
-# ════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+#  Transcrypt — ПОЛНОЕ удаление с компьютера (Linux)
 #
-# Этот скрипт ПОЛНОСТЬЮ удаляет локальный движок Transcrypt:
-#   1. Останавливает systemd user unit + disables его
-#   2. Удаляет systemd unit
-#   3. Удаляет директорию ~/.transcrypt-engine (venv + engine_server.py + src/)
-#   4. Убивает запущенные процессы движка
+#  Запуск:
+#    bash -c "$(curl -fsSL https://raw.githubusercontent.com/maksjermy123/Transcrypt/main/engine-install/uninstall-linux.sh)"
 #
-# Запуск (одной командой из терминала):
-#   bash -c "$(curl -fsSL https://raw.githubusercontent.com/maksjermy123/Transcrypt/main/engine-install/uninstall-linux.sh)"
-# ════════════════════════════════════════════════════════════════════
+#  Что удаляет:
+#    1. Автозапуск: systemd user unit transcrypt-engine.service
+#    2. Папку движка: ~/.transcrypt-engine (venv, engine_server.py, src, логи)
+#    3. Данные программы: ~/.local/share/VoxPaperAi
+#       (модели Whisper, скачанный ffmpeg, результаты, журнал задач)
+#    4. Кеш OpenAI Whisper ~/.cache/whisper (если есть)
+#    5. Останавливает работающие процессы движка
+#
+#  Кеш браузерного Whisper очищается кнопкой в Настройках сайта.
+# ═══════════════════════════════════════════════════════════════
 
-set -e
+set -u
 
 INSTALL_DIR="$HOME/.transcrypt-engine"
-SYSTEMD_UNIT_FILE="$HOME/.config/systemd/user/transcrypt-engine.service"
+APP_SUPPORT="${XDG_DATA_HOME:-$HOME/.local/share}/VoxPaperAi"
+UNIT_FILE="$HOME/.config/systemd/user/transcrypt-engine.service"
 
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m'
-
-print_step() { echo -e "${BLUE}▸ $1${NC}"; }
-print_ok()   { echo -e "${GREEN}✓ $1${NC}"; }
-print_warn() { echo -e "${YELLOW}⚠ $1${NC}"; }
-print_err()  { echo -e "${RED}✗ $1${NC}"; }
+G='\033[1;32m'; Y='\033[1;33m'; B='\033[1;36m'; N='\033[0m'
+step() { echo -e "${B}▸${N} $1"; }
+ok()   { echo -e "${G}✓${N} $1"; }
 
 echo ""
-echo "═══════════════════════════════════════════════════════"
-echo "   Transcrypt Web Engine — Удаление для Linux"
-echo "═══════════════════════════════════════════════════════"
+echo -e "${B}═══════════════════════════════════════════════════${N}"
+echo -e "${B}  Transcrypt — полное удаление с компьютера (Linux)${N}"
+echo -e "${B}═══════════════════════════════════════════════════${N}"
 echo ""
-echo "Это действие НЕЛЬЗЯ отменить. Будет удалено:"
-echo "  • ~/.transcrypt-engine/ (venv + Whisper ~800 МБ + src/)"
-echo "  • ~/.config/systemd/user/transcrypt-engine.service"
-echo "  • Запущенные процессы движка"
-echo ""
-read -p "Продолжить удаление? (yes/no): " CONFIRM
-if [ "$CONFIRM" != "yes" ]; then
-    echo "Отменено пользователем."
-    exit 0
+
+FREED=0
+dir_size_mb() {
+    if [ -d "$1" ]; then du -sm "$1" 2>/dev/null | cut -f1 | tr -d ' '; else echo 0; fi
+}
+
+# ─── 1. Остановка ────────────────────────────────────────────────
+step "1/5 Останавливаем движок..."
+if command -v systemctl &> /dev/null; then
+    systemctl --user stop transcrypt-engine.service &> /dev/null && ok "systemd unit остановлен" || ok "Unit не запущен"
 fi
-echo ""
+pkill -f "$INSTALL_DIR/engine_server.py" 2>/dev/null && ok "Процесс движка остановлен" || ok "Процессы движка не запущены"
+pkill -f "engine_server.py" 2>/dev/null || true
+sleep 1
 
-# ─── 1. Остановка systemd unit ────────────────────────────────────
-print_step "Останавливаем systemd unit…"
-if [ -f "$SYSTEMD_UNIT_FILE" ]; then
-    systemctl --user stop transcrypt-engine.service 2>/dev/null || true
-    systemctl --user disable transcrypt-engine.service 2>/dev/null || true
-    rm -f "$SYSTEMD_UNIT_FILE"
-    systemctl --user daemon-reload 2>/dev/null || true
-    print_ok "systemd unit удалён и disabled"
+# ─── 2. Автозапуск ────────────────────────────────────────────────
+step "2/5 Удаляем автозапуск (systemd user unit)..."
+if [ -f "$UNIT_FILE" ]; then
+    systemctl --user disable transcrypt-engine.service &> /dev/null || true
+    rm -f "$UNIT_FILE"
+    systemctl --user daemon-reload &> /dev/null || true
+    systemctl --user reset-failed &> /dev/null || true
+    ok "Удалён: $UNIT_FILE"
 else
-    print_ok "systemd unit не найден"
+    ok "Unit не найден (уже удалён)"
 fi
 
-# ─── 2. Остановка запущенных процессов движка ─────────────────────
-print_step "Останавливаем запущенные процессы движка…"
-if [ -d "$INSTALL_DIR" ]; then
-    pkill -f "$INSTALL_DIR/engine_server.py" 2>/dev/null && print_ok "Процессы движка остановлены" || print_ok "Активных процессов движка не найдено"
-fi
-
-# ─── 3. Удаление директории ────────────────────────────────────────
-print_step "Удаляем директорию: $INSTALL_DIR"
+# ─── 3. Папка движка ─────────────────────────────────────────────
+step "3/5 Удаляем папку движка..."
+SIZE=$(dir_size_mb "$INSTALL_DIR")
 if [ -d "$INSTALL_DIR" ]; then
     rm -rf "$INSTALL_DIR"
-    print_ok "Директория удалена (~800 МБ освобождено)"
+    FREED=$((FREED + SIZE))
+    ok "Удалена: $INSTALL_DIR (освобождено ${SIZE} МБ)"
 else
-    print_ok "Директория не найдена"
+    ok "Папка не найдена: $INSTALL_DIR"
 fi
 
-# ─── 4. Проверка ──────────────────────────────────────────────────
-print_step "Проверяем что движок остановлен…"
-sleep 1
-if curl -fsS http://127.0.0.1:8765/api/health > /dev/null 2>&1; then
-    print_warn "Движок всё ещё отвечает на 127.0.0.1:8765"
-    echo "    Найдите и остановите вручную:"
-    echo "      ps aux | grep engine_server"
-    echo "      kill <PID>"
+# ─── 4. Данные программы ─────────────────────────────────────────
+step "4/5 Удаляем данные программы (модели Whisper, ffmpeg, результаты)..."
+SIZE=$(dir_size_mb "$APP_SUPPORT")
+if [ -d "$APP_SUPPORT" ]; then
+    rm -rf "$APP_SUPPORT"
+    FREED=$((FREED + SIZE))
+    ok "Удалена: $APP_SUPPORT (освобождено ${SIZE} МБ)"
 else
-    print_ok "Движок полностью остановлен"
+    ok "Папка данных не найдена: $APP_SUPPORT"
+fi
+
+# ─── 5. Кеш whisper ───────────────────────────────────────────────
+step "5/5 Проверяем кеш OpenAI Whisper (~/.cache/whisper)..."
+if [ -d "$HOME/.cache/whisper" ]; then
+    SIZE=$(dir_size_mb "$HOME/.cache/whisper")
+    rm -rf "$HOME/.cache/whisper"
+    FREED=$((FREED + SIZE))
+    ok "Удалён кеш ~/.cache/whisper (освобождено ${SIZE} МБ)"
+else
+    ok "Кеш ~/.cache/whisper не найден"
 fi
 
 echo ""
-echo "═══════════════════════════════════════════════════════"
-echo -e "${GREEN}✓ Удаление завершено!${NC}"
-echo "═══════════════════════════════════════════════════════"
+echo -e "${G}═══════════════════════════════════════════════════${N}"
+echo -e "${G}  Transcrypt полностью удалён с этого компьютера${N}"
+echo -e "${G}  Освобождено: ${FREED} МБ${N}"
+echo -e "${G}═══════════════════════════════════════════════════${N}"
 echo ""
-echo "Что осталось:"
-echo "  • Python (ставился через apt/dnf/pacman — не трогаем)"
-echo "  • ffmpeg (если был установлен — не трогаем)"
-echo "  • Браузерный Whisper в кеше браузера"
-echo "  • Настройки сайта в localStorage браузера"
-echo ""
-echo "Чтобы снова использовать Transcrypt: https://maksjermy123.github.io/Transcrypt/"
-echo "Браузерный Whisper работает без установки."
+echo "Остался только кеш браузера — очистите его кнопкой"
+echo "«Очистить данные в браузере» в Настройках сайта."
 echo ""

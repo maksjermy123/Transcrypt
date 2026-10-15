@@ -1,121 +1,92 @@
-# ════════════════════════════════════════════════════════════════════
-# Transcrypt Web Engine — Удаление для Windows (PowerShell)
-# ════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+#  Transcrypt — ПОЛНОЕ удаление с компьютера (Windows)
 #
-# Этот скрипт ПОЛНОСТЬЮ удаляет локальный движок Transcrypt:
-#   1. Удаляет запись в реестре (автозапуск с системой)
-#   2. Останавливает запущенные процессы pythonw
-#   3. Удаляет директорию %USERPROFILE%\.transcrypt-engine
+#  Запуск (PowerShell):
+#    powershell -c "irm https://raw.githubusercontent.com/maksjermy123/Transcrypt/main/engine-install/uninstall-win.ps1 | iex"
 #
-# Запуск (одной командой из PowerShell):
-#   iwr -useb https://raw.githubusercontent.com/maksjermy123/Transcrypt/main/engine-install/uninstall-win.ps1 | iex
-# ════════════════════════════════════════════════════════════════════
+#  Что удаляет:
+#    1. Автозапуск: ключ реестра HKCU\...\Run\TranscryptEngine
+#    2. Папку движка: %LOCALAPPDATA%\TranscryptEngine (venv, код, логи)
+#    3. Данные программы: %LOCALAPPDATA%\VoxPaperAi
+#       (модели Whisper, скачанный ffmpeg, результаты, журнал задач)
+#    4. Останавливает работающие процессы движка
+#
+#  Кеш браузерного Whisper очищается кнопкой в Настройках сайта.
+# ═══════════════════════════════════════════════════════════════
 
-$ErrorActionPreference = "Stop"
+$ErrorActionPreference = "SilentlyContinue"
 
 $InstallDir = Join-Path $env:USERPROFILE ".transcrypt-engine"
+$AppSupport = Join-Path $env:LOCALAPPDATA "VoxPaperAi"
 $AutorunKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
 $AutorunValue = "TranscryptEngine"
 
-function Write-Step { param([string]$msg) Write-Host "▸ $msg" -ForegroundColor Blue }
-function Write-Ok   { param([string]$msg) Write-Host "✓ $msg" -ForegroundColor Green }
-function Write-Warn { param([string]$msg) Write-Host "⚠ $msg" -ForegroundColor Yellow }
-function Write-Err  { param([string]$msg) Write-Host "✗ $msg" -ForegroundColor Red }
-
 Write-Host ""
-Write-Host "═══════════════════════════════════════════════════════"
-Write-Host "   Transcrypt Web Engine — Удаление для Windows"
-Write-Host "═══════════════════════════════════════════════════════"
-Write-Host ""
-Write-Host "Это действие НЕЛЬЗЯ отменить. Будет удалено:" -ForegroundColor Yellow
-Write-Host "  • $InstallDir\ (venv + Whisper ~800 МБ + src/)"
-Write-Host "  • Запись в реестре (автозапуск)"
-Write-Host "  • Запущенные процессы pythonw.exe"
-Write-Host ""
-$confirm = Read-Host "Продолжить удаление? (yes/no)"
-if ($confirm -ne "yes") {
-    Write-Host "Отменено пользователем." -ForegroundColor Yellow
-    exit 0
-}
+Write-Host "===================================================" -ForegroundColor Cyan
+Write-Host "  Transcrypt — полное удаление с компьютера (Windows)" -ForegroundColor Cyan
+Write-Host "===================================================" -ForegroundColor Cyan
 Write-Host ""
 
-# ─── 1. Удаление записи в реестре (автозапуск) ────────────────────
-Write-Step "Удаляем запись автозапуска из реестра…"
-try {
-    $existing = Get-ItemProperty -Path $AutorunKey -Name $AutorunValue -ErrorAction SilentlyContinue
-    if ($existing) {
-        Remove-ItemProperty -Path $AutorunKey -Name $AutorunValue -Force
-        Write-Ok "Запись в реестре удалена"
-    } else {
-        Write-Ok "Запись в реестре не найдена"
+$freedMB = 0
+function Get-DirSizeMB($path) {
+    if (Test-Path $path) {
+        $size = (Get-ChildItem $path -Recurse -Force | Measure-Object Length -Sum).Sum
+        return [math]::Round($size / 1MB)
     }
-} catch {
-    Write-Warn "Не удалось удалить запись из реестра: $_"
+    return 0
 }
 
-# ─── 2. Остановка запущенных процессов ────────────────────────────
-Write-Step "Останавливаем запущенные процессы движка…"
-$pythonProcesses = Get-Process pythonw -ErrorAction SilentlyContinue | Where-Object {
-    $_.Path -like "*$InstallDir*" -or $_.CommandLine -like "*engine_server*"
-}
-if ($pythonProcesses) {
-    $pythonProcesses | Stop-Process -Force -ErrorAction SilentlyContinue
-    Write-Ok "Процессы движка остановлены"
+# ─── 1. Остановка процессов ─────────────────────────────────────
+Write-Host "[1/4] Останавливаем движок..." -ForegroundColor Cyan
+$engineProcs = Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like "*engine_server.py*" }
+if ($engineProcs) {
+    $engineProcs | ForEach-Object {
+        try { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue } catch {}
+    }
+    Write-Host "  OK Процессы движка остановлены" -ForegroundColor Green
 } else {
-    # Fallback — убиваем все pythonw, если не можем прочитать Path
-    $allPythonw = Get-Process pythonw -ErrorAction SilentlyContinue
-    if ($allPythonw) {
-        Write-Warn "Найдены процессы pythonw.exe, но не ясно, какие из них Transcrypt."
-        Write-Host "  Если уверены — остановите все pythonw.exe:"
-        Write-Host "    Get-Process pythonw | Stop-Process -Force"
-    } else {
-        Write-Ok "Активных процессов движка не найдено"
-    }
+    Write-Host "  OK Процессы движка не запущены" -ForegroundColor Green
 }
-
-# ─── 3. Удаление директории ───────────────────────────────────────
-Write-Step "Удаляем директорию: $InstallDir"
-if (Test-Path $InstallDir) {
-    try {
-        Remove-Item -Recurse -Force $InstallDir
-        Write-Ok "Директория удалена (~800 МБ освобождено)"
-    } catch {
-        Write-Warn "Не удалось удалить директорию: $_"
-        Write-Host "  Возможно, какие-то файлы заблокированы. Перезагрузите Windows"
-        Write-Host "  и повторите, или удалите вручную:"
-        Write-Host "    Remove-Item -Recurse -Force $InstallDir"
-    }
-} else {
-    Write-Ok "Директория не найдена"
-}
-
-# ─── 4. Проверка ──────────────────────────────────────────────────
-Write-Step "Проверяем что движок остановлен…"
 Start-Sleep -Seconds 1
-$healthOk = $false
-try {
-    $resp = Invoke-WebRequest -Uri "http://127.0.0.1:8765/api/health" -TimeoutSec 2 -UseBasicParsing
-    if ($resp.StatusCode -eq 200) { $healthOk = $true }
-} catch {}
-if ($healthOk) {
-    Write-Warn "Движок всё ещё отвечает на 127.0.0.1:8765"
-    Write-Host "  Найдите и остановите процесс:"
-    Write-Host "    Get-Process pythonw | Where-Object { `$_.CommandLine -like '*engine_server*' } | Stop-Process -Force"
+
+# ─── 2. Автозапуск ──────────────────────────────────────────────
+Write-Host "[2/4] Удаляем автозапуск (реестр)..." -ForegroundColor Cyan
+$prop = Get-ItemProperty -Path $AutorunKey -Name $AutorunValue -ErrorAction SilentlyContinue
+if ($prop) {
+    Remove-ItemProperty -Path $AutorunKey -Name $AutorunValue -Force
+    Write-Host "  OK Удалён ключ: HKCU\...\Run\$AutorunValue" -ForegroundColor Green
 } else {
-    Write-Ok "Движок полностью остановлен"
+    Write-Host "  OK Ключ автозапуска не найден" -ForegroundColor Green
+}
+
+# ─── 3. Папка движка ────────────────────────────────────────────
+Write-Host "[3/4] Удаляем папку движка..." -ForegroundColor Cyan
+$size = Get-DirSizeMB $InstallDir
+if (Test-Path $InstallDir) {
+    Remove-Item $InstallDir -Recurse -Force
+    $freedMB += $size
+    Write-Host "  OK Удалена: $InstallDir (освобождено $size МБ)" -ForegroundColor Green
+} else {
+    Write-Host "  OK Папка не найдена: $InstallDir" -ForegroundColor Green
+}
+
+# ─── 4. Данные программы ────────────────────────────────────────
+Write-Host "[4/4] Удаляем данные программы (модели Whisper, ffmpeg, результаты)..." -ForegroundColor Cyan
+$size = Get-DirSizeMB $AppSupport
+if (Test-Path $AppSupport) {
+    Remove-Item $AppSupport -Recurse -Force
+    $freedMB += $size
+    Write-Host "  OK Удалена: $AppSupport (освобождено $size МБ)" -ForegroundColor Green
+} else {
+    Write-Host "  OK Папка данных не найдена: $AppSupport" -ForegroundColor Green
 }
 
 Write-Host ""
-Write-Host "═══════════════════════════════════════════════════════"
-Write-Ok "Удаление завершено!"
-Write-Host "═══════════════════════════════════════════════════════"
+Write-Host "===================================================" -ForegroundColor Green
+Write-Host "  Transcrypt полностью удалён с этого компьютера" -ForegroundColor Green
+Write-Host "  Освобождено: $freedMB МБ" -ForegroundColor Green
+Write-Host "===================================================" -ForegroundColor Green
 Write-Host ""
-Write-Host "Что осталось:"
-Write-Host "  • Python (ставился через python.org — не трогаем)"
-Write-Host "  • ffmpeg (если был установлен через winget — не трогаем)"
-Write-Host "  • Браузерный Whisper в кеше браузера"
-Write-Host "  • Настройки сайта в localStorage браузера"
-Write-Host ""
-Write-Host "Чтобы снова использовать Transcrypt: https://maksjermy123.github.io/Transcrypt/"
-Write-Host "Браузерный Whisper работает без установки."
+Write-Host "Остался только кеш браузера — очистите его кнопкой"
+Write-Host "«Очистить данные в браузере» в Настройках сайта."
 Write-Host ""
