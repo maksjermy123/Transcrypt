@@ -16,6 +16,8 @@ import sys
 import os
 import json
 import time
+import uuid
+import threading
 import tempfile
 import urllib.parse
 from pathlib import Path
@@ -107,6 +109,421 @@ def format_ts_vtt(seconds: float) -> str:
     return format_ts(seconds).replace(",", ".")
 
 
+# ═══════════════════════════════════════════════════════════════
+#  Фоновые задачи (Job API, движок >= 1.1.0)
+#
+#  Задача выполняется в отдельном потоке и переживает закрытие
+#  вкладки браузера: клиент создаёт задачу (POST /api/jobs),
+#  получает job_id и опрашивает состояние (GET /api/jobs/<id>).
+#  Журнал задач сохраняется на диск — результаты не пропадают
+#  даже после перезапуска движка.
+# ═══════════════════════════════════════════════════════════════
+
+TASK_LOCK = threading.Lock()  # одна тяжёлая задача одновременно
+
+JOBS = {}                      # job_id -> job dict
+JOBS_LOCK = threading.Lock()
+JOBS_FILE = os.path.join(OUTPUT_DIR, "jobs.json")
+JOBS_MAX = 30
+CURRENT_JOB = {"id": None, "worker": None}
+
+
+def _job_snapshot(job):
+    """Копия задачи для отдачи клиенту и сохранения на диск (без служебных полей)."""
+    return {
+        "job_id": job["id"],
+        "type": job["type"],
+        "status": job["status"],
+        "progress": job.get("progress") or {},
+        "result": job.get("result"),
+        "error": job.get("error"),
+        "label": job.get("label", ""),
+        "created_at": job.get("created_at"),
+        "finished_at": job.get("finished_at"),
+    }
+
+
+def _save_jobs():
+    try:
+        with JOBS_LOCK:
+            snap = {jid: _job_snapshot(j) for jid, j in JOBS.items()}
+        with open(JOBS_FILE, "w", encoding="utf-8") as f:
+            json.dump(snap, f, ensure_ascii=False)
+    except Exception as e:
+        print(f"⚠ Не удалось сохранить журнал задач: {e}")
+
+
+def _load_jobs():
+    """Восстановить журнал после перезапуска. Незавершённые задачи помечаем ошибкой."""
+    try:
+        if not os.path.exists(JOBS_FILE):
+            return
+        with open(JOBS_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f) or {}
+        for jid, j in data.items():
+            if j.get("status") in ("running", "queued"):
+                j["status"] = "error"
+                j["error"] = "Движок был перезапущен во время выполнения задачи"
+            j["progress"] = j.get("progress") or {
+                "active": False, "task": j.get("type", ""),
+                "stage": "Завершено",
+                "percent": 100 if j.get("status") == "done" else 0,
+                "eta": "", "log": [],
+            }
+            JOBS[jid] = j
+    except Exception as e:
+        print(f"⚠ Не удалось прочитать журнал задач: {e}")
+
+
+def _prune_jobs():
+    if len(JOBS) <= JOBS_MAX:
+        return
+    items = sorted(JOBS.items(), key=lambda kv: kv[1].get("created_at", 0))
+    for jid, _ in items[: len(JOBS) - JOBS_MAX]:
+        JOBS.pop(jid, None)
+
+
+def make_job_logger(job):
+    """Логгер конкретной задачи: пишет в её прогресс и зеркалит в глобальный
+    progress_state, чтобы legacy-клиенты (/api/progress) тоже видели активность."""
+    def log(msg, stage=None, percent=None, eta=None):
+        jp = job.setdefault("progress", {"active": True, "task": job["type"], "stage": "", "percent": 0, "eta": "", "log": []})
+        if stage is not None:
+            jp["stage"] = stage
+        if percent is not None:
+            jp["percent"] = percent
+        if eta is not None:
+            jp["eta"] = eta
+        jp["active"] = job["status"] in ("queued", "running")
+        ts = time.strftime("%H:%M:%S")
+        entry = f"[{ts}] {msg}"
+        jp["log"] = (jp.get("log") or [])[-99:] + [entry]
+        # Зеркало в глобальный прогресс
+        progress_state["active"] = True
+        progress_state["task"] = job["type"]
+        progress_state["stage"] = jp["stage"]
+        progress_state["percent"] = jp["percent"]
+        progress_state["eta"] = jp["eta"]
+        progress_state["log"] = (progress_state["log"][-99:] + [entry])[-100:]
+        print(entry, flush=True)
+    return log
+
+
+def run_job(job):
+    """Фоновый поток задачи: ждёт освобождения движка, выполняет, пишет результат."""
+    log = make_job_logger(job)
+    try:
+        job["status"] = "running"
+        job["started_at"] = time.time()
+        CURRENT_JOB["id"] = job["id"]
+        CURRENT_JOB["worker"] = job["worker"]
+        log(f"▶ Задача '{job['type']}' принята в фоновое выполнение", stage="Старт", percent=1)
+        with TASK_LOCK:
+            if job["worker"].is_stop_requested():
+                raise ValueError("Задача отменена пользователем")
+            if job["type"] == "transcribe":
+                result = task_transcribe(job["params"], log, worker=job["worker"])
+            elif job["type"] == "media":
+                result = task_media(job["params"], log, worker=job["worker"])
+            elif job["type"] == "convert":
+                result = task_convert(job["params"], log, worker=job["worker"])
+            else:
+                raise ValueError(f"Неизвестный тип задачи: {job['type']}")
+        job["result"] = result
+        job["status"] = "done"
+        log("✅ Задача завершена", stage="Готово", percent=100)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        job["status"] = "error"
+        job["error"] = str(e)
+        log(f"❌ Ошибка задачи: {e}", stage="Ошибка", percent=job.get("progress", {}).get("percent", 0))
+    finally:
+        job["finished_at"] = time.time()
+        progress_state["active"] = False
+        if CURRENT_JOB.get("id") == job["id"]:
+            CURRENT_JOB["id"] = None
+            CURRENT_JOB["worker"] = None
+        with JOBS_LOCK:
+            _prune_jobs()
+        _save_jobs()
+
+
+# ─────────────────────────────────────────────────────────────────
+#  Task-функции: чистая логика задач без HTTP.
+#  Используются и синхронными хендлерами (legacy), и фоновыми
+#  потоками (Job API). Ошибки валидации → ValueError.
+# ─────────────────────────────────────────────────────────────────
+
+def task_transcribe(data: dict, log, worker=None) -> dict:
+    url = (data.get("url") or "").strip()
+    local_file = (data.get("file_path") or "").strip()
+    model_name = data.get("model", "base")
+    lang = data.get("language", "auto")
+    translate_to = (data.get("translate_to") or "-").strip().lower()
+    save_audio = bool(data.get("save_audio", False))
+
+    if not url and not local_file:
+        raise ValueError("Не указан URL или файл для транскрибации")
+
+    # Файл передан, но не существует на диске — понятная ошибка вместо трейсбека Whisper
+    if local_file and not os.path.exists(local_file):
+        raise ValueError(f"Файл не найден на диске движка: {local_file}")
+
+    worker = worker or DummyWorker()
+
+    log("🚀 Запуск транскрибации...", stage="Инициализация", percent=5)
+
+    downloader = Downloader(OUTPUT_DIR)
+
+    result_text = ""
+    segments = []
+    source_type = "unknown"
+    detected_lang = lang
+    saved_media_files = []
+
+    # ─── URL CASE ───
+    if url.startswith("http"):
+        log(f"🔎 Шаг 1/4: Поиск субтитров YouTube для {url}...", stage="Поиск субтитров", percent=15)
+
+        subs_info = downloader.list_subtitles(url)
+        pref_lang = "ru" if lang == "auto" else lang
+        choice = downloader.choose_subtitle_track(
+            subs_info,
+            preferred_lang=pref_lang,
+            fallback_langs=["ru", "en", "uk"]
+        )
+
+        got_subtitles = False
+        if choice:
+            sub_lang = choice["lang"]
+            is_auto = choice["auto"]
+            log(f"✅ Найдены субтитры '{sub_lang}' ({'авто' if is_auto else 'ручные'}). Скачивание...", stage="Скачивание субтитров", percent=35)
+            try:
+                sub_file = downloader.download_subtitles(url, sub_lang, auto=is_auto)
+                if sub_file and os.path.exists(sub_file):
+                    parsed = parse_subtitles(sub_file)
+                    if parsed:
+                        segments = parsed
+                        result_text = " ".join(s['text'] for s in segments)
+                        source_type = f"YouTube Subtitles ({sub_lang})"
+                        detected_lang = sub_lang
+                        got_subtitles = True
+                        log("⚡ Субтитры получены и распарсены за 2 секунды!", stage="Субтитры готовы", percent=70)
+                    try:
+                        os.remove(sub_file)
+                    except Exception:
+                        pass
+            except Exception as e:
+                log(f"⚠️ Ошибка получения субтитров: {e}. Переходим к скачиванию медиа...", stage="Субтитры недоступны")
+
+        # Fallback to downloading media + Whisper
+        if not got_subtitles:
+            log("📥 Шаг 2/4: Скачивание аудиодорожки с YouTube...", stage="Скачивание аудио", percent=30)
+
+            def dl_callback(percent, eta=""):
+                log(f"Загрузка: {percent}% ({eta})", percent=min(25 + int(percent * 0.25), 55))
+
+            media_path, _ = downloader.download(
+                url,
+                extract_audio=True,
+                worker_obj=worker,
+                progress_callback=dl_callback
+            )
+            log(f"✅ Аудио скачано: {os.path.basename(media_path)}", stage="Медиа скачано", percent=60)
+
+            if save_audio:
+                saved_media_files.append(media_path)
+
+            log(f"🧠 Шаг 3/4: Распознавание речи через Whisper ({model_name})...", stage="Whisper", percent=65)
+            engine = WhisperEngine(model_name=model_name)
+
+            def whisper_cb(percent, eta=""):
+                log(f"Whisper: {percent}% ({eta})", percent=min(65 + int(percent * 0.25), 90))
+
+            whisper_out = engine.transcribe(
+                media_path,
+                language=lang,
+                progress_callback=whisper_cb,
+                worker_obj=worker
+            )
+            result_text = whisper_out.get("text", "")
+            segments = whisper_out.get("segments", [])
+            detected_lang = whisper_out.get("language", lang)
+            source_type = f"Whisper ({model_name})"
+    else:
+        # Local file
+        media_path = local_file
+        log(f"🧠 Распознавание локального файла через Whisper ({model_name})...", stage="Whisper", percent=40)
+        engine = WhisperEngine(model_name=model_name)
+        whisper_out = engine.transcribe(media_path, language=lang, worker_obj=worker)
+        result_text = whisper_out.get("text", "")
+        segments = whisper_out.get("segments", [])
+        detected_lang = whisper_out.get("language", lang)
+        source_type = f"Whisper ({model_name})"
+
+    # Optional translation
+    if translate_to and translate_to not in ["-", "", detected_lang]:
+        log(f"🌍 Шаг 4/4: Перевод текста на {translate_to}...", stage="Перевод", percent=92)
+        translator = Translator()
+        result_text = translator.translate_text(result_text, translate_to)
+        # Translate segments if available
+        try:
+            for s in segments:
+                s['text'] = translator.translate_text(s['text'], translate_to)
+        except Exception:
+            pass
+
+    # Build output files
+    base_name = f"voxpaper_transcription_{int(time.time())}"
+    txt_path = os.path.join(OUTPUT_DIR, f"{base_name}.txt")
+    srt_path = os.path.join(OUTPUT_DIR, f"{base_name}.srt")
+    vtt_path = os.path.join(OUTPUT_DIR, f"{base_name}.vtt")
+    json_path = os.path.join(OUTPUT_DIR, f"{base_name}.json")
+
+    # Plain text
+    with open(txt_path, "w", encoding="utf-8") as f:
+        f.write(result_text)
+
+    # SRT
+    srt_blocks = []
+    for idx, seg in enumerate(segments, 1):
+        s_ts = format_ts(seg.get('start', 0))
+        e_ts = format_ts(seg.get('end', 0))
+        text = seg.get('text', '').strip()
+        srt_blocks.append(f"{idx}\n{s_ts} --> {e_ts}\n{text}\n")
+    with open(srt_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(srt_blocks))
+
+    # VTT
+    vtt_lines = ["WEBVTT\n"]
+    for seg in segments:
+        s_ts = format_ts_vtt(seg.get('start', 0))
+        e_ts = format_ts_vtt(seg.get('end', 0))
+        text = seg.get('text', '').strip()
+        vtt_lines.append(f"{s_ts} --> {e_ts}\n{text}\n")
+    with open(vtt_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(vtt_lines))
+
+    # JSON
+    with open(json_path, "w", encoding="utf-8") as f:
+        json.dump({"text": result_text, "language": detected_lang, "segments": segments}, f, ensure_ascii=False, indent=2)
+
+    log("✅ Транскрибация успешно завершена!", stage="Готово", percent=100)
+
+    return {
+        "status": "success",
+        "source": source_type,
+        "detected_language": detected_lang,
+        "text": result_text,
+        "segments_count": len(segments),
+        "files": {
+            "txt": f"/api/download?file={urllib.parse.quote(txt_path)}",
+            "srt": f"/api/download?file={urllib.parse.quote(srt_path)}",
+            "vtt": f"/api/download?file={urllib.parse.quote(vtt_path)}",
+            "json": f"/api/download?file={urllib.parse.quote(json_path)}",
+        }
+    }
+
+
+def task_media(data: dict, log, worker=None) -> dict:
+    action = data.get("action")
+    url = (data.get("url") or "").strip()
+    file_path = (data.get("file_path") or "").strip()
+
+    downloader = Downloader(OUTPUT_DIR)
+    converter = Converter()
+    worker = worker or DummyWorker()
+
+    if action == "download_video":
+        log(f"🎬 Скачивание видео в максимальном качестве: {url}...", stage="Скачивание видео", percent=20)
+        out_file, _ = downloader.download(url, video_only=True, worker_obj=worker)
+        log(f"✅ Видео сохранено: {os.path.basename(out_file)}", stage="Готово", percent=100)
+        return {"status": "success", "file": f"/api/download?file={urllib.parse.quote(out_file)}"}
+
+    elif action == "download_audio":
+        log(f"🎵 Скачивание аудио (MP3 192k): {url}...", stage="Скачивание аудио", percent=20)
+        out_file, _ = downloader.download(url, extract_audio=True, worker_obj=worker)
+        log(f"✅ Аудио сохранено: {os.path.basename(out_file)}", stage="Готово", percent=100)
+        return {"status": "success", "file": f"/api/download?file={urllib.parse.quote(out_file)}"}
+
+    elif action == "clean_audio":
+        log("🎧 Очистка звука (удаление шума, фильтрация, нормализация)...", stage="Очистка звука", percent=30)
+        target = file_path
+        if url.startswith("http"):
+            target, _ = downloader.download(url, extract_audio=True, worker_obj=worker)
+        if not target or not os.path.exists(target):
+            raise ValueError("Укажите ссылку на видео или загрузите локальный аудио-файл для очистки")
+
+        cleaned = converter.enhance_audio(target, OUTPUT_DIR)
+        log(f"✅ Очищенный аудиофайл готов: {os.path.basename(cleaned)}", stage="Готово", percent=100)
+        return {"status": "success", "file": f"/api/download?file={urllib.parse.quote(cleaned)}"}
+
+    elif action == "hardsub":
+        log("🎥 Вшивание субтитров в видео...", stage="Hardsub", percent=30)
+        sub_lang = data.get("sub_lang", "ru")
+        # If YouTube URL, first check/download subtitles
+        video_file = file_path
+        sub_file = data.get("sub_file")
+
+        if url.startswith("http"):
+            subs_info = downloader.list_subtitles(url)
+            choice = downloader.choose_subtitle_track(subs_info, preferred_lang=sub_lang)
+            if choice:
+                sub_file = downloader.download_subtitles(url, choice["lang"], auto=choice["auto"])
+            video_file, _ = downloader.download(url, video_only=True, worker_obj=worker)
+
+        if not video_file or not os.path.exists(video_file):
+            raise ValueError("Укажите ссылку на видео или загрузите локальный видео-файл для вшивания субтитров")
+
+        if not sub_file or not os.path.exists(sub_file):
+            # Generate via Whisper
+            log("Генерация субтитров через Whisper для вшивания...", stage="Генерация субтитров", percent=50)
+            engine = WhisperEngine(model_name=data.get("model", "base"))
+            w_res = engine.transcribe(video_file, worker_obj=worker)
+            # Create temp srt
+            sub_file = os.path.join(OUTPUT_DIR, f"temp_sub_{int(time.time())}.srt")
+            with open(sub_file, "w", encoding="utf-8") as f:
+                for i, seg in enumerate(w_res.get("segments", []), 1):
+                    f.write(f"{i}\n{format_ts(seg['start'])} --> {format_ts(seg['end'])}\n{seg['text'].strip()}\n\n")
+
+        out_video = converter.hardsub_video(video_file, sub_file, OUTPUT_DIR)
+        log(f"✅ Видео с субтитрами готово: {os.path.basename(out_video)}", stage="Готово", percent=100)
+        return {"status": "success", "file": f"/api/download?file={urllib.parse.quote(out_video)}"}
+
+    else:
+        raise ValueError(f"Неизвестное действие: {action}")
+
+
+def task_convert(data: dict, log, worker=None) -> dict:
+    file_path = (data.get("file_path") or "").strip()
+    target_fmt = (data.get("target_format") or "").strip().lower()
+
+    if not file_path or not os.path.exists(file_path):
+        raise ValueError("Файл для конвертации не найден")
+
+    converter = Converter()
+    ext = os.path.splitext(file_path)[1].lower().strip(".")
+    log(f"🔄 Конвертация {ext} -> {target_fmt}...", stage="Конвертация", percent=40)
+
+    # Media
+    media_exts = {"mp3", "wav", "aac", "flac", "ogg", "mp4", "mkv", "webm", "avi", "mov", "m4a"}
+    doc_exts = {"pdf", "docx", "doc", "txt", "odt", "rtf"}
+    img_exts = {"jpg", "jpeg", "png", "webp"}
+
+    if target_fmt in media_exts and ext in media_exts:
+        out = converter.convert_media(file_path, target_fmt, OUTPUT_DIR)
+    elif target_fmt in doc_exts and ext in doc_exts:
+        out = converter.convert_document(file_path, target_fmt, OUTPUT_DIR)
+    elif target_fmt in img_exts or ext in img_exts:
+        out = converter.convert_image(file_path, target_fmt, OUTPUT_DIR)
+    else:
+        raise ValueError(f"Конвертация из {ext} в {target_fmt} не поддерживается")
+
+    log(f"✅ Файл сконвертирован: {os.path.basename(out)}", stage="Готово", percent=100)
+    return {"status": "success", "file": f"/api/download?file={urllib.parse.quote(out)}"}
+
+
 class EngineHTTPRequestHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         # Keep server logs concise
@@ -153,6 +570,10 @@ class EngineHTTPRequestHandler(BaseHTTPRequestHandler):
             self.handle_health()
         elif path == "/api/progress":
             self.send_json(progress_state)
+        elif path == "/api/jobs":
+            self.handle_jobs_list()
+        elif path.startswith("/api/jobs/"):
+            self.handle_job_get(path.split("/")[3])
         elif path == "/api/download":
             self.handle_download(params)
         else:
@@ -170,7 +591,8 @@ class EngineHTTPRequestHandler(BaseHTTPRequestHandler):
 
         self.send_json({
             "status": "ok",
-            "version": "1.0.0",
+            "version": "1.1.0",
+            "jobs": True,  # Job API: фоновые задачи, переживающие закрытие вкладки
             "platform": sys.platform,
             "system_name": sys_name,
             "device": device_label,
@@ -218,6 +640,10 @@ class EngineHTTPRequestHandler(BaseHTTPRequestHandler):
                 self.handle_translate()
             elif path == "/api/upload":
                 self.handle_upload()
+            elif path == "/api/jobs":
+                self.handle_job_create()
+            elif path.startswith("/api/jobs/") and path.endswith("/cancel"):
+                self.handle_job_cancel(path[len("/api/jobs/"):-len("/cancel")])
             elif path == "/api/stop":
                 self.handle_stop()
             else:
@@ -228,305 +654,151 @@ class EngineHTTPRequestHandler(BaseHTTPRequestHandler):
             self.send_error_json(str(e), 500)
 
     def handle_stop(self):
+        # Отмена активной фоновой задачи (если есть) + глобальный флаг для legacy-пути
+        cur = CURRENT_JOB.get("id")
+        if cur:
+            with JOBS_LOCK:
+                job = JOBS.get(cur)
+            if job:
+                try:
+                    job["worker"].request_stop()
+                except Exception:
+                    pass
         progress_state["active"] = False
         log_progress("🛑 Обработка отменена", stage="Отменено", percent=0)
         self.send_json({"status": "stopped"})
 
     # ─────────────────────────────────────────────────────────────
     #  1. Transcribe (Subtitles First + Whisper Fallback)
+    #     Legacy-синхронный путь: результат приходит в ответе POST.
+    #     Новые клиенты используют POST /api/jobs (фоновое выполнение).
     # ─────────────────────────────────────────────────────────────
     def handle_transcribe(self):
         data = self.read_json_body()
-        url = data.get("url", "").strip()
-        local_file = data.get("file_path", "").strip()
-        model_name = data.get("model", "base")
-        lang = data.get("language", "auto")
-        translate_to = data.get("translate_to", "-").strip().lower()
-        save_audio = bool(data.get("save_audio", False))
-        save_video = bool(data.get("save_video", False))
-
-        if not url and not local_file:
-            self.send_error_json("Не указан URL или файл для транскрибации")
-            return
-
-        # Файл передан, но не существует на диске — понятная ошибка вместо трейсбека Whisper
-        if local_file and not os.path.exists(local_file):
-            self.send_error_json(f"Файл не найден на диске движка: {local_file}", 404)
-            return
-
         progress_state["active"] = True
         progress_state["log"] = []
-        log_progress("🚀 Запуск транскрибации...", stage="Инициализация", percent=5)
-
-        downloader = Downloader(OUTPUT_DIR)
-        converter = Converter()
-        dummy_worker = DummyWorker()
-
-        result_text = ""
-        segments = []
-        source_type = "unknown"
-        detected_lang = lang
-        saved_media_files = []
-
-        # ─── URL CASE ───
-        if url.startswith("http"):
-            log_progress(f"🔎 Шаг 1/4: Поиск субтитров YouTube для {url}...", stage="Поиск субтитров", percent=15)
-            
-            subs_info = downloader.list_subtitles(url)
-            pref_lang = "ru" if lang == "auto" else lang
-            choice = downloader.choose_subtitle_track(
-                subs_info,
-                preferred_lang=pref_lang,
-                fallback_langs=["ru", "en", "uk"]
-            )
-
-            got_subtitles = False
-            if choice:
-                sub_lang = choice["lang"]
-                is_auto = choice["auto"]
-                log_progress(f"✅ Найдены субтитры '{sub_lang}' ({'авто' if is_auto else 'ручные'}). Скачивание...", stage="Скачивание субтитров", percent=35)
-                try:
-                    sub_file = downloader.download_subtitles(url, sub_lang, auto=is_auto)
-                    if sub_file and os.path.exists(sub_file):
-                        parsed = parse_subtitles(sub_file)
-                        if parsed:
-                            segments = parsed
-                            result_text = " ".join(s['text'] for s in segments)
-                            source_type = f"YouTube Subtitles ({sub_lang})"
-                            detected_lang = sub_lang
-                            got_subtitles = True
-                            log_progress("⚡ Субтитры получены и распарсены за 2 секунды!", stage="Субтитры готовы", percent=70)
-                        try:
-                            os.remove(sub_file)
-                        except Exception:
-                            pass
-                except Exception as e:
-                    log_progress(f"⚠️ Ошибка получения субтитров: {e}. Переходим к скачиванию медиа...", stage="Субтитры недоступны")
-
-            # Fallback to downloading media + Whisper
-            if not got_subtitles:
-                log_progress("📥 Шаг 2/4: Скачивание аудиодорожки с YouTube...", stage="Скачивание аудио", percent=30)
-                
-                def dl_callback(percent, eta=""):
-                    log_progress(f"Загрузка: {percent}% ({eta})", percent=min(25 + int(percent * 0.25), 55))
-
-                media_path, _ = downloader.download(
-                    url,
-                    extract_audio=True,
-                    worker_obj=dummy_worker,
-                    progress_callback=dl_callback
-                )
-                log_progress(f"✅ Аудио скачано: {os.path.basename(media_path)}", stage="Медиа скачано", percent=60)
-                
-                if save_audio:
-                    saved_media_files.append(media_path)
-
-                log_progress(f"🧠 Шаг 3/4: Распознавание речи через Whisper ({model_name})...", stage="Whisper", percent=65)
-                engine = WhisperEngine(model_name=model_name)
-                
-                def whisper_cb(percent, eta=""):
-                    log_progress(f"Whisper: {percent}% ({eta})", percent=min(65 + int(percent * 0.25), 90))
-
-                whisper_out = engine.transcribe(
-                    media_path,
-                    language=lang,
-                    progress_callback=whisper_cb,
-                    worker_obj=dummy_worker
-                )
-                result_text = whisper_out.get("text", "")
-                segments = whisper_out.get("segments", [])
-                detected_lang = whisper_out.get("language", lang)
-                source_type = f"Whisper ({model_name})"
-        else:
-            # Local file
-            media_path = local_file
-            log_progress(f"🧠 Распознавание локального файла через Whisper ({model_name})...", stage="Whisper", percent=40)
-            engine = WhisperEngine(model_name=model_name)
-            whisper_out = engine.transcribe(media_path, language=lang, worker_obj=dummy_worker)
-            result_text = whisper_out.get("text", "")
-            segments = whisper_out.get("segments", [])
-            detected_lang = whisper_out.get("language", lang)
-            source_type = f"Whisper ({model_name})"
-
-        # Optional translation
-        if translate_to and translate_to not in ["-", "", detected_lang]:
-            log_progress(f"🌍 Шаг 4/4: Перевод текста на {translate_to}...", stage="Перевод", percent=92)
-            translator = Translator()
-            result_text = translator.translate_text(result_text, translate_to)
-            # Translate segments if available
-            try:
-                for s in segments:
-                    s['text'] = translator.translate_text(s['text'], translate_to)
-            except Exception:
-                pass
-
-        # Build output files
-        base_name = f"voxpaper_transcription_{int(time.time())}"
-        txt_path = os.path.join(OUTPUT_DIR, f"{base_name}.txt")
-        srt_path = os.path.join(OUTPUT_DIR, f"{base_name}.srt")
-        vtt_path = os.path.join(OUTPUT_DIR, f"{base_name}.vtt")
-        json_path = os.path.join(OUTPUT_DIR, f"{base_name}.json")
-
-        # Plain text
-        with open(txt_path, "w", encoding="utf-8") as f:
-            f.write(result_text)
-
-        # SRT
-        srt_blocks = []
-        for idx, seg in enumerate(segments, 1):
-            s_ts = format_ts(seg.get('start', 0))
-            e_ts = format_ts(seg.get('end', 0))
-            text = seg.get('text', '').strip()
-            srt_blocks.append(f"{idx}\n{s_ts} --> {e_ts}\n{text}\n")
-        with open(srt_path, "w", encoding="utf-8") as f:
-            f.write("\n".join(srt_blocks))
-
-        # VTT
-        vtt_lines = ["WEBVTT\n"]
-        for seg in segments:
-            s_ts = format_ts_vtt(seg.get('start', 0))
-            e_ts = format_ts_vtt(seg.get('end', 0))
-            text = seg.get('text', '').strip()
-            vtt_lines.append(f"{s_ts} --> {e_ts}\n{text}\n")
-        with open(vtt_path, "w", encoding="utf-8") as f:
-            f.write("\n".join(vtt_lines))
-
-        # JSON
-        with open(json_path, "w", encoding="utf-8") as f:
-            json.dump({"text": result_text, "language": detected_lang, "segments": segments}, f, ensure_ascii=False, indent=2)
-
-        log_progress("✅ Транскрибация успешно завершена!", stage="Готово", percent=100)
-        progress_state["active"] = False
-
-        self.send_json({
-            "status": "success",
-            "source": source_type,
-            "detected_language": detected_lang,
-            "text": result_text,
-            "segments_count": len(segments),
-            "files": {
-                "txt": f"/api/download?file={urllib.parse.quote(txt_path)}",
-                "srt": f"/api/download?file={urllib.parse.quote(srt_path)}",
-                "vtt": f"/api/download?file={urllib.parse.quote(vtt_path)}",
-                "json": f"/api/download?file={urllib.parse.quote(json_path)}",
-            }
-        })
+        try:
+            with TASK_LOCK:
+                result = task_transcribe(data, log_progress)
+        except ValueError as e:
+            self.send_error_json(str(e), 400)
+            return
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            self.send_error_json(str(e), 500)
+            return
+        finally:
+            progress_state["active"] = False
+        self.send_json(result)
 
     # ─────────────────────────────────────────────────────────────
     #  2. Media (Download Video, Audio, Clean Audio, Hardsub)
     # ─────────────────────────────────────────────────────────────
     def handle_media(self):
         data = self.read_json_body()
-        action = data.get("action")
-        url = data.get("url", "").strip()
-        file_path = data.get("file_path", "").strip()
-
-        downloader = Downloader(OUTPUT_DIR)
-        converter = Converter()
-
         progress_state["active"] = True
         progress_state["log"] = []
-
-        if action == "download_video":
-            log_progress(f"🎬 Скачивание видео в максимальном качестве: {url}...", stage="Скачивание видео", percent=20)
-            out_file, _ = downloader.download(url, video_only=True)
-            log_progress(f"✅ Видео сохранено: {os.path.basename(out_file)}", stage="Готово", percent=100)
-            self.send_json({"status": "success", "file": f"/api/download?file={urllib.parse.quote(out_file)}"})
-
-        elif action == "download_audio":
-            log_progress(f"🎵 Скачивание аудио (MP3 192k): {url}...", stage="Скачивание аудио", percent=20)
-            out_file, _ = downloader.download(url, extract_audio=True)
-            log_progress(f"✅ Аудио сохранено: {os.path.basename(out_file)}", stage="Готово", percent=100)
-            self.send_json({"status": "success", "file": f"/api/download?file={urllib.parse.quote(out_file)}"})
-
-        elif action == "clean_audio":
-            log_progress(f"🎧 Очистка звука (удаление шума, фильтрация, нормализация)...", stage="Очистка звука", percent=30)
-            target = file_path
-            if url.startswith("http"):
-                target, _ = downloader.download(url, extract_audio=True)
-
-            if not target or not os.path.exists(target):
-                self.send_error_json("Укажите ссылку на видео или загрузите локальный аудио-файл для очистки")
-                progress_state["active"] = False
-                return
-
-            cleaned = converter.enhance_audio(target, OUTPUT_DIR)
-            log_progress(f"✅ Очищенный аудиофайл готов: {os.path.basename(cleaned)}", stage="Готово", percent=100)
-            self.send_json({"status": "success", "file": f"/api/download?file={urllib.parse.quote(cleaned)}"})
-
-        elif action == "hardsub":
-            log_progress(f"🎥 Вшивание субтитров в видео...", stage="Hardsub", percent=30)
-            sub_lang = data.get("sub_lang", "ru")
-            # If YouTube URL, first check/download subtitles
-            video_file = file_path
-            sub_file = data.get("sub_file")
-            
-            if url.startswith("http"):
-                subs_info = downloader.list_subtitles(url)
-                choice = downloader.choose_subtitle_track(subs_info, preferred_lang=sub_lang)
-                if choice:
-                    sub_file = downloader.download_subtitles(url, choice["lang"], auto=choice["auto"])
-                video_file, _ = downloader.download(url, video_only=True)
-
-            if not video_file or not os.path.exists(video_file):
-                self.send_error_json("Укажите ссылку на видео или загрузите локальный видео-файл для вшивания субтитров")
-                progress_state["active"] = False
-                return
-
-            if not sub_file or not os.path.exists(sub_file):
-                # Generate via Whisper
-                log_progress("Генерация субтитров через Whisper для вшивания...", stage="Генерация субтитров", percent=50)
-                engine = WhisperEngine(model_name=data.get("model", "base"))
-                w_res = engine.transcribe(video_file)
-                # Create temp srt
-                sub_file = os.path.join(OUTPUT_DIR, f"temp_sub_{int(time.time())}.srt")
-                with open(sub_file, "w", encoding="utf-8") as f:
-                    for i, seg in enumerate(w_res.get("segments", []), 1):
-                        f.write(f"{i}\n{format_ts(seg['start'])} --> {format_ts(seg['end'])}\n{seg['text'].strip()}\n\n")
-
-            out_video = converter.hardsub_video(video_file, sub_file, OUTPUT_DIR)
-            log_progress(f"✅ Видео с субтитрами готово: {os.path.basename(out_video)}", stage="Готово", percent=100)
-            self.send_json({"status": "success", "file": f"/api/download?file={urllib.parse.quote(out_video)}"})
-
-        else:
-            self.send_error_json(f"Неизвестное действие: {action}")
-        progress_state["active"] = False
+        try:
+            with TASK_LOCK:
+                result = task_media(data, log_progress)
+        except ValueError as e:
+            self.send_error_json(str(e), 400)
+            return
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            self.send_error_json(str(e), 500)
+            return
+        finally:
+            progress_state["active"] = False
+        self.send_json(result)
 
     # ─────────────────────────────────────────────────────────────
     #  3. Convert (Media, Documents, Images)
     # ─────────────────────────────────────────────────────────────
     def handle_convert(self):
         data = self.read_json_body()
-        file_path = data.get("file_path", "").strip()
-        target_fmt = data.get("target_format", "").strip().lower()
-
-        if not file_path or not os.path.exists(file_path):
-            self.send_error_json("Файл для конвертации не найден")
-            return
-
-        converter = Converter()
-        ext = os.path.splitext(file_path)[1].lower().strip(".")
         progress_state["active"] = True
-        log_progress(f"🔄 Конвертация {ext} -> {target_fmt}...", stage="Конвертация", percent=40)
-
-        # Media
-        media_exts = {"mp3", "wav", "aac", "flac", "ogg", "mp4", "mkv", "webm", "avi", "mov", "m4a"}
-        doc_exts = {"pdf", "docx", "doc", "txt", "odt", "rtf"}
-        img_exts = {"jpg", "jpeg", "png", "webp"}
-
-        if target_fmt in media_exts and ext in media_exts:
-            out = converter.convert_media(file_path, target_fmt, OUTPUT_DIR)
-        elif target_fmt in doc_exts and ext in doc_exts:
-            out = converter.convert_document(file_path, target_fmt, OUTPUT_DIR)
-        elif target_fmt in img_exts or ext in img_exts:
-            out = converter.convert_image(file_path, target_fmt, OUTPUT_DIR)
-        else:
-            self.send_error_json(f"Конвертация из {ext} в {target_fmt} не поддерживается")
+        progress_state["log"] = []
+        try:
+            with TASK_LOCK:
+                result = task_convert(data, log_progress)
+        except ValueError as e:
+            self.send_error_json(str(e), 400)
             return
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            self.send_error_json(str(e), 500)
+            return
+        finally:
+            progress_state["active"] = False
+        self.send_json(result)
 
-        log_progress(f"✅ Файл сконвертирован: {os.path.basename(out)}", stage="Готово", percent=100)
-        progress_state["active"] = False
-        self.send_json({"status": "success", "file": f"/api/download?file={urllib.parse.quote(out)}"})
+    # ─────────────────────────────────────────────────────────────
+    #  6. Job API — фоновые задачи, переживающие закрытие вкладки
+    # ─────────────────────────────────────────────────────────────
+    def handle_job_create(self):
+        data = self.read_json_body()
+        jtype = (data.get("type") or "").strip()
+        params = data.get("params")
+        if jtype not in ("transcribe", "media", "convert"):
+            self.send_error_json(f"Неизвестный тип задачи: {jtype}", 400)
+            return
+        if not isinstance(params, dict):
+            params = {}
+        jid = uuid.uuid4().hex[:12]
+        job = {
+            "id": jid,
+            "type": jtype,
+            "params": params,
+            "status": "queued",
+            "progress": {"active": True, "task": jtype, "stage": "В очереди", "percent": 0, "eta": "", "log": []},
+            "result": None,
+            "error": None,
+            "label": str(data.get("label") or "").strip(),
+            "created_at": time.time(),
+            "finished_at": None,
+            "worker": DummyWorker(),
+        }
+        with JOBS_LOCK:
+            JOBS[jid] = job
+        threading.Thread(target=run_job, args=(job,), daemon=True).start()
+        _save_jobs()
+        self.send_json({"status": "started", "job_id": jid})
+
+    def handle_jobs_list(self):
+        with JOBS_LOCK:
+            jobs = [
+                _job_snapshot(j)
+                for j in sorted(JOBS.values(), key=lambda x: x.get("created_at", 0))[-JOBS_MAX:]
+            ]
+        self.send_json({"status": "ok", "jobs": jobs})
+
+    def handle_job_get(self, job_id):
+        with JOBS_LOCK:
+            job = JOBS.get(job_id)
+            snap = _job_snapshot(job) if job else None
+        if snap is None:
+            self.send_error_json("Задача не найдена (журнал очищен или движок перезапускался)", 404)
+            return
+        self.send_json(snap)
+
+    def handle_job_cancel(self, job_id):
+        with JOBS_LOCK:
+            job = JOBS.get(job_id)
+        if not job:
+            self.send_error_json("Задача не найдена", 404)
+            return
+        if job["status"] in ("queued", "running"):
+            try:
+                job["worker"].request_stop()
+            except Exception:
+                pass
+            self.send_json({"status": "cancelling", "job_id": job_id})
+        else:
+            self.send_json({"status": "already_finished", "job_id": job_id})
 
     # ─────────────────────────────────────────────────────────────
     #  4. Translate (Text & Files)
@@ -618,6 +890,7 @@ def run_server(port=8765):
             print(f"⚠ Порт {port} уже занят — похоже, движок уже работает. Выходим.")
             return
         raise
+    _load_jobs()  # восстановить журнал фоновых задач после перезапуска
     print("=" * 60)
     print(f"🚀 VoxPaperAi Pro — Локальный движок запущен!")
     print(f"📡 Порт: http://127.0.0.1:{port}")

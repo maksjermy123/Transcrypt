@@ -19,8 +19,11 @@ import {
   Languages,
   Copy,
   Check,
+  History,
+  X,
+  Square,
 } from "lucide-react";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useOnboarding, MODEL_INFO, browserSafeModel, type WhisperModelId } from "@/lib/onboarding-store";
 import { transcribeAudio, loadWhisperPipeline } from "@/lib/whisper";
 import { useSettings } from "@/lib/settings-store";
@@ -28,7 +31,13 @@ import { translateText, translateBatch } from "@/lib/translate";
 import {
   transcribeViaEngine,
   downloadEngineFile,
+  fetchEngineFile,
+  resumeActiveJob,
+  watchJobToCompletion,
+  clearActiveJob,
+  cancelActiveJob,
   type EngineProgress,
+  type TranscribeResult,
 } from "@/lib/engine-bridge";
 import {
   segmentsToSRT,
@@ -69,7 +78,7 @@ export function TranscribeTab({
   /** Переход к шагу установки движка (из воркбенча) */
   onInstallEngine?: () => void;
 }) {
-  const { selectedModel, setSelectedModel, engineServerOnline } = useOnboarding();
+  const { selectedModel, setSelectedModel, engineServerOnline, engineServerHealth } = useOnboarding();
   const { provider, deeplKey } = useSettings();
   const [mode, setMode] = useState<"file" | "url">("file");
   const [file, setFile] = useState<File | Blob | null>(null);
@@ -94,6 +103,10 @@ export function TranscribeTab({
   const [dragOver, setDragOver] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  // Фоновые задачи (Job API): статус поддержки движком + заметка восстановления
+  const supportsJobs = !!engineServerHealth?.jobs;
+  const [jobNote, setJobNote] = useState<string | null>(null);
+  const cancelledRef = useRef(false);
 
   const clearTranslation = () => {
     setTranslatedText("");
@@ -163,6 +176,8 @@ export function TranscribeTab({
     setProgressLog([]);
     setText("");
     setSegments([]);
+    setJobNote(null);
+    cancelledRef.current = false;
     clearTranslation();
 
     const urlValue = url.trim();
@@ -215,7 +230,7 @@ export function TranscribeTab({
             file_path: filePath,
             model: selectedModel ?? "base",
             language,
-            translate_to: "-", // Перевод не нужен
+            translate_to: "-", // перевод выполняется на клиенте после транскрипции
           },
           (p: EngineProgress) => {
             setProgress(p.percent);
@@ -223,39 +238,11 @@ export function TranscribeTab({
             if (p.log?.length) {
               setProgressLog((l) => [...l.slice(-50), ...p.log.slice(-3)]);
             }
-          }
+          },
+          useUrl ? urlValue : fileName || "локальный файл"
         );
 
-        if (result.status !== "success") {
-          throw new Error("Движок вернул ошибку");
-        }
-
-        const resText = result.text || "";
-
-        // Сегментов нет в ответе движка (он отдаёт только text + файлы), но можно скачать SRT.
-        // Загружаем SRT-файл и парсим для отображения.
-        let resSegs: Seg[] = [];
-        if (result.files?.srt) {
-          try {
-            const { fetchEngineFile } = await import("@/lib/engine-bridge");
-            const blob = await fetchEngineFile(result.files.srt);
-            const srtText = await blob.text();
-            resSegs = parseSrt(srtText);
-          } catch (e) {
-            console.warn("Не удалось загрузить SRT:", e);
-          }
-        }
-
-        setText(resText);
-        setSegments(resSegs);
-        setSourceLabel(result.source || "Локальный движок");
-
-        // Выбран конечный язык — переводим ДО выдачи результата
-        await translateIfNeeded(resText, resSegs);
-
-        setPhase("done");
-        setProgress(100);
-        setProgressText("Готово");
+        await applyEngineResult(result, { label: useUrl ? urlValue : fileName });
         return;
       }
 
@@ -289,12 +276,25 @@ export function TranscribeTab({
       setSourceLabel(`Whisper ${browserSafeModel(selectedModel)} (браузер)`);
 
       // Выбран конечный язык — переводим ДО выдачи результата
-      await translateIfNeeded(resText, segs);
+      const tr = await translateIfNeeded(resText, segs);
 
       setPhase("done");
       setProgress(100);
       setProgressText("Готово");
+      persistLastResult({
+        sourceLabel: `Whisper ${browserSafeModel(selectedModel)} (браузер)`,
+        text: resText,
+        segments: segs,
+        targetLang,
+        translatedText: tr.tText,
+        translatedSegments: tr.tSegs,
+        translError: tr.err,
+      });
     } catch (err: any) {
+      if (cancelledRef.current) {
+        // Отмена пользователем — состояние уже сброшено cancelRun()
+        return;
+      }
       console.error(err);
       setError(err?.message ?? "Ошибка распознавания");
       setPhase("error");
@@ -306,16 +306,21 @@ export function TranscribeTab({
    * Вызывается ДО setPhase("done") — пользователь видит прогресс перевода,
    * и готовый перевод появляется вместе с распознанным текстом.
    * При ошибке перевода оригинал НЕ теряется (показываем предупреждение).
+   * Возвращает перевод для сохранения/восстановления результата.
    */
-  async function translateIfNeeded(origText: string, origSegs: Seg[], langOverride?: string) {
+  async function translateIfNeeded(
+    origText: string,
+    origSegs: Seg[],
+    langOverride?: string
+  ): Promise<{ tText: string; tSegs: Seg[]; err: string | null }> {
     const lang = langOverride ?? targetLang;
     setTranslatedText("");
     setTranslatedSegments([]);
     setTranslError(null);
     setSegView("translation");
-    if (lang === "-") return;
-    if (language !== "auto" && language === lang) return; // совпадает с исходным — перевод не нужен
-    if (!origText.trim() && !origSegs.length) return;
+    if (lang === "-") return { tText: "", tSegs: [], err: null };
+    if (language !== "auto" && language === lang) return { tText: "", tSegs: [], err: null }; // совпадает с исходным — перевод не нужен
+    if (!origText.trim() && !origSegs.length) return { tText: "", tSegs: [], err: null };
 
     const label = langLabel(lang);
     const opts = {
@@ -342,8 +347,10 @@ export function TranscribeTab({
           text: out[i] ?? s.text,
           timestamp: s.timestamp,
         }));
+        const tText = tSegs.map((s) => s.text).join(" ").replace(/\s+/g, " ").trim();
         setTranslatedSegments(tSegs);
-        setTranslatedText(tSegs.map((s) => s.text).join(" ").replace(/\s+/g, " ").trim());
+        setTranslatedText(tText);
+        return { tText, tSegs, err: null };
       } else {
         const t = await translateText(origText, {
           ...opts,
@@ -353,10 +360,13 @@ export function TranscribeTab({
           },
         });
         setTranslatedText(t);
+        return { tText: t, tSegs: [], err: null };
       }
     } catch (err: any) {
       console.error("Перевод транскрипции не удался:", err);
-      setTranslError(err?.message ?? "неизвестная ошибка");
+      const msg = err?.message ?? "неизвестная ошибка";
+      setTranslError(msg);
+      return { tText: "", tSegs: [], err: msg };
     }
   }
 
@@ -365,10 +375,224 @@ export function TranscribeTab({
     if (phase !== "done") return;
     setPhase("running");
     setProgress(30);
-    await translateIfNeeded(text, segments, lang);
+    const tr = await translateIfNeeded(text, segments, lang);
     setPhase("done");
     setProgress(100);
     setProgressText("Готово");
+    persistLastResult({
+      sourceLabel,
+      text,
+      segments,
+      targetLang: lang,
+      translatedText: tr.tText,
+      translatedSegments: tr.tSegs,
+      translError: tr.err,
+    });
+  }
+
+  /** Сохранение последнего результата — восстановится после перезагрузки страницы */
+  function persistLastResult(payload: {
+    sourceLabel: string;
+    text: string;
+    segments: Seg[];
+    targetLang: string;
+    translatedText: string;
+    translatedSegments: Seg[];
+    translError: string | null;
+  }) {
+    try {
+      localStorage.setItem(
+        "transcrypt.lastTranscribe",
+        JSON.stringify({ at: Date.now(), ...payload })
+      );
+    } catch {
+      /* хранилище недоступно */
+    }
+  }
+
+  /**
+   * Единая обработка результата движка: текст + SRT-сегменты + перевод + сохранение.
+   * Используется и при обычном запуске, и при восстановлении фоновой задачи.
+   */
+  async function applyEngineResult(
+    result: TranscribeResult,
+    opts: { label?: string; targetLangOverride?: string }
+  ) {
+    if (result.status !== "success") {
+      throw new Error("Движок вернул ошибку");
+    }
+    const resText = result.text || "";
+    // Сегментов нет в ответе движка (он отдаёт text + файлы) — скачиваем SRT и парсим
+    let resSegs: Seg[] = [];
+    if (result.files?.srt) {
+      try {
+        const blob = await fetchEngineFile(result.files.srt);
+        const srtText = await blob.text();
+        resSegs = parseSrt(srtText);
+      } catch (e) {
+        console.warn("Не удалось загрузить SRT:", e);
+      }
+    }
+    const srcLabel = result.source || opts.label || "Локальный движок";
+    setText(resText);
+    setSegments(resSegs);
+    setSourceLabel(srcLabel);
+
+    // targetLangOverride — чтобы при восстановлении фоновой задачи использовался
+    // язык, выбранный ДО перезагрузки страницы (а не устаревший из замыкания)
+    const effTarget = opts.targetLangOverride ?? targetLang;
+    const tr = await translateIfNeeded(resText, resSegs, effTarget);
+
+    setPhase("done");
+    setProgress(100);
+    setProgressText("Готово");
+    persistLastResult({
+      sourceLabel: srcLabel,
+      text: resText,
+      segments: resSegs,
+      targetLang: effTarget,
+      translatedText: tr.tText,
+      translatedSegments: tr.tSegs,
+      translError: tr.err,
+    });
+  }
+
+  /** Восстановление последнего готового результата (после перезагрузки страницы) */
+  function restoreLastResult() {
+    try {
+      const raw = localStorage.getItem("transcrypt.lastTranscribe");
+      if (!raw) return;
+      const r = JSON.parse(raw);
+      if (!r || (!r.text && !(r.segments?.length))) return;
+      setText(r.text || "");
+      setSegments(r.segments || []);
+      setSourceLabel(r.sourceLabel || "");
+      setTargetLang(r.targetLang || "-");
+      setTranslatedText(r.translatedText || "");
+      setTranslatedSegments(r.translatedSegments || []);
+      setTranslError(r.translError || null);
+      setSegView("translation");
+      setPhase("done");
+      setProgress(100);
+      setProgressText("Готово");
+      const when = r.at ? new Date(r.at).toLocaleString() : "";
+      setJobNote(`Восстановлен последний результат${when ? ` (от ${when})` : ""}.`);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  // ═══ Восстановление фоновой задачи при возврате на вкладку ═══
+  // Покрывает: переключение вкладок внутри приложения, уход на другую
+  // вкладку браузера, перезагрузку страницы и выгрузку вкладки браузером.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      let outcome: Awaited<ReturnType<typeof resumeActiveJob>> | null = null;
+      try {
+        outcome = await resumeActiveJob();
+      } catch {
+        outcome = null;
+      }
+      // Сохранённый целевой язык применяем до восстановления результата
+      let pref = "-";
+      try {
+        pref = localStorage.getItem("transcrypt.prefs.targetLang") || "-";
+      } catch {
+        /* ignore */
+      }
+      if (!cancelled && pref !== "-") setTargetLang(pref);
+      if (cancelled) return;
+      if (!outcome || outcome.state === "none" || outcome.state === "offline") {
+        restoreLastResult();
+        return;
+      }
+      // Задача другой вкладки (Медиа/Конвертер) — её подхватит соответствующая вкладка
+      if (outcome.record.type !== "transcribe") {
+        restoreLastResult();
+        return;
+      }
+      if (outcome.state === "lost") {
+        clearActiveJob();
+        setJobNote("Прошлая фоновая задача не найдена — движок перезапускался без журнала задач.");
+        restoreLastResult();
+        return;
+      }
+      if (outcome.state === "error") {
+        clearActiveJob();
+        setError(outcome.job.error || "Фоновая задача завершилась с ошибкой");
+        setPhase("error");
+        return;
+      }
+      const rec = outcome.record;
+      const jp = rec.params as { url?: string };
+      if (jp?.url) {
+        setUrl(jp.url);
+        setMode("url");
+      }
+      if (outcome.state === "done") {
+        setJobNote("Фоновая задача завершилась, пока вас не было — вот её результат.");
+        try {
+          await applyEngineResult(outcome.job.result as TranscribeResult, {
+            label: rec.label,
+            targetLangOverride: pref,
+          });
+        } catch (e: any) {
+          if (!cancelled) {
+            setError(e?.message ?? "Не удалось показать результат фоновой задачи");
+            setPhase("error");
+          }
+        }
+        return;
+      }
+      // outcome.state === "running" — переподключаемся к слежению за задачей
+      setPhase("running");
+      setProgress(1);
+      setProgressText("Переподключение к фоновой задаче…");
+      setJobNote("Задача выполнялась в фоне — снова следим за ней. Пока вас не было, движок продолжал работать.");
+      try {
+        const result = await watchJobToCompletion<TranscribeResult>(rec.jobId, (pp: EngineProgress) => {
+          setProgress(pp.percent);
+          setProgressText(pp.stage || "");
+          if (pp.log?.length) setProgressLog((l) => [...l.slice(-50), ...pp.log.slice(-3)]);
+        });
+        if (cancelled || cancelledRef.current) return;
+        await applyEngineResult(result, { label: rec.label, targetLangOverride: pref });
+      } catch (e: any) {
+        if (cancelled || cancelledRef.current) return;
+        setError(e?.message ?? "Фоновая задача завершилась с ошибкой");
+        setPhase("error");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Предупреждение браузера при закрытии/обновлении страницы во время задачи
+  useEffect(() => {
+    if (phase !== "running" && phase !== "loading-engine") return;
+    const h = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", h);
+    return () => window.removeEventListener("beforeunload", h);
+  }, [phase]);
+
+  /** Отмена активной задачи (фоновая на движке или legacy) */
+  async function cancelRun() {
+    cancelledRef.current = true;
+    setProgressText("Отменяем задачу…");
+    try {
+      await cancelActiveJob();
+    } catch {
+      /* ignore */
+    }
+    setPhase("idle");
+    setProgress(0);
+    setProgressText("");
+    setJobNote("Задача отменена.");
   }
 
   // Что показываем/экспортируем: перевод (по умолчанию) или оригинал
@@ -424,6 +648,12 @@ export function TranscribeTab({
     setProgress(0);
     setProgressLog([]);
     setError(null);
+    setJobNote(null);
+    try {
+      localStorage.removeItem("transcrypt.lastTranscribe");
+    } catch {
+      /* ignore */
+    }
   }
 
   // ═════════ Общие блоки для обоих режимов (файл / URL) ═════════
@@ -461,6 +691,11 @@ export function TranscribeTab({
             onChange={(e) => {
               const v = e.target.value;
               setTargetLang(v);
+              try {
+                localStorage.setItem("transcrypt.prefs.targetLang", v);
+              } catch {
+                /* ignore */
+              }
               // Результат уже готов — сразу переводим его на новый язык
               if (phase === "done" && v !== "-") retranslate(v);
             }}
@@ -525,6 +760,27 @@ export function TranscribeTab({
             ))}
           </div>
         </details>
+      )}
+      {engineServerOnline ? (
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+          <span className="text-xs text-emerald-300/90 inline-flex items-center gap-1.5">
+            <Server className="w-3.5 h-3.5 flex-shrink-0" />
+            {supportsJobs
+              ? "Задача выполняется на движке: можно переключать вкладки или закрыть браузер — результат дождётся вас здесь."
+              : "Задача идёт в этой вкладке — не закрывайте её. Обновите движок, чтобы задачи выполнялись в фоне."}
+          </span>
+          <button
+            onClick={cancelRun}
+            className="px-3 py-1.5 rounded-lg bg-[#1b2334] hover:bg-[#263147] text-xs font-medium inline-flex items-center gap-1.5 transition-colors flex-shrink-0"
+          >
+            <Square className="w-3 h-3" />
+            Отменить
+          </button>
+        </div>
+      ) : (
+        <p className="mt-3 text-xs text-amber-300/80">
+          Браузерный Whisper работает, только пока открыта вкладка — не переключайтесь надолго и не закрывайте её до завершения.
+        </p>
       )}
     </div>
   ) : null;
@@ -714,6 +970,44 @@ export function TranscribeTab({
         )}
       </div>
 
+      {/* Баннер восстановления фоновой задачи / последнего результата */}
+      {jobNote && (
+        <div className="mb-5 p-3 rounded-xl border border-[#7c5bf5]/30 bg-[#7c5bf5]/10 text-sm text-[#cfc2ff] flex items-start gap-3">
+          <History className="w-4 h-4 mt-0.5 flex-shrink-0" />
+          <span className="flex-1">{jobNote}</span>
+          <button
+            onClick={() => setJobNote(null)}
+            className="p-1 rounded-md hover:bg-white/10 flex-shrink-0"
+            title="Скрыть"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
+      {/* Старый движок без Job API — предлагаем обновить */}
+      {engineServerOnline && engineServerHealth && !supportsJobs && (
+        <div className="mb-5 p-3 rounded-xl border border-amber-500/30 bg-amber-500/5 text-sm text-amber-200 flex items-start gap-3">
+          <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="font-medium">
+              Движок {engineServerHealth.version || "1.0.x"} — задачи не переживают переключение вкладок
+            </p>
+            <p className="text-xs text-amber-200/80 mt-1 leading-relaxed">
+              Обновите движок той же командой установки — профиль, модели и настройки сохранятся. После обновления задачи выполняются в фоне: результат ждёт вас даже после закрытия браузера.
+            </p>
+          </div>
+          {onInstallEngine && (
+            <button
+              onClick={onInstallEngine}
+              className="bg-gradient-primary text-white px-3 py-1.5 rounded-lg text-xs font-medium hover:opacity-90 flex-shrink-0"
+            >
+              Обновить движок
+            </button>
+          )}
+        </div>
+      )}
+
       {!file && (
         <div className="flex gap-2 mb-5 bg-[#1b2334] p-1 rounded-xl w-fit">
           <ModeBtn active={mode === "file"} onClick={() => setMode("file")} icon={Upload} label="Файл с компьютера" />
@@ -789,9 +1083,11 @@ export function TranscribeTab({
             </div>
           )}
 
-          {progressBlock}
-          {errorBlock}
-          {resultBlock}
+          {engineServerOnline && (
+            <div className="mt-4 rounded-xl p-4 border border-emerald-500/20 bg-emerald-500/5 text-xs text-emerald-200/80">
+              Фоновые задачи: можно спокойно переключиться на другую вкладку — движок продолжит работу, а результат появится здесь.
+            </div>
+          )}
         </motion.div>
       )}
 
@@ -884,12 +1180,14 @@ export function TranscribeTab({
             {langControls}
             {runButton}
           </div>
-
-          {progressBlock}
-          {errorBlock}
-          {resultBlock}
         </div>
       )}
+
+      {/* Общие блоки прогресса/ошибки/результата — вне контейнеров режима,
+          чтобы восстановленный результат фоновых задач был виден всегда */}
+      {progressBlock}
+      {errorBlock}
+      {resultBlock}
     </div>
   );
 }

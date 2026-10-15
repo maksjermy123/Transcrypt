@@ -10,8 +10,11 @@ import {
   Image as ImageIcon,
   FileAudio,
   Settings2,
+  History,
+  X,
+  Square,
 } from "lucide-react";
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 
 import { convertMedia, downloadBytes, getFFmpeg } from "@/lib/ffmpeg";
 import { useOnboarding } from "@/lib/onboarding-store";
@@ -19,7 +22,12 @@ import {
   convertViaEngine,
   uploadFileToEngine,
   downloadEngineFile,
+  resumeActiveJob,
+  watchJobToCompletion,
+  clearActiveJob,
+  cancelActiveJob,
   type EngineProgress,
+  type TaskResult,
 } from "@/lib/engine-bridge";
 
 type Mode = "media" | "image" | "text";
@@ -84,7 +92,8 @@ function ModeBtn({
 }
 
 function MediaConverter() {
-  const { engineServerOnline } = useOnboarding();
+  const { engineServerOnline, engineServerHealth } = useOnboarding();
+  const supportsJobs = !!engineServerHealth?.jobs;
   const [file, setFile] = useState<File | null>(null);
   const [target, setTarget] = useState("mp3");
   const [bitrate, setBitrate] = useState(192);
@@ -96,7 +105,146 @@ function MediaConverter() {
   const [resultFile, setResultFile] = useState<string | null>(null);
   const [resultName, setResultName] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [jobNote, setJobNote] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  /** Вытаскиваем имя файла из URL /api/download?file=... */
+  function fileNameFromUrl(fileUrl: string, fallback: string): string {
+    try {
+      const u = new URL(fileUrl.startsWith("http") ? fileUrl : `http://x${fileUrl}`);
+      const fp = u.searchParams.get("file") || u.pathname;
+      return decodeURIComponent(fp.split("/").pop() || fallback);
+    } catch {
+      return fallback;
+    }
+  }
+
+  function persistLastConvert(fileUrl: string, fname: string) {
+    try {
+      localStorage.setItem(
+        "transcrypt.lastConvert",
+        JSON.stringify({ at: Date.now(), file: fileUrl, name: fname })
+      );
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function restoreLastConvert() {
+    try {
+      const raw = localStorage.getItem("transcrypt.lastConvert");
+      if (!raw) return;
+      const r = JSON.parse(raw);
+      if (!r?.file) return;
+      setResultFile(r.file);
+      setResultName(r.name || "output");
+      const when = r.at ? new Date(r.at).toLocaleString() : "";
+      setJobNote(`Восстановлен последний готовый файл${when ? ` (от ${when})` : ""}.`);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  // ═══ Восстановление фоновой задачи при возврате на вкладку ═══
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      let outcome: Awaited<ReturnType<typeof resumeActiveJob>>;
+      try {
+        outcome = await resumeActiveJob();
+      } catch {
+        restoreLastConvert();
+        return;
+      }
+      if (cancelled) return;
+      if (outcome.state === "none" || outcome.state === "offline") {
+        restoreLastConvert();
+        return;
+      }
+      // Задача другой вкладки (Транскрипция/Медиа) — не трогаем её
+      if (outcome.record.type !== "convert") {
+        restoreLastConvert();
+        return;
+      }
+      if (outcome.state === "lost") {
+        clearActiveJob();
+        setJobNote("Прошлая фоновая задача не найдена — движок перезапускался.");
+        restoreLastConvert();
+        return;
+      }
+      if (outcome.state === "error") {
+        clearActiveJob();
+        setError(outcome.job.error || "Фоновая задача завершилась с ошибкой");
+        return;
+      }
+      const rec = outcome.record;
+      if (outcome.state === "done") {
+        const res = outcome.job.result as TaskResult;
+        if (res?.file) {
+          setResultFile(res.file);
+          setResultName(fileNameFromUrl(res.file, `output.${target}`));
+          setJobNote("Фоновая конвертация завершилась, пока вас не было — файл готов.");
+        } else {
+          setJobNote(res?.message || "Фоновая задача завершилась.");
+        }
+        return;
+      }
+      // running — переподключаемся
+      setBusy(true);
+      setProgress(1);
+      setProgressText("Переподключение к фоновой задаче…");
+      setJobNote("Задача выполнялась в фоне — снова следим за ней.");
+      try {
+        const res = await watchJobToCompletion<TaskResult>(rec.jobId, (p: EngineProgress) => {
+          setProgress(p.percent);
+          setProgressText(p.stage || "Конвертация…");
+          if (p.log?.length) setLog((l) => [...l.slice(-50), ...p.log.slice(-3)]);
+        });
+        if (cancelled) return;
+        if (res.status !== "success" || !res.file) {
+          throw new Error(res.message || "Движок вернул ошибку");
+        }
+        const fname = fileNameFromUrl(res.file, `output.${target}`);
+        setResultFile(res.file);
+        setResultName(fname);
+        setProgress(100);
+        setProgressText("Готово");
+        persistLastConvert(res.file, fname);
+      } catch (e: any) {
+        if (cancelled) return;
+        setError(e?.message ?? "Ошибка фоновой задачи");
+      } finally {
+        if (!cancelled) setBusy(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Предупреждение при закрытии/обновлении страницы во время задачи
+  useEffect(() => {
+    if (!busy) return;
+    const h = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", h);
+    return () => window.removeEventListener("beforeunload", h);
+  }, [busy]);
+
+  async function cancelRun() {
+    setProgressText("Отменяем задачу…");
+    try {
+      await cancelActiveJob();
+    } catch {
+      /* ignore */
+    }
+    setBusy(false);
+    setProgress(0);
+    setProgressText("");
+    setJobNote("Задача отменена.");
+  }
 
   const handleFile = useCallback((f: File) => {
     if (!f.type.startsWith("audio/") && !f.type.startsWith("video/")) return;
@@ -115,6 +263,7 @@ function MediaConverter() {
     setLog([]);
     setResult(null);
     setResultFile(null);
+    setJobNote(null);
 
     try {
       if (engineServerOnline) {
@@ -131,7 +280,7 @@ function MediaConverter() {
           if (p.log?.length) {
             setLog((l) => [...l.slice(-50), ...p.log.slice(-3)]);
           }
-        });
+        }, file.name);
 
         if (result.status !== "success" || !result.file) {
           throw new Error(result.message || "Движок вернул ошибку");
@@ -150,6 +299,7 @@ function MediaConverter() {
         setResultName(fname);
         setProgress(100);
         setProgressText("Готово");
+        persistLastConvert(result.file, fname);
         return;
       }
 
@@ -342,12 +492,42 @@ function MediaConverter() {
                     </div>
                   </details>
                 )}
+                {engineServerOnline && (
+                  <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-xs text-emerald-300/90">
+                      {supportsJobs
+                        ? "Задача на движке: вкладку можно переключить или закрыть — файл дождётся вас здесь."
+                        : "Задача идёт в этой вкладке — не закрывайте её."}
+                    </span>
+                    <button
+                      onClick={cancelRun}
+                      className="px-3 py-1.5 rounded-lg bg-[#1b2334] hover:bg-[#263147] text-xs font-medium inline-flex items-center gap-1.5 transition-colors flex-shrink-0"
+                    >
+                      <Square className="w-3 h-3" />
+                      Отменить
+                    </button>
+                  </div>
+                )}
               </div>
             )}
 
             {error && (
               <div className="mt-4 text-sm text-red-400 bg-red-500/10 p-3 rounded-lg">
                 {error}
+              </div>
+            )}
+
+            {jobNote && !busy && (
+              <div className="mt-4 p-3 rounded-lg border border-[#7c5bf5]/30 bg-[#7c5bf5]/10 text-xs text-[#cfc2ff] flex items-start gap-2">
+                <History className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+                <span className="flex-1">{jobNote}</span>
+                <button
+                  onClick={() => setJobNote(null)}
+                  className="p-0.5 rounded hover:bg-white/10 flex-shrink-0"
+                  title="Скрыть"
+                >
+                  <X className="w-3 h-3" />
+                </button>
               </div>
             )}
 

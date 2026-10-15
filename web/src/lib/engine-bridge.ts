@@ -24,6 +24,14 @@
  *   2. Если субтитры есть — парсит их в сегменты (быстро, без Whisper)
  *   3. Если субтитров нет — скачивает аудио и запускает Whisper
  *
+ * Job API (движок ≥ 1.1.0) — задачи переживают закрытие вкладки:
+ *   POST /api/jobs        — создать фоновую задачу → {job_id}
+ *   GET  /api/jobs/<id>   — статус + прогресс + результат
+ *   POST /api/jobs/<id>/cancel — отмена
+ *   Активная задача хранится в localStorage (transcrypt.activeJob),
+ *   поэтому при возврате на вкладку / перезагрузке страницы UI
+ *   переподключается к задаче и забирает готовый результат.
+ *
  * CORS уже настроен в engine_server.py: Access-Control-Allow-Origin: *
  */
 
@@ -32,6 +40,7 @@ const ENGINE_URL = "http://127.0.0.1:8765";
 export type EngineHealth = {
   status: "ok" | "error";
   version?: string;
+  jobs?: boolean; // Job API: фоновые задачи, переживающие закрытие вкладки (движок ≥ 1.1.0)
   platform?: string;
   system_name?: string;
   device?: string;
@@ -214,16 +223,21 @@ export async function uploadFileToEngine(
 /**
  * Транскрипция через engine_server (Subtitles-First стратегия).
  * Принимает либо URL, либо загруженный файл.
+ * На движке ≥ 1.1.0 задача выполняется в фоне (Job API) и переживает
+ * закрытие вкладки; на старом движке — классический долгий POST.
  */
 export async function transcribeViaEngine(
   params: TranscribeParams,
-  onProgress?: (p: EngineProgress) => void
+  onProgress?: (p: EngineProgress) => void,
+  label?: string
 ): Promise<TranscribeResult> {
-  return runTaskWithProgress<TranscribeResult>(
-    "/api/transcribe",
-    params,
-    onProgress
-  );
+  return runEngineTask<TranscribeResult>({
+    type: "transcribe",
+    endpoint: "/api/transcribe",
+    body: params as unknown as Record<string, unknown>,
+    label: label || params.url || params.file_path || "транскрипция",
+    onProgress,
+  });
 }
 
 /**
@@ -231,9 +245,16 @@ export async function transcribeViaEngine(
  */
 export async function mediaViaEngine(
   params: MediaParams,
-  onProgress?: (p: EngineProgress) => void
+  onProgress?: (p: EngineProgress) => void,
+  label?: string
 ): Promise<TaskResult> {
-  return runTaskWithProgress<TaskResult>("/api/media", params, onProgress);
+  return runEngineTask<TaskResult>({
+    type: "media",
+    endpoint: "/api/media",
+    body: params as unknown as Record<string, unknown>,
+    label: label || params.url || params.file_path || params.action,
+    onProgress,
+  });
 }
 
 /**
@@ -242,13 +263,16 @@ export async function mediaViaEngine(
 export async function convertViaEngine(
   file_path: string,
   target_format: string,
-  onProgress?: (p: EngineProgress) => void
+  onProgress?: (p: EngineProgress) => void,
+  label?: string
 ): Promise<TaskResult> {
-  return runTaskWithProgress<TaskResult>(
-    "/api/convert",
-    { file_path, target_format },
-    onProgress
-  );
+  return runEngineTask<TaskResult>({
+    type: "convert",
+    endpoint: "/api/convert",
+    body: { file_path, target_format },
+    label: label || file_path,
+    onProgress,
+  });
 }
 
 /**
@@ -260,6 +284,255 @@ export async function stopEngineTask(): Promise<void> {
   } catch {
     /* ignore */
   }
+}
+
+
+// ═══════════════════════════════════════════════════════════════
+//  Job API (движок ≥ 1.1.0): фоновые задачи + восстановление
+// ═══════════════════════════════════════════════════════════════
+
+export type EngineTaskType = "transcribe" | "media" | "convert";
+
+export type EngineJobState = {
+  job_id: string;
+  type: string;
+  status: "queued" | "running" | "done" | "error";
+  progress?: {
+    active?: boolean;
+    task?: string;
+    stage?: string;
+    percent?: number;
+    eta?: string;
+    log?: string[];
+  };
+  result?: unknown;
+  error?: string | null;
+  label?: string;
+  created_at?: number;
+  finished_at?: number | null;
+};
+
+export type ActiveJobRecord = {
+  jobId: string;
+  type: EngineTaskType;
+  params: Record<string, unknown>;
+  label: string;
+  startedAt: number;
+};
+
+const ACTIVE_JOB_KEY = "transcrypt.activeJob";
+
+export function readActiveJob(): ActiveJobRecord | null {
+  try {
+    const raw = localStorage.getItem(ACTIVE_JOB_KEY);
+    return raw ? (JSON.parse(raw) as ActiveJobRecord) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeActiveJob(rec: ActiveJobRecord | null) {
+  try {
+    if (rec) localStorage.setItem(ACTIVE_JOB_KEY, JSON.stringify(rec));
+    else localStorage.removeItem(ACTIVE_JOB_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+export function clearActiveJob() {
+  writeActiveJob(null);
+}
+
+async function startEngineJob(
+  type: EngineTaskType,
+  params: unknown,
+  label: string
+): Promise<string | null> {
+  try {
+    const resp = await fetch(`${ENGINE_URL}/api/jobs`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type, params, label }),
+    });
+    if (!resp.ok) return null; // старый движок без Job API
+    const data = await resp.json();
+    return typeof data?.job_id === "string" ? data.job_id : null;
+  } catch {
+    return null;
+  }
+}
+
+type JobFetch =
+  | { kind: "ok"; job: EngineJobState }
+  | { kind: "notfound" }
+  | { kind: "offline" };
+
+async function getEngineJob(jobId: string): Promise<JobFetch> {
+  try {
+    const resp = await fetch(
+      `${ENGINE_URL}/api/jobs/${encodeURIComponent(jobId)}`
+    );
+    if (resp.status === 404) return { kind: "notfound" };
+    if (!resp.ok) return { kind: "offline" };
+    const job = (await resp.json()) as EngineJobState;
+    return { kind: "ok", job };
+  } catch {
+    return { kind: "offline" };
+  }
+}
+
+// Возврат на вкладку мгновенно будит циклы поллинга (в фоне таймеры
+// браузер замедляет — поэтому ждём и wake-сигнала, и таймаута)
+const wakeResolvers = new Set<() => void>();
+if (typeof document !== "undefined") {
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") {
+      const rs = Array.from(wakeResolvers);
+      wakeResolvers.clear();
+      rs.forEach((r) => r());
+    }
+  });
+}
+
+function delayWithWake(ms: number): Promise<void> {
+  return new Promise<void>((res) => {
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      wakeResolvers.delete(finish);
+      res();
+    };
+    const timer = setTimeout(finish, ms);
+    wakeResolvers.add(finish);
+  });
+}
+
+async function watchEngineJob<T>(
+  jobId: string,
+  onProgress?: (p: EngineProgress) => void
+): Promise<T> {
+  let firstOfflineAt = 0;
+  for (;;) {
+    const f = await getEngineJob(jobId);
+    if (f.kind === "ok") {
+      firstOfflineAt = 0;
+      const j = f.job;
+      const jp = j.progress || {};
+      onProgress?.({
+        active: j.status === "queued" || j.status === "running",
+        task: j.type || "",
+        stage: jp.stage ?? "",
+        percent: typeof jp.percent === "number" ? jp.percent : 0,
+        eta: jp.eta ?? "",
+        log: jp.log ?? [],
+      });
+      if (j.status === "done") {
+        writeActiveJob(null);
+        onProgress?.({ active: false, task: "", stage: "Готово", percent: 100, eta: "", log: [] });
+        return j.result as T;
+      }
+      if (j.status === "error") {
+        writeActiveJob(null);
+        throw new Error(j.error || "Задача завершилась с ошибкой");
+      }
+      await delayWithWake(document.hidden ? 4000 : 700);
+      continue;
+    }
+    if (f.kind === "notfound") {
+      writeActiveJob(null);
+      throw new Error("Задача не найдена — движок перезапускался без сохранённого журнала");
+    }
+    // offline: движок мог перезапускаться — ждём, но не вечно
+    if (!firstOfflineAt) firstOfflineAt = Date.now();
+    if (Date.now() - firstOfflineAt > 120000) {
+      // Не чистим activeJob — задача могла дожить на движке, попробуем при следующем возврате
+      throw new Error("Движок недоступен дольше 2 минут — задача продолжает выполняться локально, проверьте соединение и вернитесь на вкладку");
+    }
+    await delayWithWake(document.hidden ? 8000 : 2000);
+  }
+}
+
+async function runEngineTask<T>(opts: {
+  type: EngineTaskType;
+  endpoint: string;
+  body: unknown;
+  label: string;
+  onProgress?: (p: EngineProgress) => void;
+}): Promise<T> {
+  const jobId = await startEngineJob(opts.type, opts.body, opts.label);
+  if (!jobId) {
+    // Старый движок (≤ 1.0.x) без Job API — классический долгий POST
+    return await runTaskWithProgress<T>(
+      opts.endpoint,
+      opts.body,
+      opts.onProgress
+    );
+  }
+  writeActiveJob({
+    jobId,
+    type: opts.type,
+    params: (opts.body ?? {}) as Record<string, unknown>,
+    label: opts.label,
+    startedAt: Date.now(),
+  });
+  return await watchEngineJob<T>(jobId, opts.onProgress);
+}
+
+export type ResumeOutcome =
+  | { state: "none" }
+  | { state: "offline"; record: ActiveJobRecord }
+  | { state: "lost"; record: ActiveJobRecord }
+  | { state: "error"; record: ActiveJobRecord; job: EngineJobState }
+  | { state: "done"; record: ActiveJobRecord; job: EngineJobState }
+  | { state: "running"; record: ActiveJobRecord; job: EngineJobState };
+
+/**
+ * Проверяет незавершённую фоновую задачу из localStorage.
+ * Вызывается при монтировании вкладки — покрывает и переключение
+ * вкладок внутри приложения, и перезагрузку/выгрузку страницы браузером.
+ */
+export async function resumeActiveJob(): Promise<ResumeOutcome> {
+  const rec = readActiveJob();
+  if (!rec) return { state: "none" };
+  const f = await getEngineJob(rec.jobId);
+  if (f.kind === "offline") return { state: "offline", record: rec };
+  if (f.kind === "notfound") return { state: "lost", record: rec };
+  const j = f.job;
+  if (j.status === "done") return { state: "done", record: rec, job: j };
+  if (j.status === "error") return { state: "error", record: rec, job: j };
+  return { state: "running", record: rec, job: j };
+}
+
+/**
+ * Следит за фоновой задачей до завершения (после resumeActiveJob('running')).
+ */
+export async function watchJobToCompletion<T>(
+  jobId: string,
+  onProgress?: (p: EngineProgress) => void
+): Promise<T> {
+  return watchEngineJob<T>(jobId, onProgress);
+}
+
+/**
+ * Отменяет активную задачу: Job API, а для старых движков — legacy /api/stop.
+ */
+export async function cancelActiveJob(): Promise<void> {
+  const rec = readActiveJob();
+  if (rec) {
+    try {
+      await fetch(
+        `${ENGINE_URL}/api/jobs/${encodeURIComponent(rec.jobId)}/cancel`,
+        { method: "POST" }
+      );
+      return;
+    } catch {
+      /* движок недоступен — пробуем legacy */
+    }
+  }
+  await stopEngineTask();
 }
 
 /**
