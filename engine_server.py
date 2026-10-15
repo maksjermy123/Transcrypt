@@ -41,12 +41,16 @@ def docs_conversion_available() -> bool:
         for m in ("docx", "pypdf", "reportlab", "pdf2docx", "PIL")
     )
 
-# Небуферизованный вывод: при запуске через nohup/launchd логи должны
-# появляться в файле сразу, а не после заполнения буфера (иначе логи
-# выглядят пустыми, пока импортируются тяжёлые библиотеки).
+# Небуферезованный вывод + принудительный UTF-8: при запуске через
+# nohup/launchd/Start-Process логи должны появляться в файле сразу, а не
+# после заполнения буфера (иначе логи выглядят пустыми, пока импортируются
+# тяжёлые библиотеки). Кодировка UTF-8 обязательна на Windows: без неё
+# перенаправленный stdout открывается в ANSI-кодировке (CP1251 на русской
+# Windows), и первый же print с эмодзи («🚀 Движок запущен») роняет движок
+# с UnicodeEncodeError: 'charmap' codec can't encode character.
 try:
-    sys.stdout.reconfigure(line_buffering=True)
-    sys.stderr.reconfigure(line_buffering=True)
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace", line_buffering=True)
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace", line_buffering=True)
 except Exception:
     pass
 
@@ -755,7 +759,7 @@ class EngineHTTPRequestHandler(BaseHTTPRequestHandler):
 
         self.send_json({
             "status": "ok",
-            "version": "1.3.0",
+            "version": "1.3.1",
             "jobs": True,  # Job API: фоновые задачи, переживающие закрытие вкладки
             "queue": True,  # очереди задач + видимый статус «В очереди»
             "parallel_heavy": HEAVY_PARALLEL,  # сколько тяжёлых задач идёт одновременно

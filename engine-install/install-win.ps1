@@ -306,9 +306,11 @@ Write-Ok "Зависимости установлены"
 # ─── 8. Запуск движка ──────────────────────────────────────────────
 Write-Step "Запуск engine_server.py на http://127.0.0.1:8765..."
 
-# python.exe (не pythonw) с -u — чтобы логи реально писались в файл
+# python.exe (не pythonw) с -u — чтобы логи реально писались в файл.
+# -X utf8 — принудительный UTF-8 stdout/stderr: без него на русской Windows
+# перенаправленный вывод в ANSI (CP1251), и print «🚀» ронял движок.
 $LogFileErr = "$LogFile.err"
-$proc = Start-Process -FilePath $venvPython -ArgumentList "-u", $EngineFile -WindowStyle Hidden -RedirectStandardOutput $LogFile -RedirectStandardError $LogFileErr -PassThru
+$proc = Start-Process -FilePath $venvPython -ArgumentList "-u", "-X", "utf8", $EngineFile -WindowStyle Hidden -RedirectStandardOutput $LogFile -RedirectStandardError $LogFileErr -PassThru
 
 # ─── 9. Проверка /api/health ───────────────────────────────────────
 # Ждём до 3 минут: первый импорт torch/whisper идёт долго, порт
@@ -348,14 +350,14 @@ if ($healthOk) {
 Write-Step "Настраиваем автозапуск с системой (Windows Registry)..."
 $autorunKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
 $autorunValue = "TranscryptEngine"
-$autorunData = "`"$venvPythonw`" `"$EngineFile`""
+$autorunData = "`"$venvPythonw`" -X utf8 `"$EngineFile`""
 try {
     New-ItemProperty -Path $autorunKey -Name $autorunValue -Value $autorunData -PropertyType String -Force | Out-Null
     Write-Ok "Автозапуск настроен — движок будет стартовать при входе в систему"
 } catch {
     Write-Warn "Не удалось настроить автозапуск через реестр"
     Write-Host "    Ручная настройка: Win+R -> shell:startup -> создать ярлык на:" -ForegroundColor Gray
-    Write-Host "    `"$venvPythonw`" `"$EngineFile`"" -ForegroundColor Gray
+    Write-Host "    `"$venvPythonw`" -X utf8 `"$EngineFile`"" -ForegroundColor Gray
 }
 
 # ─── 11. Открытие браузера ────────────────────────────────────────
@@ -387,7 +389,7 @@ Write-Host ""
 Write-Host "Управление движком:"
 Write-Host "  • Лог:    type $LogFile"
 Write-Host "  • Стоп:   Get-Process pythonw | Stop-Process -Force"
-Write-Host "  • Старт:  `"$venvPythonw`" `"$EngineFile`""
+Write-Host "  • Старт:  `"$venvPythonw`" -X utf8 `"$EngineFile`""
 Write-Host "  • Удалить автозапуск:"
 Write-Host "    Remove-ItemProperty -Path $autorunKey -Name $autorunValue"
 Write-Host "  • Полное удаление:"

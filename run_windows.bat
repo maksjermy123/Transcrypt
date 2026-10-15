@@ -23,6 +23,9 @@ if exist .venv\Scripts\activate.bat (
     call .venv\Scripts\activate.bat
 )
 
+rem UTF-8 для вывода движка: без этого на русской Windows print с эмодзи падает (CP1251)
+set PYTHONUTF8=1
+
 start "" "https://maksjermy123.github.io/Transcrypt/"
 %PY_CMD% engine_server.py
 pause
