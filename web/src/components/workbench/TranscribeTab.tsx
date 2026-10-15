@@ -22,6 +22,8 @@ import {
   History,
   X,
   Square,
+  Search,
+  ChevronDown,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useOnboarding, MODEL_INFO, browserSafeModel, type WhisperModelId } from "@/lib/onboarding-store";
@@ -43,13 +45,29 @@ import {
   segmentsToSRT,
   segmentsToVTT,
   segmentsToPlainText,
+  segmentsWithStamps,
+  segmentsAsQuotes,
+  buildMarkdown,
+  formatStamp,
   downloadFile,
   formatDuration,
 } from "@/lib/subtitles";
+import { copyTextToClipboard } from "@/lib/clipboard";
 import { EngineUpdateGuide } from "@/components/workbench/EngineUpdateGuide";
+import { ConspectBridge } from "@/components/workbench/ConspectBridge";
+import { BatchPanel, type BatchItem } from "@/components/workbench/BatchPanel";
 
 type Phase = "idle" | "loading-engine" | "running" | "done" | "error";
 type Seg = { text: string; timestamp: [number, number | null] };
+
+/** Оценка скорости Whisper (во сколько раз быстрее реального времени) на CPU: [оптимистично, пессимистично] */
+const SPEED_FACTORS: Record<string, [number, number]> = {
+  tiny: [12, 7],
+  base: [8, 5],
+  small: [5, 3],
+  medium: [3, 1.8],
+  "large-v3": [2, 1.2],
+};
 
 /** Языки для выбора источника и цели перевода */
 const LANG_OPTIONS: { code: string; label: string }[] = [
@@ -104,6 +122,13 @@ export function TranscribeTab({
   const [dragOver, setDragOver] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  // Поиск по транскрипту + подсветка активного сегмента при прослушивании
+  const [searchQuery, setSearchQuery] = useState("");
+  const [onlyMatches, setOnlyMatches] = useState(false);
+  const [activeSegIdx, setActiveSegIdx] = useState<number | null>(null);
+  const playerRef = useRef<HTMLAudioElement | null>(null);
+  // Оценка времени: длительность файла читается из метаданных аудио
+  const [fileDuration, setFileDuration] = useState<number | null>(null);
   // Фоновые задачи (Job API): статус поддержки движком + заметка восстановления
   const supportsJobs = !!engineServerHealth?.jobs;
   const supportsQueue = !!engineServerHealth?.queue; // движок ≥ 1.2.0: очереди + параллельные полосы
@@ -128,6 +153,7 @@ export function TranscribeTab({
       clearTranslation();
       setProgress(0);
       setPhase("idle");
+      setFileDuration(null);
       if (audioUrl) URL.revokeObjectURL(audioUrl);
       setAudioUrl(URL.createObjectURL(f));
     },
@@ -621,6 +647,17 @@ export function TranscribeTab({
       : text || segmentsToPlainText(segments);
   const exportSuffix = showingTranslation ? `-${targetLang}` : "";
 
+  // Поиск по транскрипту: подсчёт совпадений и фильтрация сегментов
+  const searchQ = searchQuery.trim().toLowerCase();
+  const matchCount = searchQ
+    ? viewSegments.filter((s) => s.text.toLowerCase().includes(searchQ)).length
+    : 0;
+  const visibleSegments = (searchQ && onlyMatches
+    ? viewSegments
+        .map((seg, idx) => ({ seg, idx }))
+        .filter(({ seg }) => seg.text.toLowerCase().includes(searchQ))
+    : viewSegments.map((seg, idx) => ({ seg, idx })));
+
   function downloadSRT() {
     downloadFile(`transcrypt${exportSuffix}.srt`, segmentsToSRT(viewSegments), "text/plain");
   }
@@ -629,6 +666,60 @@ export function TranscribeTab({
   }
   function downloadTXT() {
     downloadFile(`transcrypt${exportSuffix}.txt`, viewText, "text/plain");
+  }
+  function downloadMD() {
+    downloadFile(
+      `transcrypt${exportSuffix}.md`,
+      buildMarkdown({
+        title: sourceLabel || "Транскрипт",
+        source: sourceLabel,
+        segments: viewSegments,
+        text: viewText,
+      }),
+      "text/markdown"
+    );
+  }
+
+  /** Клик по таймкоду: плеер файла — перемотка; для YouTube — ссылка с t=; иначе копия метки. */
+  function onTimestampClick(sec: number, idx: number) {
+    const player = playerRef.current;
+    if (player && isFinite(player.duration) && player.duration > 0) {
+      player.currentTime = sec;
+      void player.play().catch(() => {});
+      setActiveSegIdx(idx);
+      return;
+    }
+    const u = url.trim();
+    if (u && /youtube\.com|youtu\.be/i.test(u)) {
+      const link = u + (u.includes("?") ? "&" : "?") + "t=" + Math.floor(sec) + "s";
+      void copyTextToClipboard(link);
+      setJobNote(`Ссылка с таймкодом ${formatStamp(sec)} скопирована — откройте её, чтобы прослушать момент.`);
+    } else {
+      void copyTextToClipboard(formatStamp(sec));
+      setJobNote(`Таймкод ${formatStamp(sec)} скопирован.`);
+    }
+  }
+
+  /** Открыть результат из пакетной обработки в основном окне результатов. */
+  async function openBatchResult(it: BatchItem) {
+    if (!it.result) return;
+    setText(it.result.text || "");
+    setSegments([]);
+    clearTranslation();
+    setSourceLabel(it.result.source || it.label);
+    setJobNote(`Результат пакетной обработки: ${it.label}`);
+    setPhase("done");
+    setProgress(100);
+    setProgressText("Готово");
+    if (it.result.files?.srt) {
+      try {
+        const blob = await fetchEngineFile(it.result.files.srt);
+        const srtText = await blob.text();
+        setSegments(parseSrt(srtText));
+      } catch {
+        /* текст уже показан — сегменты необязательны */
+      }
+    }
   }
 
   async function downloadResultFile(kind: "txt" | "srt" | "vtt" | "json") {
@@ -658,6 +749,10 @@ export function TranscribeTab({
     setText("");
     setSourceLabel("");
     clearTranslation();
+    setSearchQuery("");
+    setOnlyMatches(false);
+    setActiveSegIdx(null);
+    setFileDuration(null);
     if (audioUrl) URL.revokeObjectURL(audioUrl);
     setAudioUrl(null);
     setPhase("idle");
@@ -752,6 +847,22 @@ export function TranscribeTab({
     </button>
   );
 
+  // Оценка времени выполнения — до запуска, из длительности файла и модели
+  const estimateBlock = (() => {
+    if (mode !== "file" || !fileDuration || !isFinite(fileDuration) || fileDuration <= 0) return null;
+    const id = (engineServerOnline ? selectedModel ?? "base" : browserSafeModel(selectedModel)) as string;
+    const f = SPEED_FACTORS[id] ?? SPEED_FACTORS.base;
+    const k = engineServerOnline ? 1 : 0.4; // браузерный WASM заметно медленнее нативного движка
+    const minA = Math.max(1, Math.ceil(fileDuration / 60 / (f[0] * k)));
+    const minB = Math.max(minA, Math.ceil(fileDuration / 60 / (f[1] * k)));
+    return (
+      <p className="text-xs text-muted-foreground">
+        Оценка времени: ≈ {minA}–{minB} мин{" "}
+        {engineServerOnline ? "на движке" : "в браузере (WASM — медленнее)"}. Зависит от процессора.
+      </p>
+    );
+  })();
+
   const progressBlock = busy ? (
     <div className="glass-card rounded-2xl p-5">
       <div className="flex items-center justify-between mb-2 text-sm">
@@ -815,6 +926,8 @@ export function TranscribeTab({
       animate={{ opacity: 1, y: 0 }}
       className="space-y-4"
     >
+      <ConspectBridge text={viewText} segments={viewSegments} sourceLabel={sourceLabel} />
+
       {sourceLabel && (
         <div className="glass-card rounded-2xl p-3 px-4 text-xs text-muted-foreground">
           Источник: <span className="text-foreground font-medium">{sourceLabel}</span>
@@ -839,8 +952,32 @@ export function TranscribeTab({
           <ExportBtn onClick={() => downloadResultFile("srt")} label="SRT" />
           <ExportBtn onClick={() => downloadResultFile("vtt")} label="VTT" />
           <ExportBtn onClick={() => downloadResultFile("txt")} label="TXT" />
+          <ExportBtn onClick={downloadMD} label="MD" />
         </div>
       </div>
+
+      {/* Плеер для локальных файлов: перемотка по клику на таймкод сегмента */}
+      {audioUrl && (
+        <audio
+          ref={playerRef}
+          src={audioUrl}
+          controls
+          className="w-full h-10"
+          onTimeUpdate={(e) => {
+            const t = e.currentTarget.currentTime;
+            let found: number | null = null;
+            for (let i = 0; i < viewSegments.length; i++) {
+              const s = viewSegments[i];
+              const end = s.timestamp[1] ?? s.timestamp[0] + 5;
+              if (t >= s.timestamp[0] - 0.25 && t < end) {
+                found = i;
+                break;
+              }
+            }
+            if (found !== null) setActiveSegIdx(found);
+          }}
+        />
+      )}
 
       {translError && (
         <div className="glass-card rounded-2xl p-4 border-amber-500/40">
@@ -860,7 +997,21 @@ export function TranscribeTab({
             <h3 className="font-semibold text-sm">
               {translatedText ? "Полный текст (оригинал)" : "Полный текст"}
             </h3>
-            <CopyBtn text={text} />
+            <CopyModesBtn
+              modes={[
+                { id: "plain", label: "Обычный текст", get: () => text },
+                {
+                  id: "stamps",
+                  label: "С таймкодами",
+                  get: () => (segments.length ? segmentsWithStamps(segments) : text),
+                },
+                {
+                  id: "quotes",
+                  label: "Цитатами (для конспекта)",
+                  get: () => (segments.length ? segmentsAsQuotes(segments) : text),
+                },
+              ]}
+            />
           </div>
           <p className="text-sm leading-relaxed whitespace-pre-wrap">{text}</p>
         </div>
@@ -873,7 +1024,23 @@ export function TranscribeTab({
               <Languages className="w-4 h-4 text-emerald-400" />
               Перевод — {langLabel(targetLang)}
             </h3>
-            <CopyBtn text={translatedText} />
+            <CopyModesBtn
+              modes={[
+                { id: "plain", label: "Обычный текст", get: () => translatedText },
+                {
+                  id: "stamps",
+                  label: "С таймкодами",
+                  get: () =>
+                    translatedSegments.length ? segmentsWithStamps(translatedSegments) : translatedText,
+                },
+                {
+                  id: "quotes",
+                  label: "Цитатами (для конспекта)",
+                  get: () =>
+                    translatedSegments.length ? segmentsAsQuotes(translatedSegments) : translatedText,
+                },
+              ]}
+            />
           </div>
           <p className="text-sm leading-relaxed whitespace-pre-wrap">{translatedText}</p>
         </div>
@@ -908,22 +1075,76 @@ export function TranscribeTab({
                   </button>
                 </div>
               )}
-              <CopyBtn text={segmentsToPlainText(viewSegments)} />
+              <CopyModesBtn
+                modes={[
+                  { id: "plain", label: "Обычный текст", get: () => segmentsToPlainText(viewSegments) },
+                  { id: "stamps", label: "С таймкодами", get: () => segmentsWithStamps(viewSegments) },
+                  { id: "quotes", label: "Цитатами (для конспекта)", get: () => segmentsAsQuotes(viewSegments) },
+                ]}
+              />
             </div>
           </div>
-          <div className="space-y-2 max-h-96 overflow-y-auto pr-2">
-            {viewSegments.map((s, i) => (
-              <div
-                key={i}
-                className="flex items-start gap-3 p-2 rounded-lg hover:bg-[#1b2334] transition-colors"
-              >
-                <span className="font-mono text-xs text-[#7c5bf5] mt-0.5 flex-shrink-0 tabular-nums">
-                  {formatDuration(s.timestamp[0])}
+
+          {/* Поиск по транскрипту: подсветка совпадений + фильтр «только совпадения» */}
+          <div className="flex flex-wrap items-center gap-2 mb-3">
+            <div className="relative flex-1 min-w-[200px]">
+              <Search className="w-3.5 h-3.5 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Поиск по тексту…"
+                className="w-full bg-[#0b0f19] border border-[#263147] rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:border-[#7c5bf5]/50"
+              />
+            </div>
+            {searchQuery.trim() && (
+              <>
+                <span className="text-xs text-muted-foreground whitespace-nowrap">
+                  {matchCount > 0 ? `Совпадений: ${matchCount}` : "Ничего не найдено"}
                 </span>
-                <span className="text-sm text-foreground/90">{s.text}</span>
-              </div>
-            ))}
+                <label className="text-xs text-muted-foreground inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap">
+                  <input
+                    type="checkbox"
+                    checked={onlyMatches}
+                    onChange={(e) => setOnlyMatches(e.target.checked)}
+                    className="accent-[#7c5bf5]"
+                  />
+                  Только совпадения
+                </label>
+              </>
+            )}
           </div>
+
+          <div className="space-y-1 max-h-96 overflow-y-auto pr-2">
+            {visibleSegments.length === 0 ? (
+              <p className="text-xs text-muted-foreground p-2">Сегментов с таким текстом нет — снимите фильтр или измените запрос.</p>
+            ) : (
+              visibleSegments.map(({ seg, idx }) => (
+                <div
+                  key={idx}
+                  className={`flex items-start gap-3 p-2 rounded-lg transition-colors ${
+                    activeSegIdx === idx
+                      ? "bg-[#7c5bf5]/15 ring-1 ring-[#7c5bf5]/40"
+                      : "hover:bg-[#1b2334]"
+                  }`}
+                >
+                  <button
+                    onClick={() => onTimestampClick(seg.timestamp[0], idx)}
+                    title="Перемотать плеер на этот момент (или скопировать ссылку с таймкодом)"
+                    className="font-mono text-xs text-[#7c5bf5] mt-0.5 flex-shrink-0 tabular-nums hover:underline"
+                  >
+                    {formatDuration(seg.timestamp[0])}
+                  </button>
+                  <span className="text-sm text-foreground/90">
+                    <Highlight text={seg.text} query={searchQuery} />
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
+          <p className="text-[11px] text-muted-foreground mt-2">
+            Клик по таймкоду — перемотка плеера. Для YouTube-результатов копируется ссылка с меткой момента.
+          </p>
         </div>
       )}
     </motion.div>
@@ -1010,6 +1231,15 @@ export function TranscribeTab({
       {engineServerOnline && engineServerHealth && supportsJobs && !supportsQueue && (
         <EngineUpdateGuide reason="no-queue" health={engineServerHealth} />
       )}
+
+      {/* Пакетная обработка: несколько ссылок/файлов в очередь движка */}
+      <BatchPanel
+        engineOnline={engineServerOnline}
+        supportsJobs={supportsJobs}
+        model={engineServerOnline ? selectedModel ?? "base" : "base"}
+        language={language}
+        onOpenResult={openBatchResult}
+      />
 
       {!file && (
         <div className="flex gap-2 mb-5 bg-[#1b2334] p-1 rounded-xl w-fit">
@@ -1138,6 +1368,15 @@ export function TranscribeTab({
       {/* Файл загружен */}
       {file && (
         <div className="space-y-5">
+          {/* Проба длительности для оценки времени (до запуска) */}
+          {audioUrl && (
+            <audio
+              src={audioUrl}
+              className="hidden"
+              preload="metadata"
+              onLoadedMetadata={(e) => setFileDuration(e.currentTarget.duration || null)}
+            />
+          )}
           <div className="glass-card rounded-2xl p-5 flex items-center gap-4">
             <div className="w-12 h-12 rounded-xl bg-[#7c5bf5]/15 flex items-center justify-center flex-shrink-0">
               <FileAudio className="w-6 h-6 text-[#7c5bf5]" />
@@ -1181,6 +1420,7 @@ export function TranscribeTab({
 
           <div className="glass-card rounded-2xl p-5 flex flex-col gap-4 items-stretch justify-between">
             {langControls}
+            {estimateBlock}
             {runButton}
           </div>
         </div>
@@ -1241,48 +1481,75 @@ function ExportBtn({ onClick, label }: { onClick: () => void; label: string }) {
   );
 }
 
-/** Кнопка «Копировать» с индикацией успеха (fallback для не-secure контекста) */
-function CopyBtn({
-  text,
-  label = "Копировать",
+/** Кнопка «Копировать» с меню режимов: обычный текст / с таймкодами / цитатами. */
+function CopyModesBtn({
+  modes,
 }: {
-  text: string;
-  label?: string;
+  modes: { id: string; label: string; get: () => string }[];
 }) {
+  const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  async function copy() {
-    try {
-      await navigator.clipboard.writeText(text);
-    } catch {
-      // fallback: clipboard API недоступен (http) — старый способ через textarea
-      const ta = document.createElement("textarea");
-      ta.value = text;
-      ta.style.position = "fixed";
-      ta.style.opacity = "0";
-      document.body.appendChild(ta);
-      ta.select();
-      try {
-        document.execCommand("copy");
-      } catch {
-        /* ничего не поделать */
-      }
-      document.body.removeChild(ta);
+  async function copy(m: { id: string; get: () => string }) {
+    const ok = await copyTextToClipboard(m.get());
+    setOpen(false);
+    if (ok) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
     }
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
   }
 
   return (
-    <button
-      onClick={copy}
-      disabled={!text}
-      className="px-3 py-1.5 rounded-lg bg-[#1b2334] hover:bg-[#263147] text-xs font-medium inline-flex items-center gap-1.5 transition-colors disabled:opacity-40 flex-shrink-0"
-    >
-      {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-      {copied ? "Скопировано" : label}
-    </button>
+    <div className="relative flex-shrink-0">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        title="Выбрать, как скопировать: обычный текст, с таймкодами или цитатами"
+        className="px-3 py-1.5 rounded-lg bg-[#1b2334] hover:bg-[#263147] text-xs font-medium inline-flex items-center gap-1.5 transition-colors"
+      >
+        {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+        {copied ? "Скопировано" : "Копировать"}
+        <ChevronDown className={`w-3 h-3 transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-20" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 top-full mt-1 z-30 min-w-[190px] rounded-xl border border-[#263147] bg-[#151b28] shadow-2xl overflow-hidden">
+            {modes.map((m) => (
+              <button
+                key={m.id}
+                onClick={() => void copy(m)}
+                className="w-full text-left px-3 py-2 text-xs hover:bg-[#1b2334] transition-colors whitespace-nowrap"
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
   );
+}
+
+/** Подсветка совпадений поиска в тексте (безопасно: чистые React-тексты). */
+function Highlight({ text, query }: { text: string; query: string }) {
+  const q = query.trim().toLowerCase();
+  if (!q) return <>{text}</>;
+  const parts: React.ReactNode[] = [];
+  let rest = text;
+  let k = 0;
+  for (;;) {
+    const idx = rest.toLowerCase().indexOf(q);
+    if (idx === -1) break;
+    if (idx > 0) parts.push(rest.slice(0, idx));
+    parts.push(
+      <mark key={k++} className="bg-[#7c5bf5]/40 text-inherit rounded px-0.5">
+        {rest.slice(idx, idx + q.length)}
+      </mark>
+    );
+    rest = rest.slice(idx + q.length);
+  }
+  parts.push(rest);
+  return <>{parts}</>;
 }
 
 /**

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Mic, FileAudio, FileArchive, Home, Server, ServerOff, Zap, X, Languages, Wrench, Info } from "lucide-react";
+import { Mic, FileAudio, FileArchive, Home, Server, ServerOff, Zap, X, Languages, Wrench, Info, ShieldCheck } from "lucide-react";
 import { useOnboarding } from "@/lib/onboarding-store";
 import { checkEngineHealth } from "@/lib/engine-bridge";
 import { TranscribeTab } from "./TranscribeTab";
@@ -11,6 +11,7 @@ import { ConvertTab } from "./ConvertTab";
 import { TranslateTab } from "./TranslateTab";
 import { SettingsTab } from "./SettingsTab";
 import { AboutTab } from "./AboutTab";
+import { ThemeToggle } from "./ThemeToggle";
 
 type WorkTab = "transcribe" | "media" | "convert" | "translate" | "settings" | "about";
 
@@ -129,6 +130,17 @@ export function Workbench({ onExit }: { onExit: () => void }) {
                 </>
               )}
             </button>
+
+            {/* Приватность: вся обработка на компьютере пользователя — ключевой аргумент для студентов */}
+            <span
+              className="hidden lg:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-emerald-500/10 text-emerald-400 cursor-help"
+              title="Вся обработка идёт на вашем компьютере: аудио не загружается на серверы, записи не покидают устройство. Работает даже без интернета."
+            >
+              <ShieldCheck className="w-3.5 h-3.5" />
+              100% локально
+            </span>
+
+            <ThemeToggle />
 
             <button
               onClick={onExit}

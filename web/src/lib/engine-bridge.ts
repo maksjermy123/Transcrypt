@@ -652,3 +652,54 @@ export async function downloadEngineFile(relPath: string, fallbackName: string):
   document.body.removeChild(a);
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+
+// ═══════════════ Пакетная обработка (несколько задач подряд/в очереди) ═══════════════
+// Пакетные задачи НЕ пишутся в слоты активных задач вкладок (transcrypt.activeJobs),
+// а живут в собственном журнале transcrypt.batchJobs — так они не мешают
+// одиночным задачам ни на одной вкладке и восстанавливаются при возврате.
+
+export type BatchJobInfo = {
+  status: "queued" | "running" | "done" | "error" | "cancelled";
+  percent: number;
+  stage: string;
+  queuePosition?: number;
+  result?: unknown;
+  error?: string;
+};
+
+/** Создать пакетную задачу на движке (возвращает job_id или null, если движок без Job API). */
+export async function startBatchJob(
+  type: EngineTaskType,
+  params: Record<string, unknown>,
+  label: string
+): Promise<string | null> {
+  return await startEngineJob(type, params, label);
+}
+
+/** Однократный опрос состояния задачи по id (для пакетного списка). */
+export async function getBatchJobInfo(jobId: string): Promise<BatchJobInfo | null> {
+  const f = await getEngineJob(jobId);
+  if (f.kind !== "ok") return null;
+  const j = f.job;
+  const jp = j.progress || {};
+  return {
+    status: j.status,
+    percent: typeof jp.percent === "number" ? jp.percent : j.status === "done" ? 100 : 0,
+    stage: jp.stage ?? "",
+    queuePosition:
+      j.status === "queued" && typeof j.queue_position === "number" ? j.queue_position : undefined,
+    result: j.result,
+    error: j.error ?? undefined,
+  };
+}
+
+/** Отмена задачи по id (пакетные задачи не имеют слота — отменяем напрямую). */
+export async function cancelJobById(jobId: string): Promise<void> {
+  try {
+    await fetch(`${ENGINE_URL}/api/jobs/${encodeURIComponent(jobId)}/cancel`, {
+      method: "POST",
+    });
+  } catch {
+    /* движок недоступен — статус обновится при следующем опросе */
+  }
+}

@@ -45,7 +45,7 @@
 
 :root {
   --radius: 0.875rem;
-  /* Transcrypt Dark Minimal — fixed dark theme (no light mode) */
+  /* Transcrypt Dark Minimal — тёмная тема по умолчанию (светлая: html.light) */
   --background: #0b0f19;
   --foreground: #f0f4fc;
   --card: #151b28;
@@ -84,6 +84,57 @@
   --sidebar-ring: #7c5bf5;
 }
 
+/* ═══ Светлая тема (день): переключается классом .light на <html> ═══ */
+html.light {
+  --background: #f4f6fb;
+  --foreground: #1c2434;
+  --card: #ffffff;
+  --card-foreground: #1c2434;
+  --popover: #ffffff;
+  --popover-foreground: #1c2434;
+  --secondary: #e9edf5;
+  --secondary-foreground: #1c2434;
+  --muted: #e9edf5;
+  --muted-foreground: #5c6b88;
+  --border: #d5dce9;
+  --input: #eef1f7;
+  --accent-glow: rgba(124, 91, 245, 0.15);
+}
+
+/* Точечные переопределения захардкоженных тёмных цветов для светлой темы.
+   Селекторы по подстроке класса, чтобы не править сотни className в компонентах. */
+html.light [class*="bg-[#1b2334]"]:not([class*="hover:bg-"]) { background-color: #e9edf5; }
+html.light [class*="bg-[#263147]"]:not([class*="hover:bg-"]) { background-color: #d9e0ec; }
+html.light [class*="bg-[#232c40]"]:not([class*="hover:bg-"]) { background-color: #d3dae9; }
+html.light [class*="bg-[#0b0f19]"] { background-color: #ffffff; }
+html.light [class*="bg-[#0b0f19]/85"] { background-color: rgba(248, 250, 253, 0.92); }
+html.light [class*="bg-[#0b0f19]/80"] { background-color: rgba(248, 250, 253, 0.9); }
+html.light [class*="bg-[#0b0f19]/60"] { background-color: rgba(248, 250, 253, 0.75); }
+html.light [class*="bg-[#0b0f19]/40"] { background-color: rgba(248, 250, 253, 0.6); }
+html.light [class*="bg-[#111827]/40"] { background-color: rgba(232, 236, 245, 0.5); }
+html.light [class*="bg-[#161d2e]/50"] { background-color: rgba(232, 236, 245, 0.55); }
+html.light [class*="bg-[#151b28]"] { background-color: #ffffff; }
+html.light [class*="border-[#263147]"] { border-color: #d5dce9; }
+html.light [class*="hover:bg-[#263147]"]:hover { background-color: #dbe1ee; }
+html.light [class*="hover:bg-[#232c40]"]:hover { background-color: #d3dae9; }
+html.light [class*="hover:bg-[#1b2334]"]:hover { background-color: #dee4f0; }
+html.light [class*="hover:bg-white/10"]:hover { background-color: rgba(28, 36, 52, 0.08); }
+html.light [class*="hover:bg-white/5"]:hover { background-color: rgba(28, 36, 52, 0.05); }
+html.light [class*="text-[#7c5bf5]"]:not([class*="hover:text-"]) { color: #6b4be0; }
+html.light [class*="hover:text-[#7c5bf5]"]:hover { color: #6b4be0; }
+html.light [class*="text-[#cfc2ff]"] { color: #5b46c9; }
+html.light [class*="text-[#b9a8f7]"] { color: #6b4be0; }
+html.light [class*="text-[#a78bfa]"] { color: #7c5bf5; }
+html.light [class*="text-[#f0f4fc]"] { color: #1c2434; }
+/* Светлые оттенки Tailwind-палитры в баннерах — на светлом фоне нечитаемы */
+html.light [class*="text-amber-200"] { color: #8a5a08; }
+html.light [class*="text-amber-300"] { color: #9a6a10; }
+html.light [class*="text-sky-200"] { color: #075985; }
+html.light [class*="text-sky-300"] { color: #0369a1; }
+html.light [class*="text-emerald-300"] { color: #047857; }
+html.light [class*="text-red-300"] { color: #b91c1c; }
+html.light [class*="text-purple-300"] { color: #6d28d9; }
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
@@ -106,9 +157,15 @@
   ::-webkit-scrollbar-track {
     background: #0b0f19;
   }
+  html.light ::-webkit-scrollbar-track {
+    background: #eef1f7;
+  }
   ::-webkit-scrollbar-thumb {
     background: #263147;
     border-radius: 6px;
+  }
+  html.light ::-webkit-scrollbar-thumb {
+    background: #c3ccdd;
   }
   ::-webkit-scrollbar-thumb:hover {
     background: #7c5bf5;
@@ -121,6 +178,16 @@
     background: rgba(21, 27, 40, 0.7);
     backdrop-filter: blur(12px);
     border: 1px solid #263147;
+  }
+  html.light .glass-card {
+    background: rgba(255, 255, 255, 0.78);
+    border: 1px solid #d5dce9;
+  }
+  html.light .text-gradient {
+    background: linear-gradient(135deg, #6b4be0 0%, #8a5cf5 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
   }
   .glow-primary {
     box-shadow: 0 0 32px var(--accent-glow);

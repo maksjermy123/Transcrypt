@@ -4,7 +4,7 @@
  * Утилиты для генерации и скачивания файлов субтитров и текста.
  */
 
-type Segment = { text: string; timestamp: [number, number] | [number, number | null] };
+export type Segment = { text: string; timestamp: [number, number] | [number, number | null] };
 
 function formatTimestamp(seconds: number, sep: "," | "." = ","): string {
   const ms = Math.round((seconds % 1) * 1000);
@@ -46,6 +46,57 @@ export function segmentsToVTT(segments: Segment[]): string {
 
 export function segmentsToPlainText(segments: Segment[]): string {
   return segments.map((s) => s.text.trim()).join(" ");
+}
+
+/** Короткая метка времени m:ss или h:mm:ss (для конспектов и цитат). */
+export function formatStamp(seconds: number): string {
+  if (!seconds || seconds < 0) seconds = 0;
+  const total = Math.floor(seconds);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  return h > 0 ? `${h}:${pad(m, 2)}:${pad(s, 2)}` : `${m}:${pad(s, 2)}`;
+}
+
+/** Текст сегмента с метками времени в начале строки — формат для AI-конспектов и Obsidian. */
+export function segmentsWithStamps(segments: Segment[]): string {
+  return segments
+    .map((s) => `[${formatStamp(s.timestamp[0])}] ${s.text.trim()}`)
+    .join("\n");
+}
+
+/** Сегменты как цитаты Markdown — для конспекта с указанием момента. */
+export function segmentsAsQuotes(segments: Segment[]): string {
+  return segments
+    .map((s) => `> ${s.text.trim()} — ${formatStamp(s.timestamp[0])}`)
+    .join("\n\n");
+}
+
+/** Markdown-документ транскрипта: шапка с источником, полный текст, сегменты с таймкодами. */
+export function buildMarkdown(opts: {
+  title: string;
+  source?: string;
+  segments: Segment[];
+  text: string;
+}): string {
+  const date = new Date().toLocaleDateString("ru-RU", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+  const head = [
+    `# ${opts.title}`,
+    "",
+    `> Транскрипт создан Transcrypt · ${date}${opts.source ? ` · Источник: ${opts.source}` : ""}`,
+    "",
+    "## Полный текст",
+    "",
+    opts.text.trim() || "(текст пуст)",
+  ];
+  if (opts.segments.length) {
+    head.push("", "## Сегменты с таймкодами", "", segmentsWithStamps(opts.segments));
+  }
+  return head.join("\n") + "\n";
 }
 
 export function downloadFile(filename: string, content: string, mime = "text/plain") {
