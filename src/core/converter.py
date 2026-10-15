@@ -118,6 +118,12 @@ class Converter:
         margin = 50
         y = height - margin
 
+        # ВАЖНО: без setFont первая страница рисуется дефолтным Helvetica —
+        # кириллица не кодируется (WinAnsi) и из PDF не извлекается. Проявлялось
+        # ТОЛЬКО на Windows без MS Word/LibreOffice (докручивается до этого фолбэка;
+        # на Linux тесты проходили через LibreOffice). Проверено на windows-latest.
+        c.setFont(font_name, font_size)
+
         def new_page():
             nonlocal y
             c.showPage()
@@ -351,6 +357,10 @@ class Converter:
             # 0. Same-format document export means copy to output location / unique name.
             if input_ext == output_ext:
                 shutil.copy2(input_path, output_path)
+                # txt→txt = «починить кодировку»: файл из Блокнота русской Windows
+                # (CP1251) должен прийти пользователю в UTF-8, а не его же крякозябрами.
+                if input_ext in (".txt", ".md", ".csv"):
+                    self.normalize_txt_utf8(output_path)
                 return output_path
 
             # 1. DOCX -> PDF

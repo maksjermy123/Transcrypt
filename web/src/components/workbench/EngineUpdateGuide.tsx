@@ -25,7 +25,7 @@ import type { EngineHealth } from "@/lib/engine-bridge";
 import { useI18n, type Lang } from "@/lib/i18n";
 
 /** Последняя версия движка, которую поддерживает сайт. */
-export const LATEST_ENGINE_VERSION = "1.3.1";
+export const LATEST_ENGINE_VERSION = "1.3.2";
 
 export type EngineUpdateReason = "no-jobs" | "no-queue" | "no-docs" | "outdated";
 
@@ -118,7 +118,7 @@ const REASONS: Record<
   },
   outdated: {
     title: (v) => `Движок ${v || "1.2.0"} — доступно обновление до ${LATEST_ENGINE_VERSION}`,
-    why: `В ${LATEST_ENGINE_VERSION} исправлено: движок больше не падает при запуске на русской Windows (UnicodeEncodeError из-за эмодзи в кодировке CP1251 — теперь журнал всегда в UTF-8), установщик сам выбирает совместимый Python 3.10–3.13 и не ломается на 3.14. Обновите движок той же командой установки — займёт 1–3 минуты.`,
+    why: `В ${LATEST_ENGINE_VERSION} исправлено по результатам проверки на реальной Windows: DOCX→PDF без Word/LibreOffice теперь рендерит кириллицу (первая страница не рисуется Helvetica), txt→txt чинит кодировку в UTF-8, движок не падает при старте на русской Windows (CP1251), установщик выбирает совместимый Python 3.10–3.13. Обновите движок той же командой установки — займёт 1–3 минуты.`,
     tone: "sky",
   },
 };
@@ -139,7 +139,7 @@ const WHY_EN: Record<EngineUpdateReason, string> = {
     "Jobs from different tabs fight each other. After the update, extra jobs queue up, and on a powerful machine heavy ones run in parallel — no result is lost.",
   "no-docs":
     "Word ↔ PDF ↔ TXT conversion and encoding fixes (no more mojibake) arrived in engine 1.3.0 — the old environment lacks the required libraries, so the Converter → Documents tab fails. Update the engine with the same install command — takes 1–3 minutes, Whisper models are kept.",
-  outdated: `Engine ${LATEST_ENGINE_VERSION} fixes: the engine no longer crashes at startup on Russian Windows (UnicodeEncodeError from emoji in CP1251 output — logs are now always UTF-8), and the installer picks a compatible Python 3.10–3.13 instead of breaking on 3.14. Update with the same install command — takes 1–3 minutes.`,
+  outdated: `Engine ${LATEST_ENGINE_VERSION} fixes verified on real Windows: DOCX→PDF without Word/LibreOffice now renders Cyrillic correctly (page 1 is no longer drawn in Helvetica), txt→txt re-encodes to UTF-8, the engine no longer crashes at startup on Russian Windows (CP1251), and the installer picks a compatible Python 3.10–3.13. Update with the same install command — takes 1–3 minutes.`,
 };
 
 function bannerTitle(reason: EngineUpdateReason, version: string, lang: Lang): string {

@@ -185,6 +185,14 @@ def has_all_cyrillic(text: str) -> tuple[bool, str]:
     return True, "все фрагменты на месте"
 
 
+def cyr_report(name: str, text: str) -> None:
+    """report + при падении самодиагностика: что реально извлеклось из файла."""
+    ok, why = has_all_cyrillic(text)
+    if not ok:
+        why += f"; извлечено: {text[:240]!r}"
+    report(name, ok, why)
+
+
 # ───────────────────────── Тесты ─────────────────────────
 
 def test_health() -> None:
@@ -239,8 +247,7 @@ def test_docx_to_pdf(files: dict, artifacts: dict) -> None:
     artifacts["pdf"] = pdf_path
     try:
         text = extract_pdf_text(blob)
-        ok, why = has_all_cyrillic(text)
-        report("docx→pdf: PDF валиден, кириллица извлекается", ok, why)
+        cyr_report("docx→pdf: PDF валиден, кириллица извлекается", text)
     except Exception as e:
         report("docx→pdf: PDF валиден", False, f"pypdf не прочитал PDF: {e}")
 
@@ -249,8 +256,7 @@ def test_txt_cp1251_to_pdf(files: dict) -> None:
     print("Тест 3: TXT в CP1251 → PDF")
     try:
         blob, _ = run_convert_job(files["txt_cp1251"], "pdf", "e2e cp1251→pdf")
-        ok, why = has_all_cyrillic(extract_pdf_text(blob))
-        report("cp1251→pdf: кириллица без крякозябр", ok, why)
+        cyr_report("cp1251→pdf: кириллица без крякозябр", extract_pdf_text(blob))
     except Exception as e:
         report("cp1251→pdf", False, str(e))
 
@@ -259,8 +265,7 @@ def test_txt_cp1251_to_docx(files: dict) -> None:
     print("Тест 4: TXT в CP1251 → DOCX")
     try:
         blob, _ = run_convert_job(files["txt_cp1251"], "docx", "e2e cp1251→docx")
-        ok, why = has_all_cyrillic(extract_docx_text(blob))
-        report("cp1251→docx: кириллица на месте", ok, why)
+        cyr_report("cp1251→docx: кириллица на месте", extract_docx_text(blob))
     except Exception as e:
         report("cp1251→docx", False, str(e))
 
@@ -287,9 +292,7 @@ def test_pdf_to_docx(artifacts: dict) -> None:
         return
     try:
         blob, _ = run_convert_job(artifacts["pdf"], "docx", "e2e pdf→docx")
-        text = extract_docx_text(blob)
-        ok, why = has_all_cyrillic(text)
-        report("pdf→docx: текст восстановлен", ok, why)
+        cyr_report("pdf→docx: текст восстановлен", extract_docx_text(blob))
     except Exception as e:
         report("pdf→docx", False, str(e))
 
@@ -302,8 +305,7 @@ def test_pdf_to_txt(artifacts: dict) -> None:
     try:
         blob, _ = run_convert_job(artifacts["pdf"], "txt", "e2e pdf→txt")
         text = blob.decode("utf-8")  # строго UTF-8
-        ok, why = has_all_cyrillic(text)
-        report("pdf→txt: UTF-8, кириллица без крякозябр", ok, why)
+        cyr_report("pdf→txt: UTF-8, кириллица без крякозябр", text)
     except UnicodeDecodeError as e:
         report("pdf→txt", False, f"НЕ UTF-8 (крякозябры): {e}")
     except Exception as e:
