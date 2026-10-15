@@ -46,6 +46,7 @@ import {
   downloadFile,
   formatDuration,
 } from "@/lib/subtitles";
+import { EngineUpdateGuide } from "@/components/workbench/EngineUpdateGuide";
 
 type Phase = "idle" | "loading-engine" | "running" | "done" | "error";
 type Seg = { text: string; timestamp: [number, number | null] };
@@ -1002,48 +1003,12 @@ export function TranscribeTab({
         </div>
       )}
 
-      {/* Старый движок без Job API / без очереди — предлагаем обновить */}
+      {/* Старый движок без Job API / без очереди — инструкция обновления раскрывается на месте */}
       {engineServerOnline && engineServerHealth && !supportsJobs && (
-        <div className="mb-5 p-3 rounded-xl border border-amber-500/30 bg-amber-500/5 text-sm text-amber-200 flex items-start gap-3">
-          <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-          <div className="flex-1 min-w-0">
-            <p className="font-medium">
-              Движок {engineServerHealth.version || "1.0.x"} — задачи не переживают переключение вкладок
-            </p>
-            <p className="text-xs text-amber-200/80 mt-1 leading-relaxed">
-              Обновите движок той же командой установки — профиль, модели и настройки сохранятся. После обновления задачи выполняются в фоне: результат ждёт вас даже после закрытия браузера.
-            </p>
-          </div>
-          {onInstallEngine && (
-            <button
-              onClick={onInstallEngine}
-              className="bg-gradient-primary text-white px-3 py-1.5 rounded-lg text-xs font-medium hover:opacity-90 flex-shrink-0"
-            >
-              Обновить движок
-            </button>
-          )}
-        </div>
+        <EngineUpdateGuide reason="no-jobs" health={engineServerHealth} />
       )}
       {engineServerOnline && engineServerHealth && supportsJobs && !supportsQueue && (
-        <div className="mb-5 p-3 rounded-xl border border-sky-500/30 bg-sky-500/5 text-sm text-sky-200 flex items-start gap-3">
-          <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-          <div className="flex-1 min-w-0">
-            <p className="font-medium">
-              Движок {engineServerHealth.version || "1.1.0"} — без очереди задач
-            </p>
-            <p className="text-xs text-sky-200/80 mt-1 leading-relaxed">
-              Обновите движок той же командой установки — задачи на разных вкладках перестанут мешать друг другу: лишние встанут в очередь, а на мощном компьютере тяжёлые задачи пойдут параллельно.
-            </p>
-          </div>
-          {onInstallEngine && (
-            <button
-              onClick={onInstallEngine}
-              className="bg-gradient-primary text-white px-3 py-1.5 rounded-lg text-xs font-medium hover:opacity-90 flex-shrink-0"
-            >
-              Обновить движок
-            </button>
-          )}
-        </div>
+        <EngineUpdateGuide reason="no-queue" health={engineServerHealth} />
       )}
 
       {!file && (

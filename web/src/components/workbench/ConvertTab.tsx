@@ -18,6 +18,7 @@ import { useState, useRef, useCallback, useEffect } from "react";
 
 import { convertMedia, downloadBytes, getFFmpeg } from "@/lib/ffmpeg";
 import { useOnboarding } from "@/lib/onboarding-store";
+import { EngineUpdateGuide } from "@/components/workbench/EngineUpdateGuide";
 import {
   convertViaEngine,
   uploadFileToEngine,
@@ -378,6 +379,14 @@ function MediaConverter() {
           <>🟡 Через ffmpeg.wasm в браузере — медленнее, но без установки</>
         )}
       </div>
+
+      {/* Старый движок — инструкция обновления раскрывается на месте */}
+      {engineServerOnline && engineServerHealth && !supportsJobs && (
+        <EngineUpdateGuide reason="no-jobs" health={engineServerHealth} />
+      )}
+      {engineServerOnline && engineServerHealth && supportsJobs && !supportsQueue && (
+        <EngineUpdateGuide reason="no-queue" health={engineServerHealth} />
+      )}
 
       {!file ? (
         <div className="space-y-4">

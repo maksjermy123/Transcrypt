@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useOnboarding } from "@/lib/onboarding-store";
+import { EngineUpdateGuide } from "@/components/workbench/EngineUpdateGuide";
 import {
   mediaViaEngine,
   downloadEngineFile,
@@ -384,6 +385,14 @@ export function MediaTab() {
           Скачать видео/аудио, очистить звук, вшить субтитры. Все операции через локальный движок с yt-dlp (обходит блокировки YouTube) и ffmpeg.
         </p>
       </div>
+
+      {/* Старый движок — инструкция обновления раскрывается на месте */}
+      {engineServerOnline && engineServerHealth && !supportsJobs && (
+        <EngineUpdateGuide reason="no-jobs" health={engineServerHealth} />
+      )}
+      {engineServerOnline && engineServerHealth && supportsJobs && !supportsQueue && (
+        <EngineUpdateGuide reason="no-queue" health={engineServerHealth} />
+      )}
 
       {/* Баннер восстановления фоновой задачи / результата */}
       {jobNote && (

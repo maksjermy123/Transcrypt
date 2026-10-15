@@ -39,6 +39,7 @@ import {
 import { useOnboarding, MODEL_INFO, isBrowserModel, type WhisperModelId } from "@/lib/onboarding-store";
 import { useSettings } from "@/lib/settings-store";
 import { checkEngineHealth, type EngineHealth } from "@/lib/engine-bridge";
+import { EngineUpdateGuide } from "@/components/workbench/EngineUpdateGuide";
 import { detectHardware, detectWebGPU, isModelCached } from "@/lib/whisper";
 import { recommendedThreads } from "@/lib/onboarding-store";
 
@@ -272,13 +273,14 @@ export function SettingsTab({ onInstallEngine }: { onInstallEngine: () => void }
         </div>
 
         {engineServerOnline && health ? (
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-            <DiagItem label="Версия" value={health.version || "1.0.0"} />
-            <DiagItem label="Платформа" value={health.system_name || health.platform || "—"} />
-            <DiagItem label="Устройство Whisper" value={health.device || "Auto"} />
-            <DiagItem label="CPU-потоки" value={String(health.recommended_threads ?? "—")} />
-            <DiagItem label="FFmpeg" value={health.ffmpeg ? "найден" : "не найден"} ok={health.ffmpeg} />
-            <DiagItem label="FFprobe" value={health.ffprobe ? "найден" : "не найден"} ok={health.ffprobe} />
+          <>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              <DiagItem label="Версия" value={health.version || "1.0.0"} />
+              <DiagItem label="Платформа" value={health.system_name || health.platform || "—"} />
+              <DiagItem label="Устройство Whisper" value={health.device || "Auto"} />
+              <DiagItem label="CPU-потоки" value={String(health.recommended_threads ?? "—")} />
+              <DiagItem label="FFmpeg" value={health.ffmpeg ? "найден" : "не найден"} ok={health.ffmpeg} />
+              <DiagItem label="FFprobe" value={health.ffprobe ? "найден" : "не найден"} ok={health.ffprobe} />
             <DiagItem
               label="LibreOffice"
               value={health.libreoffice ? "найден" : "не нужен (PDF работает в браузере)"}
@@ -288,7 +290,20 @@ export function SettingsTab({ onInstallEngine }: { onInstallEngine: () => void }
               label="Модели движка"
               value={(health.whisper_models ?? []).length ? `${(health.whisper_models ?? []).length} уровней` : "—"}
             />
-          </div>
+            </div>
+
+            {/* Движок отстаёт от сайта — постоянное место инструкции обновления */}
+            {(!health.jobs || !health.queue) && (
+              <div className="mt-4 rounded-xl border border-sky-500/20 bg-sky-500/5 p-4">
+                <p className="text-xs font-semibold text-sky-200 mb-2">Доступно обновление движка</p>
+                <EngineUpdateGuide
+                  embedded
+                  reason={health.jobs ? "no-queue" : "no-jobs"}
+                  health={health}
+                />
+              </div>
+            )}
+          </>
         ) : (
           <div className="text-sm text-muted-foreground space-y-3">
             <p>
