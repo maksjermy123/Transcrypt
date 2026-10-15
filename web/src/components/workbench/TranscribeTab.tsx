@@ -16,10 +16,15 @@ import {
   ServerOff,
   Server,
   AlertTriangle,
+  Languages,
+  Copy,
+  Check,
 } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
 import { useOnboarding, MODEL_INFO, browserSafeModel, type WhisperModelId } from "@/lib/onboarding-store";
 import { transcribeAudio, loadWhisperPipeline } from "@/lib/whisper";
+import { useSettings } from "@/lib/settings-store";
+import { translateText, translateBatch } from "@/lib/translate";
 import {
   transcribeViaEngine,
   downloadEngineFile,
@@ -36,6 +41,28 @@ import {
 type Phase = "idle" | "loading-engine" | "running" | "done" | "error";
 type Seg = { text: string; timestamp: [number, number | null] };
 
+/** Языки для выбора источника и цели перевода */
+const LANG_OPTIONS: { code: string; label: string }[] = [
+  { code: "ru", label: "Русский" },
+  { code: "en", label: "English" },
+  { code: "uk", label: "Українська" },
+  { code: "de", label: "Deutsch" },
+  { code: "fr", label: "Français" },
+  { code: "es", label: "Español" },
+  { code: "it", label: "Italiano" },
+  { code: "pt", label: "Português" },
+  { code: "pl", label: "Polski" },
+  { code: "tr", label: "Türkçe" },
+  { code: "ar", label: "العربية" },
+  { code: "zh", label: "中文" },
+  { code: "ja", label: "日本語" },
+  { code: "ko", label: "한국어" },
+];
+
+function langLabel(code: string): string {
+  return LANG_OPTIONS.find((l) => l.code === code)?.label ?? code;
+}
+
 export function TranscribeTab({
   onInstallEngine,
 }: {
@@ -43,6 +70,7 @@ export function TranscribeTab({
   onInstallEngine?: () => void;
 }) {
   const { selectedModel, setSelectedModel, engineServerOnline } = useOnboarding();
+  const { provider, deeplKey } = useSettings();
   const [mode, setMode] = useState<"file" | "url">("file");
   const [file, setFile] = useState<File | Blob | null>(null);
   const [fileName, setFileName] = useState<string>("");
@@ -56,10 +84,23 @@ export function TranscribeTab({
   const [segments, setSegments] = useState<Seg[]>([]);
   const [sourceLabel, setSourceLabel] = useState<string>("");
   const [language, setLanguage] = useState("auto");
+  // Конечный язык: "-" — без перевода (выдаём оригинал)
+  const [targetLang, setTargetLang] = useState("-");
+  const [translatedText, setTranslatedText] = useState("");
+  const [translatedSegments, setTranslatedSegments] = useState<Seg[]>([]);
+  const [translError, setTranslError] = useState<string | null>(null);
+  const [segView, setSegView] = useState<"translation" | "original">("translation");
   const [error, setError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
+
+  const clearTranslation = () => {
+    setTranslatedText("");
+    setTranslatedSegments([]);
+    setTranslError(null);
+    setSegView("translation");
+  };
 
   const handleFile = useCallback(
     (f: File) => {
@@ -69,6 +110,7 @@ export function TranscribeTab({
       setText("");
       setSegments([]);
       setError(null);
+      clearTranslation();
       setProgress(0);
       setPhase("idle");
       if (audioUrl) URL.revokeObjectURL(audioUrl);
@@ -121,6 +163,7 @@ export function TranscribeTab({
     setProgressLog([]);
     setText("");
     setSegments([]);
+    clearTranslation();
 
     const urlValue = url.trim();
     const useUrl = mode === "url" && urlValue && isUrl(urlValue);
@@ -187,22 +230,28 @@ export function TranscribeTab({
           throw new Error("Движок вернул ошибку");
         }
 
-        setText(result.text || "");
-        setSourceLabel(result.source || "Локальный движок");
+        const resText = result.text || "";
 
         // Сегментов нет в ответе движка (он отдаёт только text + файлы), но можно скачать SRT.
         // Загружаем SRT-файл и парсим для отображения.
+        let resSegs: Seg[] = [];
         if (result.files?.srt) {
           try {
             const { fetchEngineFile } = await import("@/lib/engine-bridge");
             const blob = await fetchEngineFile(result.files.srt);
             const srtText = await blob.text();
-            const parsed = parseSrt(srtText);
-            setSegments(parsed);
+            resSegs = parseSrt(srtText);
           } catch (e) {
             console.warn("Не удалось загрузить SRT:", e);
           }
         }
+
+        setText(resText);
+        setSegments(resSegs);
+        setSourceLabel(result.source || "Локальный движок");
+
+        // Выбран конечный язык — переводим ДО выдачи результата
+        await translateIfNeeded(resText, resSegs);
 
         setPhase("done");
         setProgress(100);
@@ -227,7 +276,7 @@ export function TranscribeTab({
         setProgress(10 + Math.round(p * 0.9));
         if (p > 0) setProgressText(`Распознавание речи… ${p}%`);
       });
-      setText(result.text || "");
+      const resText = result.text || "";
       const segs: Seg[] = (result.chunks || []).map((c: any) => ({
         text: c.text || "",
         timestamp: [
@@ -235,8 +284,13 @@ export function TranscribeTab({
           Array.isArray(c.timestamp) ? (c.timestamp[1] ?? null) : null,
         ],
       }));
+      setText(resText);
       setSegments(segs);
       setSourceLabel(`Whisper ${browserSafeModel(selectedModel)} (браузер)`);
+
+      // Выбран конечный язык — переводим ДО выдачи результата
+      await translateIfNeeded(resText, segs);
+
       setPhase("done");
       setProgress(100);
       setProgressText("Готово");
@@ -247,14 +301,94 @@ export function TranscribeTab({
     }
   }
 
+  /**
+   * Перевод результата транскрипции на выбранный конечный язык.
+   * Вызывается ДО setPhase("done") — пользователь видит прогресс перевода,
+   * и готовый перевод появляется вместе с распознанным текстом.
+   * При ошибке перевода оригинал НЕ теряется (показываем предупреждение).
+   */
+  async function translateIfNeeded(origText: string, origSegs: Seg[], langOverride?: string) {
+    const lang = langOverride ?? targetLang;
+    setTranslatedText("");
+    setTranslatedSegments([]);
+    setTranslError(null);
+    setSegView("translation");
+    if (lang === "-") return;
+    if (language !== "auto" && language === lang) return; // совпадает с исходным — перевод не нужен
+    if (!origText.trim() && !origSegs.length) return;
+
+    const label = langLabel(lang);
+    const opts = {
+      targetLang: lang,
+      provider,
+      apiKey: deeplKey || undefined,
+      engineOnline: engineServerOnline,
+    };
+    setProgressText(`Переводим на ${label}…`);
+    try {
+      if (origSegs.length > 0) {
+        // Сегменты переводим построчно батчами — таймкоды сохраняются
+        const out = await translateBatch(
+          origSegs.map((s) => s.text),
+          {
+            ...opts,
+            onProgress: (pct) => {
+              setProgressText(`Переводим на ${label}… ${pct}%`);
+              setProgress(Math.min(99, pct));
+            },
+          }
+        );
+        const tSegs: Seg[] = origSegs.map((s, i) => ({
+          text: out[i] ?? s.text,
+          timestamp: s.timestamp,
+        }));
+        setTranslatedSegments(tSegs);
+        setTranslatedText(tSegs.map((s) => s.text).join(" ").replace(/\s+/g, " ").trim());
+      } else {
+        const t = await translateText(origText, {
+          ...opts,
+          onProgress: (pct, eta) => {
+            setProgressText(`Переводим на ${label}… ${pct}%${eta ? " · " + eta : ""}`);
+            setProgress(Math.min(99, pct));
+          },
+        });
+        setTranslatedText(t);
+      }
+    } catch (err: any) {
+      console.error("Перевод транскрипции не удался:", err);
+      setTranslError(err?.message ?? "неизвестная ошибка");
+    }
+  }
+
+  /** Смена конечного языка после готового результата — мягкий повторный перевод */
+  async function retranslate(lang: string) {
+    if (phase !== "done") return;
+    setPhase("running");
+    setProgress(30);
+    await translateIfNeeded(text, segments, lang);
+    setPhase("done");
+    setProgress(100);
+    setProgressText("Готово");
+  }
+
+  // Что показываем/экспортируем: перевод (по умолчанию) или оригинал
+  const showingTranslation =
+    (translatedSegments.length > 0 || !!translatedText) && segView === "translation";
+  const viewSegments = showingTranslation && translatedSegments.length ? translatedSegments : segments;
+  const viewText =
+    showingTranslation && translatedText
+      ? translatedText
+      : text || segmentsToPlainText(segments);
+  const exportSuffix = showingTranslation ? `-${targetLang}` : "";
+
   function downloadSRT() {
-    downloadFile("transcrypt.srt", segmentsToSRT(segments), "text/plain");
+    downloadFile(`transcrypt${exportSuffix}.srt`, segmentsToSRT(viewSegments), "text/plain");
   }
   function downloadVTT() {
-    downloadFile("transcrypt.vtt", segmentsToVTT(segments), "text/plain");
+    downloadFile(`transcrypt${exportSuffix}.vtt`, segmentsToVTT(viewSegments), "text/plain");
   }
   function downloadTXT() {
-    downloadFile("transcrypt.txt", text || segmentsToPlainText(segments), "text/plain");
+    downloadFile(`transcrypt${exportSuffix}.txt`, viewText, "text/plain");
   }
 
   async function downloadResultFile(kind: "txt" | "srt" | "vtt" | "json") {
@@ -283,6 +417,7 @@ export function TranscribeTab({
     setSegments([]);
     setText("");
     setSourceLabel("");
+    clearTranslation();
     if (audioUrl) URL.revokeObjectURL(audioUrl);
     setAudioUrl(null);
     setPhase("idle");
@@ -299,32 +434,44 @@ export function TranscribeTab({
     ? engineServerOnline && urlValid && !busy
     : !!file && !busy;
 
-  const langSelect = (
-    <div className="flex items-center gap-3">
-      <Mic className="w-5 h-5 text-[#7c5bf5]" />
-      <div>
-        <div className="font-medium text-sm">Исходный язык</div>
-        <select
-          value={language}
-          onChange={(e) => setLanguage(e.target.value)}
-          className="bg-[#0b0f19] border border-[#263147] rounded-lg px-3 py-1.5 text-sm mt-1"
-        >
-          <option value="auto">Автоопределение</option>
-          <option value="ru">Русский</option>
-          <option value="en">English</option>
-          <option value="uk">Українська</option>
-          <option value="de">Deutsch</option>
-          <option value="fr">Français</option>
-          <option value="es">Español</option>
-          <option value="it">Italiano</option>
-          <option value="pt">Português</option>
-          <option value="pl">Polski</option>
-          <option value="tr">Türkçe</option>
-          <option value="ar">العربية</option>
-          <option value="zh">中文</option>
-          <option value="ja">日本語</option>
-          <option value="ko">한국어</option>
-        </select>
+  const langControls = (
+    <div className="flex flex-wrap items-start gap-x-6 gap-y-3">
+      <div className="flex items-center gap-3">
+        <Mic className="w-5 h-5 text-[#7c5bf5]" />
+        <div>
+          <div className="font-medium text-sm">Исходный язык</div>
+          <select
+            value={language}
+            onChange={(e) => setLanguage(e.target.value)}
+            className="bg-[#0b0f19] border border-[#263147] rounded-lg px-3 py-1.5 text-sm mt-1"
+          >
+            <option value="auto">Автоопределение</option>
+            {LANG_OPTIONS.map((l) => (
+              <option key={l.code} value={l.code}>{l.label}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+      <div className="flex items-center gap-3">
+        <Languages className="w-5 h-5 text-emerald-400" />
+        <div>
+          <div className="font-medium text-sm">Перевести на</div>
+          <select
+            value={targetLang}
+            onChange={(e) => {
+              const v = e.target.value;
+              setTargetLang(v);
+              // Результат уже готов — сразу переводим его на новый язык
+              if (phase === "done" && v !== "-") retranslate(v);
+            }}
+            className="bg-[#0b0f19] border border-[#263147] rounded-lg px-3 py-1.5 text-sm mt-1"
+          >
+            <option value="-">Оригинал (без перевода)</option>
+            {LANG_OPTIONS.map((l) => (
+              <option key={l.code} value={l.code}>{l.label}</option>
+            ))}
+          </select>
+        </div>
       </div>
     </div>
   );
@@ -397,6 +544,12 @@ export function TranscribeTab({
       {sourceLabel && (
         <div className="glass-card rounded-2xl p-3 px-4 text-xs text-muted-foreground">
           Источник: <span className="text-foreground font-medium">{sourceLabel}</span>
+          {translatedText && (
+            <>
+              <span className="mx-2">·</span>
+              переведено на: <span className="text-emerald-400 font-medium">{langLabel(targetLang)}</span>
+            </>
+          )}
         </div>
       )}
       <div className="glass-card rounded-2xl p-4 flex flex-wrap gap-3 items-center justify-between">
@@ -415,18 +568,77 @@ export function TranscribeTab({
         </div>
       </div>
 
+      {translError && (
+        <div className="glass-card rounded-2xl p-4 border-amber-500/40">
+          <div className="text-sm text-amber-300 flex items-start gap-2">
+            <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+            <span>
+              Перевод не удался ({translError}). Транскрипция не потеряна — оригинал можно
+              скопировать или скачать ниже.
+            </span>
+          </div>
+        </div>
+      )}
+
       {text && (
         <div className="glass-card rounded-2xl p-5">
-          <h3 className="font-semibold mb-3 text-sm">Полный текст</h3>
+          <div className="flex items-center justify-between gap-2 mb-3">
+            <h3 className="font-semibold text-sm">
+              {translatedText ? "Полный текст (оригинал)" : "Полный текст"}
+            </h3>
+            <CopyBtn text={text} />
+          </div>
           <p className="text-sm leading-relaxed whitespace-pre-wrap">{text}</p>
+        </div>
+      )}
+
+      {translatedText && (
+        <div className="glass-card rounded-2xl p-5 border-emerald-500/30">
+          <div className="flex items-center justify-between gap-2 mb-3">
+            <h3 className="font-semibold text-sm inline-flex items-center gap-2">
+              <Languages className="w-4 h-4 text-emerald-400" />
+              Перевод — {langLabel(targetLang)}
+            </h3>
+            <CopyBtn text={translatedText} />
+          </div>
+          <p className="text-sm leading-relaxed whitespace-pre-wrap">{translatedText}</p>
         </div>
       )}
 
       {segments.length > 0 && (
         <div className="glass-card rounded-2xl p-5">
-          <h3 className="font-semibold mb-3 text-sm">Сегменты с таймкодами</h3>
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+            <h3 className="font-semibold text-sm">Сегменты с таймкодами</h3>
+            <div className="flex items-center gap-2">
+              {translatedSegments.length > 0 && (
+                <div className="flex bg-[#1b2334] rounded-lg p-0.5 text-xs">
+                  <button
+                    onClick={() => setSegView("translation")}
+                    className={`px-2.5 py-1 rounded-md font-medium transition-colors ${
+                      segView === "translation"
+                        ? "bg-gradient-primary text-white"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    Перевод
+                  </button>
+                  <button
+                    onClick={() => setSegView("original")}
+                    className={`px-2.5 py-1 rounded-md font-medium transition-colors ${
+                      segView === "original"
+                        ? "bg-gradient-primary text-white"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    Оригинал
+                  </button>
+                </div>
+              )}
+              <CopyBtn text={segmentsToPlainText(viewSegments)} />
+            </div>
+          </div>
           <div className="space-y-2 max-h-96 overflow-y-auto pr-2">
-            {segments.map((s, i) => (
+            {viewSegments.map((s, i) => (
               <div
                 key={i}
                 className="flex items-start gap-3 p-2 rounded-lg hover:bg-[#1b2334] transition-colors"
@@ -548,8 +760,8 @@ export function TranscribeTab({
           )}
 
           {engineServerOnline ? (
-            <div className="mt-4 pt-4 border-t border-[#263147]/60 flex flex-col sm:flex-row gap-4 items-stretch sm:items-center justify-between">
-              {langSelect}
+            <div className="mt-4 pt-4 border-t border-[#263147]/60 flex flex-col gap-4 items-stretch justify-between">
+              {langControls}
               {runButton}
             </div>
           ) : (
@@ -668,8 +880,8 @@ export function TranscribeTab({
             </div>
           )}
 
-          <div className="glass-card rounded-2xl p-5 flex flex-col sm:flex-row gap-4 items-stretch sm:items-center justify-between">
-            {langSelect}
+          <div className="glass-card rounded-2xl p-5 flex flex-col gap-4 items-stretch justify-between">
+            {langControls}
             {runButton}
           </div>
 
@@ -724,6 +936,50 @@ function ExportBtn({ onClick, label }: { onClick: () => void; label: string }) {
     >
       <Download className="w-3.5 h-3.5" />
       {label}
+    </button>
+  );
+}
+
+/** Кнопка «Копировать» с индикацией успеха (fallback для не-secure контекста) */
+function CopyBtn({
+  text,
+  label = "Копировать",
+}: {
+  text: string;
+  label?: string;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      // fallback: clipboard API недоступен (http) — старый способ через textarea
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      try {
+        document.execCommand("copy");
+      } catch {
+        /* ничего не поделать */
+      }
+      document.body.removeChild(ta);
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  return (
+    <button
+      onClick={copy}
+      disabled={!text}
+      className="px-3 py-1.5 rounded-lg bg-[#1b2334] hover:bg-[#263147] text-xs font-medium inline-flex items-center gap-1.5 transition-colors disabled:opacity-40 flex-shrink-0"
+    >
+      {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+      {copied ? "Скопировано" : label}
     </button>
   );
 }
