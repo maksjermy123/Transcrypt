@@ -53,7 +53,7 @@ import {
   formatDuration,
 } from "@/lib/subtitles";
 import { copyTextToClipboard } from "@/lib/clipboard";
-import { EngineUpdateGuide } from "@/components/workbench/EngineUpdateGuide";
+import { EngineUpdateGuide, isEngineOutdated } from "@/components/workbench/EngineUpdateGuide";
 import { ConspectBridge } from "@/components/workbench/ConspectBridge";
 import { BatchPanel, type BatchItem } from "@/components/workbench/BatchPanel";
 
@@ -1230,6 +1230,9 @@ export function TranscribeTab({
       )}
       {engineServerOnline && engineServerHealth && supportsJobs && !supportsQueue && (
         <EngineUpdateGuide reason="no-queue" health={engineServerHealth} />
+      )}
+      {engineServerOnline && engineServerHealth && supportsJobs && supportsQueue && isEngineOutdated(engineServerHealth) && (
+        <EngineUpdateGuide reason="outdated" health={engineServerHealth} />
       )}
 
       {/* Пакетная обработка: несколько ссылок/файлов в очередь движка */}

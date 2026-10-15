@@ -612,45 +612,66 @@ export async function cancelActiveJob(type: EngineTaskType): Promise<void> {
 }
 
 /**
+ * Полный URL файла на движке по относительному пути из ответа задачи.
+ * Полезен для прямого скачивания браузером (минуя fetch).
+ */
+export function engineFileUrl(relPath: string): string {
+  return relPath.startsWith("http") ? relPath : `${ENGINE_URL}${relPath}`;
+}
+
+/**
  * Скачать готовый файл с движка по относительному пути из ответа задачи.
  * @param relPath относительный путь (например "/api/download?file=/path/to/file.srt")
  */
 export async function fetchEngineFile(relPath: string): Promise<Blob> {
-  const url = relPath.startsWith("http")
-    ? relPath
-    : `${ENGINE_URL}${relPath}`;
-  const resp = await fetch(url);
+  const resp = await fetch(engineFileUrl(relPath));
   if (!resp.ok) throw new Error(`Не удалось скачать файл: HTTP ${resp.status}`);
   return await resp.blob();
 }
 
 /**
  * Скачать готовый файл с движка и сохранить локально.
+ * Основной путь — fetch+blob (сохраняет точное имя файла).
+ * Если fetch не удался (файл удалён, блокировка fetch, движок перезапускался) —
+ * автоматически пробуем прямую навигацию: браузер скачает сам по
+ * Content-Disposition (движок ≥ 1.2.1 отдаёт корректные имена с кириллицей).
+ * Бросает ошибку в любом случае — вкладка обязана показать её пользователю,
+ * а не молчать (исторический баг: кнопка «Скачать» выглядела мёртвой).
  */
 export async function downloadEngineFile(relPath: string, fallbackName: string): Promise<void> {
-  const blob = await fetchEngineFile(relPath);
-  // Имя файла из Content-Disposition
-  const cd = blob.type;
-  void cd;
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  // Извлекаем имя из URL если возможно
-  let name = fallbackName;
   try {
-    const u = new URL(relPath.startsWith("http") ? relPath : `${ENGINE_URL}${relPath}`);
-    const fileParam = u.searchParams.get("file");
-    if (fileParam) {
-      name = decodeURIComponent(fileParam.split("/").pop() || fallbackName);
+    const blob = await fetchEngineFile(relPath);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    // Извлекаем имя из URL если возможно
+    let name = fallbackName;
+    try {
+      const u = new URL(relPath.startsWith("http") ? relPath : `${ENGINE_URL}${relPath}`);
+      const fileParam = u.searchParams.get("file");
+      if (fileParam) {
+        name = decodeURIComponent(fileParam.split("/").pop() || fallbackName);
+      }
+    } catch {
+      /* ignore */
     }
-  } catch {
-    /* ignore */
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  } catch (fetchErr) {
+    // Фолбэк: открываем URL файла в НОВОЙ вкладке — браузер скачает сам
+    // по Content-Disposition (движок ≥ 1.2.1 даёт корректное имя даже с кириллицей).
+    // ВАЖНО: именно новая вкладка — при недоступном движке same-tab навигация
+    // уводит всё приложение на страницу «ERR_CONNECTION_REFUSED».
+    try {
+      window.open(engineFileUrl(relPath), "_blank", "noopener");
+    } catch {
+      /* открытие не удалось — покажем исходную ошибку */
+    }
+    throw fetchErr;
   }
-  a.download = name;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 // ═══════════════ Пакетная обработка (несколько задач подряд/в очереди) ═══════════════

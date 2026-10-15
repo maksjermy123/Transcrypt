@@ -733,7 +733,7 @@ class EngineHTTPRequestHandler(BaseHTTPRequestHandler):
 
         self.send_json({
             "status": "ok",
-            "version": "1.2.0",
+            "version": "1.2.1",
             "jobs": True,  # Job API: фоновые задачи, переживающие закрытие вкладки
             "queue": True,  # очереди задач + видимый статус «В очереди»
             "parallel_heavy": HEAVY_PARALLEL,  # сколько тяжёлых задач идёт одновременно
@@ -756,9 +756,17 @@ class EngineHTTPRequestHandler(BaseHTTPRequestHandler):
         # Simple security check: file must be accessible
         fname = os.path.basename(target_path)
         size = os.path.getsize(target_path)
+        # RFC 5987/6266: http.server кодирует заголовки в latin-1 — кириллица
+        # в имени файла (русское название видео с YouTube) роняет send_header
+        # с UnicodeEncodeError и обрывает ответ без ответа вообще.
+        # Даём ASCII-фолбэк + filename*=UTF-8'' — браузеры берут корректное имя из него.
+        ascii_name = "".join(c if 32 <= ord(c) < 127 and c not in '"\\' else "_" for c in fname)
+        if not ascii_name.strip("_ ."):
+            ascii_name = "download" + (os.path.splitext(fname)[1] if os.path.splitext(fname)[1] else ".bin")
+        utf8_name = urllib.parse.quote(fname, safe="")
         self.send_response(200)
         self.send_header('Content-Type', 'application/octet-stream')
-        self.send_header('Content-Disposition', f'attachment; filename="{fname}"')
+        self.send_header('Content-Disposition', f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{utf8_name}")
         self.send_header('Content-Length', str(size))
         self.end_headers()
 

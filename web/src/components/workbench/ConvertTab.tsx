@@ -11,6 +11,7 @@ import {
   FileAudio,
   Settings2,
   History,
+  AlertTriangle,
   X,
   Square,
 } from "lucide-react";
@@ -18,11 +19,12 @@ import { useState, useRef, useCallback, useEffect } from "react";
 
 import { convertMedia, downloadBytes, getFFmpeg } from "@/lib/ffmpeg";
 import { useOnboarding } from "@/lib/onboarding-store";
-import { EngineUpdateGuide } from "@/components/workbench/EngineUpdateGuide";
+import { EngineUpdateGuide, isEngineOutdated } from "@/components/workbench/EngineUpdateGuide";
 import {
   convertViaEngine,
   uploadFileToEngine,
   downloadEngineFile,
+  engineFileUrl,
   resumeActiveJob,
   watchJobToCompletion,
   clearActiveJob,
@@ -108,6 +110,7 @@ function MediaConverter() {
   const [resultName, setResultName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [jobNote, setJobNote] = useState<string | null>(null);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   /** Вытаскиваем имя файла из URL /api/download?file=... */
@@ -362,12 +365,23 @@ function MediaConverter() {
 
   async function download() {
     if (resultFile && engineServerOnline) {
-      await downloadEngineFile(resultFile, resultName || `output.${target}`);
+      setDownloadError(null);
+      try {
+        await downloadEngineFile(resultFile, resultName || `output.${target}`);
+      } catch (e: any) {
+        console.error(e);
+        setDownloadError(e?.message ?? "Не удалось скачать файл");
+      }
       return;
     }
     if (result) {
       downloadBytes(result.name, result.data, result.mime);
     }
+  }
+
+  function openDirect() {
+    if (!resultFile) return;
+    window.open(engineFileUrl(resultFile), "_blank", "noopener");
   }
 
   return (
@@ -386,6 +400,9 @@ function MediaConverter() {
       )}
       {engineServerOnline && engineServerHealth && supportsJobs && !supportsQueue && (
         <EngineUpdateGuide reason="no-queue" health={engineServerHealth} />
+      )}
+      {engineServerOnline && engineServerHealth && supportsJobs && supportsQueue && isEngineOutdated(engineServerHealth) && (
+        <EngineUpdateGuide reason="outdated" health={engineServerHealth} />
       )}
 
       {!file ? (
@@ -450,6 +467,13 @@ function MediaConverter() {
                 Скачать
               </button>
             </div>
+          )}
+          {resultFile && !busy && downloadError && (
+            <DownloadErrorCard
+              error={downloadError}
+              onRetryDirect={openDirect}
+              onClose={() => setDownloadError(null)}
+            />
           )}
         </div>
       ) : (
@@ -610,6 +634,13 @@ function MediaConverter() {
                   Скачать
                 </button>
               </motion.div>
+            )}
+            {resultFile && !result && !busy && downloadError && (
+              <DownloadErrorCard
+                error={downloadError}
+                onRetryDirect={openDirect}
+                onClose={() => setDownloadError(null)}
+              />
             )}
           </div>
         </div>
@@ -968,6 +999,51 @@ function TextConverter() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Карточка ошибки скачивания с движка — вместо молчащей кнопки объясняем
+ * что произошло и что делать: фолбэк уже попробован напрямую.
+ */
+function DownloadErrorCard({
+  error,
+  onRetryDirect,
+  onClose,
+}: {
+  error: string;
+  onRetryDirect: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <div className="glass-card rounded-2xl p-4 mt-3 border-amber-500/30 bg-amber-500/5">
+      <div className="flex items-start gap-3">
+        <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
+        <div className="flex-1 min-w-0">
+          <p className="text-sm text-amber-200 font-medium mb-1">Скачивание не удалось</p>
+          <p className="text-xs text-amber-200/80 mb-2">{error}</p>
+          <ul className="text-xs text-amber-200/70 leading-relaxed list-disc pl-4 space-y-0.5 mb-3">
+            <li>Мы уже попробовали скачать файл напрямую — проверьте загрузки браузера.</li>
+            <li>Движок мог перезапуститься и удалить файл — запустите конвертацию заново.</li>
+            <li>Движок до 1.2.1 не умеет отдавать файлы с русскими названиями — обновите его (Настройки → «Доступно обновление движка»).</li>
+          </ul>
+          <button
+            onClick={onRetryDirect}
+            className="px-3 py-1.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-200 text-xs font-medium inline-flex items-center gap-1.5 transition-colors"
+          >
+            <Download className="w-3.5 h-3.5" />
+            Открыть файл напрямую
+          </button>
+        </div>
+        <button
+          onClick={onClose}
+          className="p-1 rounded-md hover:bg-white/10 flex-shrink-0"
+          title="Скрыть"
+        >
+          <X className="w-3.5 h-3.5" />
+        </button>
+      </div>
     </div>
   );
 }

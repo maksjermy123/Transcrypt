@@ -21,10 +21,11 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useOnboarding } from "@/lib/onboarding-store";
-import { EngineUpdateGuide } from "@/components/workbench/EngineUpdateGuide";
+import { EngineUpdateGuide, isEngineOutdated } from "@/components/workbench/EngineUpdateGuide";
 import {
   mediaViaEngine,
   downloadEngineFile,
+  engineFileUrl,
   uploadFileToEngine,
   resumeActiveJob,
   watchJobToCompletion,
@@ -63,6 +64,7 @@ export function MediaTab() {
   const [resultName, setResultName] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
   const [jobNote, setJobNote] = useState<string | null>(null);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
 
   /** Вытаскиваем имя файла из URL /api/download?file=/path/to/file.mp4 */
   function fileNameFromUrl(fileUrl: string): string {
@@ -225,6 +227,7 @@ export function MediaTab() {
     setPhase("idle");
     setProgressLog([]);
     setJobNote(null);
+    setDownloadError(null);
     try {
       localStorage.removeItem("transcrypt.lastMedia");
     } catch {
@@ -261,6 +264,7 @@ export function MediaTab() {
     setPhase("running");
     setProgressText("Запускаем задачу на движке…");
     setJobNote(null);
+    setDownloadError(null);
 
     try {
       let filePath: string | undefined;
@@ -330,7 +334,18 @@ export function MediaTab() {
 
   async function download() {
     if (!resultFile) return;
-    await downloadEngineFile(resultFile, resultName || "output");
+    setDownloadError(null);
+    try {
+      await downloadEngineFile(resultFile, resultName || "output");
+    } catch (e: any) {
+      console.error(e);
+      setDownloadError(e?.message ?? "Не удалось скачать файл");
+    }
+  }
+
+  function openDirect() {
+    if (!resultFile) return;
+    window.open(engineFileUrl(resultFile), "_blank", "noopener");
   }
 
   const needsUrl = action === "download_video" || action === "download_audio" || !localFile;
@@ -392,6 +407,9 @@ export function MediaTab() {
       )}
       {engineServerOnline && engineServerHealth && supportsJobs && !supportsQueue && (
         <EngineUpdateGuide reason="no-queue" health={engineServerHealth} />
+      )}
+      {engineServerOnline && engineServerHealth && supportsJobs && supportsQueue && isEngineOutdated(engineServerHealth) && (
+        <EngineUpdateGuide reason="outdated" health={engineServerHealth} />
       )}
 
       {/* Баннер восстановления фоновой задачи / результата */}
@@ -711,6 +729,42 @@ export function MediaTab() {
             >
               <Download className="w-4 h-4" />
               Скачать
+            </button>
+          </div>
+        </motion.div>
+      )}
+
+      {/* Ошибка скачивания результата — раньше молчала, теперь объясняем что делать */}
+      {phase === "done" && resultFile && downloadError && (
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="glass-card rounded-2xl p-4 mt-3 border-amber-500/30 bg-amber-500/5"
+        >
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm text-amber-200 font-medium mb-1">Скачивание не удалось</p>
+              <p className="text-xs text-amber-200/80 mb-2">{downloadError}</p>
+              <ul className="text-xs text-amber-200/70 leading-relaxed list-disc pl-4 space-y-0.5 mb-3">
+                <li>Мы уже попробовали скачать файл напрямую — проверьте загрузки браузера.</li>
+                <li>Движок мог перезапуститься и удалить файл — запустите задачу заново.</li>
+                <li>Движок до 1.2.1 не умеет отдавать файлы с русскими названиями — обновите его (Настройки → «Доступно обновление движка»).</li>
+              </ul>
+              <button
+                onClick={openDirect}
+                className="px-3 py-1.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-200 text-xs font-medium inline-flex items-center gap-1.5 transition-colors"
+              >
+                <Download className="w-3.5 h-3.5" />
+                Открыть файл напрямую
+              </button>
+            </div>
+            <button
+              onClick={() => setDownloadError(null)}
+              className="p-1 rounded-md hover:bg-white/10 flex-shrink-0"
+              title="Скрыть"
+            >
+              <X className="w-3.5 h-3.5" />
             </button>
           </div>
         </motion.div>

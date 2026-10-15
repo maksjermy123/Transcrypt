@@ -23,10 +23,28 @@ import {
 } from "lucide-react";
 import type { EngineHealth } from "@/lib/engine-bridge";
 
-/** Последняя версия движка, которую поддерживает сайт (health: jobs + queue). */
-export const LATEST_ENGINE_VERSION = "1.2.0";
+/** Последняя версия движка, которую поддерживает сайт. */
+export const LATEST_ENGINE_VERSION = "1.2.1";
 
-export type EngineUpdateReason = "no-jobs" | "no-queue";
+export type EngineUpdateReason = "no-jobs" | "no-queue" | "outdated";
+
+/**
+ * Истинно, если версия движка в health ниже поддерживаемой сайтом.
+ * Используется для баннера «outdated» — движок работает, но без свежих фиксов
+ * (например, до 1.2.1 не скачивались файлы с кириллическими именами).
+ */
+export function isEngineOutdated(health: EngineHealth | null): boolean {
+  const cur = (health?.version || "").trim();
+  if (!cur) return false;
+  const parse = (s: string) => s.split(/[.-]/).map((x) => parseInt(x, 10) || 0);
+  const a = parse(cur);
+  const b = parse(LATEST_ENGINE_VERSION);
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const d = (a[i] || 0) - (b[i] || 0);
+    if (d !== 0) return d < 0;
+  }
+  return false;
+}
 
 const REPO_RAW = "https://raw.githubusercontent.com/maksjermy123/Transcrypt/main/engine-install";
 
@@ -87,6 +105,11 @@ const REASONS: Record<
   "no-queue": {
     title: (v) => `Движок ${v || "1.1.0"} — без очереди задач`,
     why: "Задачи на разных вкладках мешают друг другу. После обновления лишние встанут в очередь, а на мощном компьютере тяжёлые пойдут параллельно — ни один результат не пропадёт.",
+    tone: "sky",
+  },
+  outdated: {
+    title: (v) => `Движок ${v || "1.2.0"} — доступно обновление до ${LATEST_ENGINE_VERSION}`,
+    why: "В 1.2.1 исправлено скачивание готовых файлов: если видео называлось по-русски, кнопка «Скачать» молча не срабатывала. Обновите движок той же командой установки — займёт 1–3 минуты.",
     tone: "sky",
   },
 };
