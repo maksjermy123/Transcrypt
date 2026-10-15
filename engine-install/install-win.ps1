@@ -352,7 +352,15 @@ try {
 
 # ─── 11. Открытие браузера ────────────────────────────────────────
 Write-Step "Открываем веб-интерфейс в браузере..."
-Start-Process "https://maksjermy123.github.io/Transcrypt/"
+# НЕ критичный шаг: на серверных/урезанных Windows может не быть браузера
+# по умолчанию — Start-Process бросает исключение и при Stop-политике
+# ронял ВСЮ установку на самом последнем шаге. Оборачиваем в try/catch.
+try {
+    Start-Process "https://maksjermy123.github.io/Transcrypt/"
+} catch {
+    Write-Warn "Не удалось открыть браузер автоматически — откройте вручную:"
+    Write-Host "    https://maksjermy123.github.io/Transcrypt/" -ForegroundColor Gray
+}
 
 # ─── 12. Финальное сообщение ──────────────────────────────────────
 Write-Host ""
