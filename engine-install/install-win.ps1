@@ -73,8 +73,23 @@ Write-Host ""
 # Раньше из-за неё установка падала сразу после пары строк «?» и окно
 # закрывалось. Теперь обходим заглушку и ставим настоящий Python сами.
 function Get-RealPython {
-    # py-лаунчер (ставится с python.org) — самый надёжный
-    foreach ($candidate in @(@("py", "-3"), @("python3", ""), @("python", ""), @("python3.12", ""))) {
+    # Поддерживаемый диапазон: 3.10–3.13. Python 3.14+ НЕ выбираем:
+    # у зависимостей (Pillow, numba, torch) ещё нет готовых wheels — pip
+    # пытается собирать их из исходников и падает без zlib (проверено на
+    # реальной Windows: «RequiredDependencyException: zlib»). 
+    # Порядок приоритета: 3.12 (самый стабильный) → 3.11 → 3.13 → 3.10.
+    # py -3.12 указывает конкретную минорную версию, py -3 — самую новую.
+    $candidates = @(
+        @("py", "-3.12"),
+        @("py", "-3.11"),
+        @("py", "-3.13"),
+        @("py", "-3.10"),
+        @("python3.12", ""),
+        @("python3.11", ""),
+        @("python3", ""),
+        @("python", "")
+    )
+    foreach ($candidate in $candidates) {
         $exe = $candidate[0]
         $arg = $candidate[1]
         try {
@@ -83,7 +98,7 @@ function Get-RealPython {
             $ver = if ($arg -ne "") { & $exe $arg --version 2>&1 } else { & $exe --version 2>&1 }
             if ("$ver" -match "Python (\d+)\.(\d+)") {
                 $major = [int]$matches[1]; $minor = [int]$matches[2]
-                if ($major -ge 3 -and $minor -ge 10) {
+                if ($major -eq 3 -and $minor -ge 10 -and $minor -le 13) {
                     return @{ exe = $exe; arg = $arg; ver = "$($matches[1]).$($matches[2])" }
                 }
             }
@@ -93,7 +108,7 @@ function Get-RealPython {
 }
 
 function Install-Python {
-    Write-Step "Python 3 не найден — устанавливаем автоматически (без прав администратора)..."
+    Write-Step "Python 3.10–3.13 не найден — ставим Python 3.12 автоматически (без прав администратора)..."
     # Способ 1: winget (есть на Windows 10 1809+ и Windows 11)
     try {
         $winget = Get-Command winget -ErrorAction Stop
@@ -141,21 +156,14 @@ if (-not $py) {
     }
 }
 if (-not $py) {
-    Write-Err "Не удалось найти или установить Python 3.10+."
-    Write-Host "    Установите вручную с https://www.python.org/downloads/" -ForegroundColor Gray
-    Write-Host "    Обязательно отметьте 'Add Python to PATH' при установке." -ForegroundColor Gray
+    Write-Err "Не удалось найти подходящий Python (нужен 3.10–3.13)."
+    Write-Host "    Если у вас установлен только Python 3.14+ — не страшно:" -ForegroundColor Gray
+    Write-Host "    установщик уже попытался поставить Python 3.12 автоматически." -ForegroundColor Gray
+    Write-Host "    Либо установите вручную с https://www.python.org/downloads/" -ForegroundColor Gray
+    Write-Host "    (обязательно отметьте 'Add Python to PATH') и запустите установку заново." -ForegroundColor Gray
     Exit-WithPause 1
 }
 Write-Ok "Python $($py.ver) найден: $($py.exe) $($py.arg)"
-
-# Предупреждение для Python 3.14+
-$minorVer = [int]($py.ver.Split(".")[1])
-if ($minorVer -ge 14) {
-    Write-Warn "Python $($py.ver) — очень новая версия"
-    Write-Host "    openai-whisper требует pkg_resources (удалён в setuptools 81+)." -ForegroundColor DarkGray
-    Write-Host "    Мы принудительно поставим setuptools<81, но если установка упадёт —" -ForegroundColor DarkGray
-    Write-Host "    установите Python 3.12 с https://www.python.org/downloads/" -ForegroundColor DarkGray
-}
 
 # ─── 2. Проверка ffmpeg (опционально) ──────────────────────────────
 Write-Step "Проверка ffmpeg..."

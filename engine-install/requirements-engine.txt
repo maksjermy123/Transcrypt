@@ -33,12 +33,14 @@ deep-translator==1.11.4
 # DOCX (python-docx), PDF-чтение (pypdf), PDF-рендер (reportlab),
 # PDF→DOCX (pdf2docx), DOCX→PDF при наличии MS Word (docx2pdf),
 # изображения (Pillow). Без них конвертер документов даёт ImportError.
+# Pillow 11.3.0 — первая версия с готовыми wheels для Python 3.14:
+# на 11.1.0 pip пытался собирать Pillow из исходников и падал без zlib.
 python-docx==1.1.2
 pypdf==5.1.0
 reportlab==4.2.5
 pdf2docx==0.5.8
 docx2pdf==0.1.8
-Pillow==11.1.0
+Pillow==11.3.0
 
 # torch тянется автоматически через openai-whisper. Фиксируем мин. версию
 # для воспроизводимости. CPU-only на macOS/Linux/Windows.
