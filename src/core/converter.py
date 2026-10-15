@@ -400,10 +400,10 @@ class Converter:
         import time
         import re
         
-        if not output_path:
-            base, ext = os.path.splitext(input_path)
-            output_path = f"{base}_enhanced{ext}"
-            
+        if not output_path or os.path.isdir(output_path) or not os.path.splitext(output_path)[1]:
+            # движок передаёт каталог вывода — строим имя файла сами
+            output_path = self._ensure_output_file_path(output_path, input_path, "_enhanced", ".mp3")
+
         # Ensure unique
         if os.path.exists(output_path):
             base_no_ext, ext = os.path.splitext(output_path)
@@ -411,7 +411,7 @@ class Converter:
             while os.path.exists(output_path):
                 output_path = f"{base_no_ext}_{counter}{ext}"
                 counter += 1
-        
+
         # Audio filter chain: remove noise, cut rumble below 200Hz, cut hiss above 3000Hz
         af_filters = "afftdn=nf=-25,highpass=f=200,lowpass=f=3000,volume=1.5"
         cmd = [self._ffmpeg(), "-y", "-i", input_path, "-af", af_filters, output_path]
@@ -480,6 +480,30 @@ class Converter:
             self.logger.error(f"Audio enhancement failed: {err_msg}")
             raise e
 
+    def _ensure_output_file_path(self, output_path, input_path, tag, default_ext):
+        """Приводит output_path к корректному ПУТИ ФАЙЛА.
+
+        Вызывающие могут передать каталог (движок передаёт OUTPUT_DIR)
+        или путь без расширения — строим внутри него имя файла из входа:
+        <имя_входа><tag><расширение>. Возвращает валидный путь файла.
+        """
+        if output_path and os.path.isdir(output_path):
+            d = output_path
+            output_path = None
+        else:
+            d = None
+        if output_path and not os.path.splitext(output_path)[1]:
+            # без расширения — считаем каталогом (существующим или нет)
+            d = output_path
+            output_path = None
+        if output_path:
+            return output_path
+        if not d:
+            d = os.path.dirname(input_path) or "."
+        base = os.path.splitext(os.path.basename(input_path))[0]
+        ext = os.path.splitext(input_path)[1] or default_ext
+        return os.path.join(d, f"{base}{tag}{ext}")
+
     def _probe_video_height(self, video_path):
         """Высота видео через ffprobe (для масштабирования шрифта субтитров)."""
         try:
@@ -510,10 +534,10 @@ class Converter:
         import time
         import re
         
-        if not output_path:
-            base, ext = os.path.splitext(video_path)
-            output_path = f"{base}_hardsub{ext}"
-        
+        if not output_path or os.path.isdir(output_path) or not os.path.splitext(output_path)[1]:
+            # движок передаёт каталог вывода — строим имя файла сами
+            output_path = self._ensure_output_file_path(output_path, video_path, "_hardsub", ".mp4")
+
         # Ensure unique
         if os.path.exists(output_path):
             base_no_ext, ext = os.path.splitext(output_path)

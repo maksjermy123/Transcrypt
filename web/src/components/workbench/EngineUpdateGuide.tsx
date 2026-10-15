@@ -24,7 +24,7 @@ import {
 import type { EngineHealth } from "@/lib/engine-bridge";
 
 /** Последняя версия движка, которую поддерживает сайт. */
-export const LATEST_ENGINE_VERSION = "1.2.1";
+export const LATEST_ENGINE_VERSION = "1.2.2";
 
 export type EngineUpdateReason = "no-jobs" | "no-queue" | "outdated";
 
@@ -109,7 +109,7 @@ const REASONS: Record<
   },
   outdated: {
     title: (v) => `Движок ${v || "1.2.0"} — доступно обновление до ${LATEST_ENGINE_VERSION}`,
-    why: "В 1.2.1 исправлено скачивание готовых файлов: если видео называлось по-русски, кнопка «Скачать» молча не срабатывала. Обновите движок той же командой установки — займёт 1–3 минуты.",
+    why: `В ${LATEST_ENGINE_VERSION} исправлено: скачивание готовых файлов с русскими названиями (кнопка «Скачать» молча не срабатывала), вшивание субтитров и очистка аудио падали с ошибкой ffmpeg. Обновите движок той же командой установки — займёт 1–3 минуты.`,
     tone: "sky",
   },
 };

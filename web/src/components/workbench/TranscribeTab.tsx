@@ -60,6 +60,9 @@ import { BatchPanel, type BatchItem } from "@/components/workbench/BatchPanel";
 type Phase = "idle" | "loading-engine" | "running" | "done" | "error";
 type Seg = { text: string; timestamp: [number, number | null] };
 
+/** Аудио/видео расширения — для drag&drop, когда браузер не дал MIME-тип (macOS). */
+const AV_EXT_RE = /\.(mp3|wav|m4a|m4b|aac|ogg|oga|opus|flac|wma|mp4|m4v|mkv|webm|mov|avi|flv|wmv|ts|3gp)$/i;
+
 /** Оценка скорости Whisper (во сколько раз быстрее реального времени) на CPU: [оптимистично, пессимистично] */
 const SPEED_FACTORS: Record<string, [number, number]> = {
   tiny: [12, 7],
@@ -165,8 +168,13 @@ export function TranscribeTab({
       e.preventDefault();
       setDragOver(false);
       const f = e.dataTransfer.files?.[0];
-      if (f && (f.type.startsWith("audio/") || f.type.startsWith("video/"))) {
+      if (!f) return;
+      // macOS иногда отдаёт пустой MIME-тип — доверяем и расширению
+      const t = (f.type || "").toLowerCase();
+      if (t.startsWith("audio/") || t.startsWith("video/") || AV_EXT_RE.test(f.name)) {
         handleFile(f);
+      } else {
+        setError("Это не похоже на аудио или видео — перетащите файл MP3, WAV, M4A, MP4, MKV, WebM или MOV");
       }
     },
     [handleFile]

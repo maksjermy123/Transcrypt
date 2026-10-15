@@ -43,6 +43,11 @@ const ACTIONS: { id: MediaAction; label: string; icon: React.ComponentType<{ cla
   { id: "hardsub", label: "Вшить субтитры", icon: Film, desc: "Hardsub: рендер субтитров прямо в кадры видео. Субтитры берутся с YouTube или генерируются через Whisper" },
 ];
 
+/** Аудио/видео расширения — для drag&drop, когда браузер не дал MIME-тип (macOS). */
+const AV_EXT_RE = /\.(mp3|wav|m4a|m4b|aac|ogg|oga|opus|flac|wma|mp4|m4v|mkv|webm|mov|avi|flv|wmv|ts|3gp)$/i;
+const VIDEO_EXT_RE = /\.(mp4|m4v|mkv|webm|mov|avi|flv|wmv|ts|3gp)$/i;
+const SUB_EXT_RE = /\.(srt|vtt)$/i;
+
 export function MediaTab() {
   const { engineServerOnline, selectedModel, engineServerHealth } = useOnboarding();
   const supportsJobs = !!engineServerHealth?.jobs;
@@ -65,6 +70,8 @@ export function MediaTab() {
   const [error, setError] = useState<string | null>(null);
   const [jobNote, setJobNote] = useState<string | null>(null);
   const [downloadError, setDownloadError] = useState<string | null>(null);
+  const [dragFileOver, setDragFileOver] = useState(false);
+  const [dragSubOver, setDragSubOver] = useState(false);
 
   /** Вытаскиваем имя файла из URL /api/download?file=/path/to/file.mp4 */
   function fileNameFromUrl(fileUrl: string): string {
@@ -249,6 +256,44 @@ export function MediaTab() {
     if (!f) return;
     setSubtitleFile(f);
     setSubtitleName(f.name);
+  }
+
+  // ─── Drag&drop: macOS часто отдаёт файлы с пустым MIME — доверяем и расширению ───
+  function dropMediaFile(e: React.DragEvent) {
+    e.preventDefault();
+    setDragFileOver(false);
+    const f = e.dataTransfer.files?.[0];
+    if (!f) return;
+    const t = (f.type || "").toLowerCase();
+    if (action === "clean_audio") {
+      const avOk = t.startsWith("audio/") || t.startsWith("video/") || AV_EXT_RE.test(f.name);
+      if (!avOk) {
+        setError("Перетащите аудио- или видео-файл (MP3, WAV, M4A, MP4, MKV…)");
+        return;
+      }
+    } else if (!(t.startsWith("video/") || VIDEO_EXT_RE.test(f.name))) {
+      setError("Для вшивания субтитров перетащите видео (MP4, MKV, WebM, MOV…)");
+      return;
+    }
+    setLocalFile(f);
+    setLocalFileName(f.name);
+    setResultFile(null);
+    setError(null);
+  }
+
+  function dropSubtitleFile(e: React.DragEvent) {
+    e.preventDefault();
+    setDragSubOver(false);
+    const f = e.dataTransfer.files?.[0];
+    if (!f) return;
+    const t = (f.type || "").toLowerCase();
+    if (!(t.startsWith("text/") || SUB_EXT_RE.test(f.name))) {
+      setError("Перетащите файл субтитров .srt или .vtt");
+      return;
+    }
+    setSubtitleFile(f);
+    setSubtitleName(f.name);
+    setError(null);
   }
 
   async function run() {
@@ -487,21 +532,31 @@ export function MediaTab() {
         <motion.div
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
+          onDragOver={(e) => {
+            e.preventDefault();
+            setDragFileOver(true);
+          }}
+          onDragLeave={() => setDragFileOver(false)}
+          onDrop={dropMediaFile}
           className="glass-card rounded-2xl p-5 mb-4"
         >
           <label className="text-xs text-muted-foreground mb-2 block">
-            {action === "clean_audio" ? "Аудио-файл (или используйте URL выше)" : "Видео-файл (или используйте URL выше)"}
+            {action === "clean_audio" ? "Аудио-файл (или используйте URL выше) — можно перетащить сюда" : "Видео-файл (или используйте URL выше) — можно перетащить сюда"}
           </label>
           {!localFile ? (
-            <label className="block border-2 border-dashed border-[#263147] rounded-xl p-6 text-center cursor-pointer hover:border-[#7c5bf5]/50 transition-colors">
+            <label className={`block border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors ${
+              dragFileOver ? "border-[#7c5bf5] bg-[#7c5bf5]/5" : "border-[#263147] hover:border-[#7c5bf5]/50"
+            }`}>
               <input
                 type="file"
                 accept={action === "clean_audio" ? "audio/*,video/*" : "video/*"}
                 hidden
                 onChange={pickLocalFile}
               />
-              <Upload className="w-6 h-6 text-muted-foreground mx-auto mb-2" />
-              <span className="text-sm text-foreground">Нажмите, чтобы выбрать файл</span>
+              <Upload className={`w-6 h-6 mx-auto mb-2 ${dragFileOver ? "text-[#7c5bf5]" : "text-muted-foreground"}`} />
+              <span className="text-sm text-foreground">
+                {dragFileOver ? "Отпустите файл здесь" : "Нажмите или перетащите файл"}
+              </span>
             </label>
           ) : (
             <div className="flex items-center gap-3">
@@ -526,21 +581,31 @@ export function MediaTab() {
         <motion.div
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
+          onDragOver={(e) => {
+            e.preventDefault();
+            setDragSubOver(true);
+          }}
+          onDragLeave={() => setDragSubOver(false)}
+          onDrop={dropSubtitleFile}
           className="glass-card rounded-2xl p-5 mb-4"
         >
           <label className="text-xs text-muted-foreground mb-2 block">
-            Файл субтитров (.srt или .vtt) — опционально
+            Файл субтитров (.srt или .vtt) — опционально, можно перетащить
           </label>
           {!subtitleFile ? (
-            <label className="block border-2 border-dashed border-[#263147] rounded-xl p-6 text-center cursor-pointer hover:border-[#7c5bf5]/50 transition-colors">
+            <label className={`block border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors ${
+              dragSubOver ? "border-[#7c5bf5] bg-[#7c5bf5]/5" : "border-[#263147] hover:border-[#7c5bf5]/50"
+            }`}>
               <input
                 type="file"
                 accept=".srt,.vtt,text/vtt,application/x-subrip"
                 hidden
                 onChange={pickSubtitleFile}
               />
-              <Film className="w-6 h-6 text-muted-foreground mx-auto mb-2" />
-              <span className="text-sm text-foreground">Загрузите .srt или .vtt</span>
+              <Film className={`w-6 h-6 mx-auto mb-2 ${dragSubOver ? "text-[#7c5bf5]" : "text-muted-foreground"}`} />
+              <span className="text-sm text-foreground">
+                {dragSubOver ? "Отпустите файл здесь" : "Загрузите .srt или .vtt"}
+              </span>
               <span className="block text-xs text-muted-foreground mt-1">
                 Если не указать, движок попробует скачать субтитры с YouTube (язык: {subLang}),
                 а если их нет — сгенерирует через Whisper.
@@ -749,7 +814,7 @@ export function MediaTab() {
               <ul className="text-xs text-amber-200/70 leading-relaxed list-disc pl-4 space-y-0.5 mb-3">
                 <li>Мы уже попробовали скачать файл напрямую — проверьте загрузки браузера.</li>
                 <li>Движок мог перезапуститься и удалить файл — запустите задачу заново.</li>
-                <li>Движок до 1.2.1 не умеет отдавать файлы с русскими названиями — обновите его (Настройки → «Доступно обновление движка»).</li>
+                <li>Движок до 1.2.2 не умеет отдавать файлы с русскими названиями — обновите его (Настройки → «Доступно обновление движка»).</li>
               </ul>
               <button
                 onClick={openDirect}

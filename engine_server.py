@@ -154,7 +154,7 @@ CURRENT_JOB = {"id": None, "worker": None}
 def _job_snapshot(job):
     """Копия задачи для отдачи клиенту и сохранения на диск (без служебных полей)."""
     snap = {
-        "job_id": job["id"],
+        "job_id": job.get("id") or job.get("job_id"),
         "type": job["type"],
         "status": job["status"],
         "progress": job.get("progress") or {},
@@ -213,6 +213,10 @@ def _load_jobs():
         with open(JOBS_FILE, "r", encoding="utf-8") as f:
             data = json.load(f) or {}
         for jid, j in data.items():
+            # записи на диске — снапшоты (job_id); в памяти ключ id обязателен:
+            # после перезапуска движка журнал старого формата не должен ломать
+            # /api/jobs и _save_jobs (KeyError 'id')
+            j["id"] = j.get("id") or j.get("job_id") or jid
             if j.get("status") in ("running", "queued"):
                 j["status"] = "error"
                 j["error"] = "Движок был перезапущен во время выполнения задачи"
@@ -733,7 +737,7 @@ class EngineHTTPRequestHandler(BaseHTTPRequestHandler):
 
         self.send_json({
             "status": "ok",
-            "version": "1.2.1",
+            "version": "1.2.2",
             "jobs": True,  # Job API: фоновые задачи, переживающие закрытие вкладки
             "queue": True,  # очереди задач + видимый статус «В очереди»
             "parallel_heavy": HEAVY_PARALLEL,  # сколько тяжёлых задач идёт одновременно

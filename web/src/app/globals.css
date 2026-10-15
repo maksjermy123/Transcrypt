@@ -106,6 +106,14 @@ html.light {
 html.light [class*="bg-[#1b2334]"]:not([class*="hover:bg-"]) { background-color: #e9edf5; }
 html.light [class*="bg-[#263147]"]:not([class*="hover:bg-"]) { background-color: #d9e0ec; }
 html.light [class*="bg-[#232c40]"]:not([class*="hover:bg-"]) { background-color: #d3dae9; }
+/* Кнопки с hover-парой («Копировать», «Отменить», режимы настроек…): guard выше
+   исключал их базу — в светлой теме оставался чёрный фон с чёрным текстом.
+   Перечисляем известные пары явно (правило ниже hover-правил по порядку,
+   но hover-селекторы срабатывают только при наведении). */
+html.light [class*="bg-[#1b2334]"][class*="hover:bg-[#263147]"] { background-color: #e9edf5; }
+html.light [class*="bg-[#1b2334]"][class*="hover:bg-[#232c40]"] { background-color: #e9edf5; }
+html.light [class*="bg-[#1b2334]"][class*="hover:bg-[#161d2e]"] { background-color: #e9edf5; }
+html.light [class*="bg-[#232c40]"][class*="hover:bg-"] { background-color: #d3dae9; }
 html.light [class*="bg-[#0b0f19]"] { background-color: #ffffff; }
 html.light [class*="bg-[#0b0f19]/85"] { background-color: rgba(248, 250, 253, 0.92); }
 html.light [class*="bg-[#0b0f19]/80"] { background-color: rgba(248, 250, 253, 0.9); }

@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
 import { THEME_BOOTSTRAP_SNIPPET } from "@/lib/theme";
+import { ThemeSync } from "@/components/ThemeSync";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -70,6 +71,7 @@ export default function RootLayout({
         {/* Тема до первой отрисовки — без мигания тёмным при включённой светлой */}
         <script dangerouslySetInnerHTML={{ __html: THEME_BOOTSTRAP_SNIPPET }} />
         {children}
+        <ThemeSync />
         <Toaster />
       </body>
     </html>
