@@ -60,6 +60,7 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from src.core.downloader import Downloader
+import yt_dlp
 from src.core.subtitles import parse_subtitles
 from src.core.engine import WhisperEngine
 from src.core.converter import Converter
@@ -759,11 +760,12 @@ class EngineHTTPRequestHandler(BaseHTTPRequestHandler):
 
         self.send_json({
             "status": "ok",
-            "version": "1.3.2",
+            "version": "1.3.3",
             "jobs": True,  # Job API: фоновые задачи, переживающие закрытие вкладки
             "queue": True,  # очереди задач + видимый статус «В очереди»
             "parallel_heavy": HEAVY_PARALLEL,  # сколько тяжёлых задач идёт одновременно
             "docs": docs_conversion_available(),  # конвертация Word ↔ PDF ↔ TXT (движок ≥ 1.3.0)
+            "ytdlp": yt_dlp.version.__version__,  # диагностика YouTube-скачивания (движок ≥ 1.3.3)
             "platform": sys.platform,
             "system_name": sys_name,
             "device": device_label,

@@ -13,8 +13,10 @@ setuptools<81
 # Whisper + зависимости (новая версия 20250625 — без pkg_resources в setup.py)
 openai-whisper==20250625
 
-# Скачивание медиа с YouTube/TikTok/Instagram с обходом блокировок
-yt-dlp==2026.7.4
+# Скачивание медиа с YouTube/TikTok/Instagram с обходом блокировок.
+# 2026.8.19 — свежий фикс: YouTube регулярно ломает старые версии yt-dlp,
+# при жалобах «yt-dlp не получил информацию» сначала поднимайте эту версию.
+yt-dlp==2026.8.19
 
 # ffmpeg-обёртка для Python (для медиа-операций)
 ffmpeg-python==0.2.0
