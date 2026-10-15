@@ -110,16 +110,39 @@ def format_ts_vtt(seconds: float) -> str:
 
 
 # ═══════════════════════════════════════════════════════════════
-#  Фоновые задачи (Job API, движок >= 1.1.0)
+#  Фоновые задачи (Job API, движок >= 1.1.0; очередь — >= 1.2.0)
 #
 #  Задача выполняется в отдельном потоке и переживает закрытие
 #  вкладки браузера: клиент создаёт задачу (POST /api/jobs),
 #  получает job_id и опрашивает состояние (GET /api/jobs/<id>).
 #  Журнал задач сохраняется на диск — результаты не пропадают
 #  даже после перезапуска движка.
+#
+#  Многозадачность (>= 1.2.0): задачи делятся на полосы.
+#   - heavy: транскрипция, конвертация, clean_audio, hardsub —
+#     до HEAVY_PARALLEL одновременно (1 на слабых машинах, 2 на мощных).
+#   - light: скачивание видео/аудио (yt-dlp, упор в сеть) —
+#     до 2 одновременно и независимо от heavy.
+#  Лишние задачи стоят в очереди (status "queued") и стартуют
+#  автоматически, когда освободится полоса.
 # ═══════════════════════════════════════════════════════════════
 
-TASK_LOCK = threading.Lock()  # одна тяжёлая задача одновременно
+CPU_THREADS = os.cpu_count() or 4
+HEAVY_PARALLEL = max(1, min(2, CPU_THREADS // 4))  # 4 ядра → 1, 8+ → 2
+LIGHT_PARALLEL = 2  # сетевые задачи почти не грузят CPU
+
+HEAVY_SEM = threading.BoundedSemaphore(HEAVY_PARALLEL)
+LIGHT_SEM = threading.BoundedSemaphore(LIGHT_PARALLEL)
+
+_LANE_SEMS = {"heavy": HEAVY_SEM, "light": LIGHT_SEM}
+
+
+def job_lane(jtype: str, params: dict) -> str:
+    """Полоса исполнения задачи: network-bound скачивания — light, остальное — heavy."""
+    if jtype == "media" and (params or {}).get("action") in ("download_video", "download_audio"):
+        return "light"
+    return "heavy"
+
 
 JOBS = {}                      # job_id -> job dict
 JOBS_LOCK = threading.Lock()
@@ -130,7 +153,7 @@ CURRENT_JOB = {"id": None, "worker": None}
 
 def _job_snapshot(job):
     """Копия задачи для отдачи клиенту и сохранения на диск (без служебных полей)."""
-    return {
+    snap = {
         "job_id": job["id"],
         "type": job["type"],
         "status": job["status"],
@@ -140,7 +163,36 @@ def _job_snapshot(job):
         "label": job.get("label", ""),
         "created_at": job.get("created_at"),
         "finished_at": job.get("finished_at"),
+        "lane": job.get("lane", "heavy"),
     }
+    qp = _queue_position(job)
+    if qp is not None:
+        snap["queue_position"] = qp
+    return snap
+
+
+def _queue_position(job):
+    """Позиция в очереди своей полосы (None — если задача не в очереди).
+
+    Внимание: вызывается из _job_snapshot, который уже часто выполняется
+    под JOBS_LOCK — поэтому лок здесь брать НЕЛЬЗЯ (дедлок, Lock не реентерабельный).
+    list(JOBS.values()) атомарен под GIL — чтение безопасно.
+    """
+    if job.get("status") != "queued":
+        return None
+    lane = job.get("lane", "heavy")
+    mine = job.get("created_at", 0)
+    try:
+        ahead = sum(
+            1
+            for j in list(JOBS.values())
+            if j.get("lane", "heavy") == lane
+            and j.get("status") in ("queued", "running")
+            and j.get("created_at", 0) < mine
+        )
+    except Exception:
+        return None
+    return ahead + 1
 
 
 def _save_jobs():
@@ -210,15 +262,35 @@ def make_job_logger(job):
 
 
 def run_job(job):
-    """Фоновый поток задачи: ждёт освобождения движка, выполняет, пишет результат."""
+    """Фоновый поток задачи: ждёт свободный слот своей полосы, выполняет, пишет результат.
+
+    Пока ждём — статус остаётся "queued" (клиент показывает «В очереди»).
+    """
     log = make_job_logger(job)
+    lane = job.get("lane", "heavy")
+    sem = _LANE_SEMS.get(lane, HEAVY_SEM)
     try:
-        job["status"] = "running"
-        job["started_at"] = time.time()
-        CURRENT_JOB["id"] = job["id"]
-        CURRENT_JOB["worker"] = job["worker"]
-        log(f"▶ Задача '{job['type']}' принята в фоновое выполнение", stage="Старт", percent=1)
-        with TASK_LOCK:
+        # Пытаемся занять слот сразу; если занято — честно показываем очередь
+        if not sem.acquire(timeout=0.3):
+            job["queued_at"] = time.time()
+            log(
+                f"⏳ Движок занят другой задачей — '{job['type']}' ожидает в очереди",
+                stage="В очереди",
+                percent=0,
+            )
+            sem.acquire()  # ждём своей очереди
+        try:
+            if job["status"] == "cancelled" or job["worker"].is_stop_requested():
+                # Отменили, пока стояли в очереди
+                job["status"] = "cancelled"
+                job["error"] = "Задача отменена пользователем (пока стояла в очереди)"
+                log("🛑 Задача отменена до запуска", stage="Отменено", percent=0)
+                return
+            job["status"] = "running"
+            job["started_at"] = time.time()
+            CURRENT_JOB["id"] = job["id"]
+            CURRENT_JOB["worker"] = job["worker"]
+            log(f"▶ Задача '{job['type']}' запущена", stage="Старт", percent=1)
             if job["worker"].is_stop_requested():
                 raise ValueError("Задача отменена пользователем")
             if job["type"] == "transcribe":
@@ -229,15 +301,22 @@ def run_job(job):
                 result = task_convert(job["params"], log, worker=job["worker"])
             else:
                 raise ValueError(f"Неизвестный тип задачи: {job['type']}")
-        job["result"] = result
-        job["status"] = "done"
-        log("✅ Задача завершена", stage="Готово", percent=100)
+            job["result"] = result
+            job["status"] = "done"
+            log("✅ Задача завершена", stage="Готово", percent=100)
+        finally:
+            sem.release()  # слот полосы всегда освобождается — даже при ошибке/отмене
     except Exception as e:
         import traceback
         traceback.print_exc()
-        job["status"] = "error"
+        cancelled = "отменена" in str(e).lower()
+        job["status"] = "cancelled" if cancelled else "error"
         job["error"] = str(e)
-        log(f"❌ Ошибка задачи: {e}", stage="Ошибка", percent=job.get("progress", {}).get("percent", 0))
+        log(
+            ("🛑 Задача отменена" if cancelled else f"❌ Ошибка задачи: {e}"),
+            stage="Отменено" if cancelled else "Ошибка",
+            percent=job.get("progress", {}).get("percent", 0),
+        )
     finally:
         job["finished_at"] = time.time()
         progress_state["active"] = False
@@ -654,8 +733,10 @@ class EngineHTTPRequestHandler(BaseHTTPRequestHandler):
 
         self.send_json({
             "status": "ok",
-            "version": "1.1.0",
+            "version": "1.2.0",
             "jobs": True,  # Job API: фоновые задачи, переживающие закрытие вкладки
+            "queue": True,  # очереди задач + видимый статус «В очереди»
+            "parallel_heavy": HEAVY_PARALLEL,  # сколько тяжёлых задач идёт одновременно
             "platform": sys.platform,
             "system_name": sys_name,
             "device": device_label,
@@ -741,7 +822,7 @@ class EngineHTTPRequestHandler(BaseHTTPRequestHandler):
         progress_state["active"] = True
         progress_state["log"] = []
         try:
-            with TASK_LOCK:
+            with _LANE_SEMS[job_lane("transcribe", data)]:
                 result = task_transcribe(data, log_progress)
         except ValueError as e:
             self.send_error_json(str(e), 400)
@@ -763,7 +844,7 @@ class EngineHTTPRequestHandler(BaseHTTPRequestHandler):
         progress_state["active"] = True
         progress_state["log"] = []
         try:
-            with TASK_LOCK:
+            with _LANE_SEMS[job_lane("media", data)]:
                 result = task_media(data, log_progress)
         except ValueError as e:
             self.send_error_json(str(e), 400)
@@ -785,7 +866,7 @@ class EngineHTTPRequestHandler(BaseHTTPRequestHandler):
         progress_state["active"] = True
         progress_state["log"] = []
         try:
-            with TASK_LOCK:
+            with _LANE_SEMS[job_lane("convert", data)]:
                 result = task_convert(data, log_progress)
         except ValueError as e:
             self.send_error_json(str(e), 400)
@@ -816,6 +897,7 @@ class EngineHTTPRequestHandler(BaseHTTPRequestHandler):
             "id": jid,
             "type": jtype,
             "params": params,
+            "lane": job_lane(jtype, params),
             "status": "queued",
             "progress": {"active": True, "task": jtype, "stage": "В очереди", "percent": 0, "eta": "", "log": []},
             "result": None,
@@ -854,7 +936,18 @@ class EngineHTTPRequestHandler(BaseHTTPRequestHandler):
         if not job:
             self.send_error_json("Задача не найдена", 404)
             return
-        if job["status"] in ("queued", "running"):
+        if job["status"] == "queued":
+            # Стояла в очереди — отменяем мгновенно, не дожидаясь запуска
+            job["status"] = "cancelled"
+            job["error"] = "Задача отменена пользователем (пока стояла в очереди)"
+            job["finished_at"] = time.time()
+            try:
+                job["worker"].request_stop()
+            except Exception:
+                pass
+            _save_jobs()
+            self.send_json({"status": "cancelled", "job_id": job_id})
+        elif job["status"] == "running":
             try:
                 job["worker"].request_stop()
             except Exception:

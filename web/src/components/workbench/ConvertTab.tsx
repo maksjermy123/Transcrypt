@@ -94,6 +94,7 @@ function ModeBtn({
 function MediaConverter() {
   const { engineServerOnline, engineServerHealth } = useOnboarding();
   const supportsJobs = !!engineServerHealth?.jobs;
+  const supportsQueue = !!engineServerHealth?.queue; // движок ≥ 1.2.0: очереди задач
   const [file, setFile] = useState<File | null>(null);
   const [target, setTarget] = useState("mp3");
   const [bitrate, setBitrate] = useState(192);
@@ -151,7 +152,7 @@ function MediaConverter() {
     (async () => {
       let outcome: Awaited<ReturnType<typeof resumeActiveJob>>;
       try {
-        outcome = await resumeActiveJob();
+        outcome = await resumeActiveJob("convert");
       } catch {
         restoreLastConvert();
         return;
@@ -161,24 +162,20 @@ function MediaConverter() {
         restoreLastConvert();
         return;
       }
-      // Задача другой вкладки (Транскрипция/Медиа) — не трогаем её
-      if (outcome.record.type !== "convert") {
-        restoreLastConvert();
-        return;
-      }
       if (outcome.state === "lost") {
-        clearActiveJob();
+        clearActiveJob("convert");
         setJobNote("Прошлая фоновая задача не найдена — движок перезапускался.");
         restoreLastConvert();
         return;
       }
       if (outcome.state === "error") {
-        clearActiveJob();
+        clearActiveJob("convert");
         setError(outcome.job.error || "Фоновая задача завершилась с ошибкой");
         return;
       }
       const rec = outcome.record;
       if (outcome.state === "done") {
+        clearActiveJob("convert"); // результат забрали — слот освобождаем
         const res = outcome.job.result as TaskResult;
         if (res?.file) {
           setResultFile(res.file);
@@ -195,11 +192,22 @@ function MediaConverter() {
       setProgressText("Переподключение к фоновой задаче…");
       setJobNote("Задача выполнялась в фоне — снова следим за ней.");
       try {
-        const res = await watchJobToCompletion<TaskResult>(rec.jobId, (p: EngineProgress) => {
-          setProgress(p.percent);
-          setProgressText(p.stage || "Конвертация…");
-          if (p.log?.length) setLog((l) => [...l.slice(-50), ...p.log.slice(-3)]);
-        });
+        const res = await watchJobToCompletion<TaskResult>(
+          rec.jobId,
+          (p: EngineProgress) => {
+            setProgress(p.percent);
+            setProgressText(p.stage || "Конвертация…");
+            setJobNote((n) =>
+              p.stage?.startsWith("В очереди")
+                ? "Задача стоит в очереди — движок выполняет другую задачу. Она начнётся автоматически: ничего не пропадёт."
+                : n?.startsWith("Задача стоит в очереди")
+                  ? null
+                  : n
+            );
+            if (p.log?.length) setLog((l) => [...l.slice(-50), ...p.log.slice(-3)]);
+          },
+          "convert"
+        );
         if (cancelled) return;
         if (res.status !== "success" || !res.file) {
           throw new Error(res.message || "Движок вернул ошибку");
@@ -236,7 +244,7 @@ function MediaConverter() {
   async function cancelRun() {
     setProgressText("Отменяем задачу…");
     try {
-      await cancelActiveJob();
+      await cancelActiveJob("convert");
     } catch {
       /* ignore */
     }
@@ -277,6 +285,13 @@ function MediaConverter() {
         const result = await convertViaEngine(filePath, target, (p: EngineProgress) => {
           setProgress(p.percent);
           setProgressText(p.stage || "Конвертация…");
+          setJobNote((n) =>
+            p.stage?.startsWith("В очереди")
+              ? "Задача стоит в очереди — движок выполняет другую задачу. Она начнётся автоматически: ничего не пропадёт, можно переключать вкладки."
+              : n?.startsWith("Задача стоит в очереди")
+                ? null
+                : n
+          );
           if (p.log?.length) {
             setLog((l) => [...l.slice(-50), ...p.log.slice(-3)]);
           }
@@ -365,33 +380,68 @@ function MediaConverter() {
       </div>
 
       {!file ? (
-        <div
-          onDragOver={(e) => e.preventDefault()}
-          onDrop={(e) => {
-            e.preventDefault();
-            const f = e.dataTransfer.files?.[0];
-            if (f) handleFile(f);
-          }}
-          onClick={() => inputRef.current?.click()}
-          className="glass-card rounded-2xl p-12 text-center cursor-pointer hover:border-[#7c5bf5]/50 transition-colors"
-        >
-          <input
-            ref={inputRef}
-            type="file"
-            accept="audio/*,video/*"
-            hidden
-            onChange={(e) => {
-              const f = e.target.files?.[0];
+        <div className="space-y-4">
+          <div
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => {
+              e.preventDefault();
+              const f = e.dataTransfer.files?.[0];
               if (f) handleFile(f);
             }}
-          />
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-[#7c5bf5]/15 mb-4">
-            <FileAudio className="w-8 h-8 text-[#7c5bf5]" />
+            onClick={() => inputRef.current?.click()}
+            className="glass-card rounded-2xl p-12 text-center cursor-pointer hover:border-[#7c5bf5]/50 transition-colors"
+          >
+            <input
+              ref={inputRef}
+              type="file"
+              accept="audio/*,video/*"
+              hidden
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) handleFile(f);
+              }}
+            />
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-[#7c5bf5]/15 mb-4">
+              <FileAudio className="w-8 h-8 text-[#7c5bf5]" />
+            </div>
+            <h3 className="font-semibold mb-1">Загрузите аудио или видео</h3>
+            <p className="text-sm text-muted-foreground">
+              MP3, WAV, M4A, MP4, MKV, WebM, MOV — до 500 МБ
+            </p>
           </div>
-          <h3 className="font-semibold mb-1">Загрузите аудио или видео</h3>
-          <p className="text-sm text-muted-foreground">
-            MP3, WAV, M4A, MP4, MKV, WebM, MOV — до 500 МБ
-          </p>
+
+          {/* Восстановленный результат фоновой конвертации — виден и без выбранного файла */}
+          {jobNote && !busy && (
+            <div className="glass-card rounded-2xl p-4 border border-[#7c5bf5]/30 flex items-start gap-3">
+              <History className="w-4 h-4 mt-0.5 text-[#a78bfa] flex-shrink-0" />
+              <span className="text-sm text-[#cfc2ff] flex-1">{jobNote}</span>
+              <button
+                onClick={() => setJobNote(null)}
+                className="p-0.5 rounded hover:bg-white/10 flex-shrink-0"
+                title="Скрыть"
+              >
+                <X className="w-4 h-4 text-muted-foreground" />
+              </button>
+            </div>
+          )}
+          {resultFile && !busy && (
+            <div className="glass-card rounded-2xl p-5 flex items-center justify-between">
+              <div className="text-sm">
+                <div className="flex items-center gap-2 font-medium">
+                  <Download className="w-4 h-4 text-emerald-500" />
+                  {resultName}
+                </div>
+                <div className="text-xs text-muted-foreground mt-0.5">Готово — файл ждёт на диске движка</div>
+              </div>
+              <button
+                onClick={download}
+                className="bg-emerald-500/15 text-emerald-400 px-4 py-2 rounded-lg font-medium inline-flex items-center gap-2 hover:bg-emerald-500/25"
+              >
+                <Download className="w-4 h-4" />
+                Скачать
+              </button>
+            </div>
+          )}
         </div>
       ) : (
         <div className="space-y-5">

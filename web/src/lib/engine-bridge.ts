@@ -28,9 +28,11 @@
  *   POST /api/jobs        — создать фоновую задачу → {job_id}
  *   GET  /api/jobs/<id>   — статус + прогресс + результат
  *   POST /api/jobs/<id>/cancel — отмена
- *   Активная задача хранится в localStorage (transcrypt.activeJob),
- *   поэтому при возврате на вкладку / перезагрузке страницы UI
- *   переподключается к задаче и забирает готовый результат.
+ *   Активные задачи хранятся в localStorage (transcrypt.activeJobs —
+ *   ОТДЕЛЬНАЯ запись на каждую вкладку: транскрипция, медиа, конвертер),
+ *   поэтому можно вести несколько задач параллельно/в очереди, а при
+ *   возврате на вкладку / перезагрузке страницы UI переподключается
+ *   к своей задаче и забирает готовый результат.
  *
  * CORS уже настроен в engine_server.py: Access-Control-Allow-Origin: *
  */
@@ -41,6 +43,8 @@ export type EngineHealth = {
   status: "ok" | "error";
   version?: string;
   jobs?: boolean; // Job API: фоновые задачи, переживающие закрытие вкладки (движок ≥ 1.1.0)
+  queue?: boolean; // очереди задач + параллельные полосы (движок ≥ 1.2.0)
+  parallel_heavy?: number; // сколько тяжёлых задач выполняется одновременно
   platform?: string;
   system_name?: string;
   device?: string;
@@ -297,7 +301,7 @@ export type EngineTaskType = "transcribe" | "media" | "convert";
 export type EngineJobState = {
   job_id: string;
   type: string;
-  status: "queued" | "running" | "done" | "error";
+  status: "queued" | "running" | "done" | "error" | "cancelled";
   progress?: {
     active?: boolean;
     task?: string;
@@ -311,6 +315,8 @@ export type EngineJobState = {
   label?: string;
   created_at?: number;
   finished_at?: number | null;
+  lane?: string;
+  queue_position?: number; // позиция в очереди (только для status === "queued")
 };
 
 export type ActiveJobRecord = {
@@ -321,28 +327,71 @@ export type ActiveJobRecord = {
   startedAt: number;
 };
 
-const ACTIVE_JOB_KEY = "transcrypt.activeJob";
+/**
+ * Активные задачи — по одной на вкладку (transcribe / media / convert),
+ * чтобы задачи на разных вкладках НЕ мешали друг другу и не затирали
+ * записи друг друга (старый единственный слот transcrypt.activeJob
+ * приводил к «слёту» задачи при старте новой на другой вкладке).
+ */
+const ACTIVE_JOBS_KEY = "transcrypt.activeJobs";
+const LEGACY_ACTIVE_JOB_KEY = "transcrypt.activeJob"; // single-slot до v9
 
-export function readActiveJob(): ActiveJobRecord | null {
+type ActiveJobMap = Partial<Record<EngineTaskType, ActiveJobRecord>>;
+
+function readActiveJobs(): ActiveJobMap {
   try {
-    const raw = localStorage.getItem(ACTIVE_JOB_KEY);
-    return raw ? (JSON.parse(raw) as ActiveJobRecord) : null;
+    const raw = localStorage.getItem(ACTIVE_JOBS_KEY);
+    if (raw) return JSON.parse(raw) as ActiveJobMap;
+    // Миграция со старого единственного слота — незавершённая задача
+    // не должна пропасть после обновления сайта
+    const legacy = localStorage.getItem(LEGACY_ACTIVE_JOB_KEY);
+    if (legacy) {
+      const rec = JSON.parse(legacy) as ActiveJobRecord;
+      if (rec?.jobId && rec?.type) {
+        const map: ActiveJobMap = { [rec.type]: rec };
+        localStorage.setItem(ACTIVE_JOBS_KEY, JSON.stringify(map));
+        localStorage.removeItem(LEGACY_ACTIVE_JOB_KEY);
+        return map;
+      }
+    }
+    return {};
   } catch {
-    return null;
+    return {};
   }
 }
 
-function writeActiveJob(rec: ActiveJobRecord | null) {
+function writeActiveJobs(map: ActiveJobMap) {
   try {
-    if (rec) localStorage.setItem(ACTIVE_JOB_KEY, JSON.stringify(rec));
-    else localStorage.removeItem(ACTIVE_JOB_KEY);
+    localStorage.setItem(ACTIVE_JOBS_KEY, JSON.stringify(map));
   } catch {
     /* ignore */
   }
 }
 
-export function clearActiveJob() {
-  writeActiveJob(null);
+export function readActiveJob(type: EngineTaskType): ActiveJobRecord | null {
+  return readActiveJobs()[type] || null;
+}
+
+function writeActiveJob(rec: ActiveJobRecord) {
+  const map = readActiveJobs();
+  map[rec.type] = rec;
+  writeActiveJobs(map);
+}
+
+export function clearActiveJob(type: EngineTaskType) {
+  const map = readActiveJobs();
+  if (!map[type]) return;
+  delete map[type];
+  writeActiveJobs(map);
+}
+
+/** Устаревший single-slot API для отладки (не используется вкладками) */
+export function readAnyActiveJob(): ActiveJobRecord | null {
+  const map = readActiveJobs();
+  for (const t of ["transcribe", "media", "convert"] as EngineTaskType[]) {
+    if (map[t]) return map[t];
+  }
+  return null;
 }
 
 async function startEngineJob(
@@ -413,8 +462,16 @@ function delayWithWake(ms: number): Promise<void> {
 
 async function watchEngineJob<T>(
   jobId: string,
-  onProgress?: (p: EngineProgress) => void
+  onProgress?: (p: EngineProgress) => void,
+  type?: EngineTaskType
 ): Promise<T> {
+  // Чистим свой слот только если в нём всё ещё ЭТА задача
+  // (в слоте того же типа могла оказаться более новая задача)
+  const clearOwnSlot = () => {
+    if (!type) return;
+    const cur = readActiveJob(type);
+    if (cur?.jobId === jobId) clearActiveJob(type);
+  };
   let firstOfflineAt = 0;
   for (;;) {
     const f = await getEngineJob(jobId);
@@ -422,34 +479,47 @@ async function watchEngineJob<T>(
       firstOfflineAt = 0;
       const j = f.job;
       const jp = j.progress || {};
+      let stage = jp.stage ?? "";
+      if (j.status === "queued" && !stage) stage = "В очереди";
+      if (
+        j.status === "queued" &&
+        typeof j.queue_position === "number" &&
+        j.queue_position > 1
+      ) {
+        stage += ` — впереди ещё ${j.queue_position - 1}`;
+      }
       onProgress?.({
         active: j.status === "queued" || j.status === "running",
         task: j.type || "",
-        stage: jp.stage ?? "",
+        stage,
         percent: typeof jp.percent === "number" ? jp.percent : 0,
         eta: jp.eta ?? "",
         log: jp.log ?? [],
       });
       if (j.status === "done") {
-        writeActiveJob(null);
+        clearOwnSlot();
         onProgress?.({ active: false, task: "", stage: "Готово", percent: 100, eta: "", log: [] });
         return j.result as T;
       }
       if (j.status === "error") {
-        writeActiveJob(null);
+        clearOwnSlot();
         throw new Error(j.error || "Задача завершилась с ошибкой");
+      }
+      if (j.status === "cancelled") {
+        clearOwnSlot();
+        throw new Error(j.error || "Задача отменена");
       }
       await delayWithWake(document.hidden ? 4000 : 700);
       continue;
     }
     if (f.kind === "notfound") {
-      writeActiveJob(null);
+      clearOwnSlot();
       throw new Error("Задача не найдена — движок перезапускался без сохранённого журнала");
     }
     // offline: движок мог перезапускаться — ждём, но не вечно
     if (!firstOfflineAt) firstOfflineAt = Date.now();
     if (Date.now() - firstOfflineAt > 120000) {
-      // Не чистим activeJob — задача могла дожить на движке, попробуем при следующем возврате
+      // Не чистим слот — задача могла дожить на движке, попробуем при следующем возврате
       throw new Error("Движок недоступен дольше 2 минут — задача продолжает выполняться локально, проверьте соединение и вернитесь на вкладку");
     }
     await delayWithWake(document.hidden ? 8000 : 2000);
@@ -479,7 +549,7 @@ async function runEngineTask<T>(opts: {
     label: opts.label,
     startedAt: Date.now(),
   });
-  return await watchEngineJob<T>(jobId, opts.onProgress);
+  return await watchEngineJob<T>(jobId, opts.onProgress, opts.type);
 }
 
 export type ResumeOutcome =
@@ -491,19 +561,22 @@ export type ResumeOutcome =
   | { state: "running"; record: ActiveJobRecord; job: EngineJobState };
 
 /**
- * Проверяет незавершённую фоновую задачу из localStorage.
+ * Проверяет незавершённую фоновую задачу ЭТОЙ вкладки (по типу) из localStorage.
  * Вызывается при монтировании вкладки — покрывает и переключение
  * вкладок внутри приложения, и перезагрузку/выгрузку страницы браузером.
+ * Благодаря раздельным слотам вкладка видит ТОЛЬКО свою задачу:
+ * задачи других вкладок не мешают и не затираются.
  */
-export async function resumeActiveJob(): Promise<ResumeOutcome> {
-  const rec = readActiveJob();
+export async function resumeActiveJob(type: EngineTaskType): Promise<ResumeOutcome> {
+  const rec = readActiveJob(type);
   if (!rec) return { state: "none" };
   const f = await getEngineJob(rec.jobId);
   if (f.kind === "offline") return { state: "offline", record: rec };
   if (f.kind === "notfound") return { state: "lost", record: rec };
   const j = f.job;
   if (j.status === "done") return { state: "done", record: rec, job: j };
-  if (j.status === "error") return { state: "error", record: rec, job: j };
+  if (j.status === "error" || j.status === "cancelled")
+    return { state: "error", record: rec, job: j };
   return { state: "running", record: rec, job: j };
 }
 
@@ -512,22 +585,24 @@ export async function resumeActiveJob(): Promise<ResumeOutcome> {
  */
 export async function watchJobToCompletion<T>(
   jobId: string,
-  onProgress?: (p: EngineProgress) => void
+  onProgress?: (p: EngineProgress) => void,
+  type?: EngineTaskType
 ): Promise<T> {
-  return watchEngineJob<T>(jobId, onProgress);
+  return watchEngineJob<T>(jobId, onProgress, type);
 }
 
 /**
- * Отменяет активную задачу: Job API, а для старых движков — legacy /api/stop.
+ * Отменяет задачу своей вкладки (по типу): Job API, а для старых движков — legacy /api/stop.
  */
-export async function cancelActiveJob(): Promise<void> {
-  const rec = readActiveJob();
+export async function cancelActiveJob(type: EngineTaskType): Promise<void> {
+  const rec = readActiveJob(type);
   if (rec) {
     try {
       await fetch(
         `${ENGINE_URL}/api/jobs/${encodeURIComponent(rec.jobId)}/cancel`,
         { method: "POST" }
       );
+      clearActiveJob(type);
       return;
     } catch {
       /* движок недоступен — пробуем legacy */

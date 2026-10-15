@@ -44,6 +44,7 @@ const ACTIONS: { id: MediaAction; label: string; icon: React.ComponentType<{ cla
 export function MediaTab() {
   const { engineServerOnline, selectedModel, engineServerHealth } = useOnboarding();
   const supportsJobs = !!engineServerHealth?.jobs;
+  const supportsQueue = !!engineServerHealth?.queue; // движок ≥ 1.2.0: очереди задач
   const [action, setAction] = useState<MediaAction>("download_video");
   const [url, setUrl] = useState("");
   const [localFile, setLocalFile] = useState<File | null>(null);
@@ -106,7 +107,7 @@ export function MediaTab() {
     (async () => {
       let outcome: Awaited<ReturnType<typeof resumeActiveJob>>;
       try {
-        outcome = await resumeActiveJob();
+        outcome = await resumeActiveJob("media");
       } catch {
         restoreLastMedia();
         return;
@@ -116,25 +117,21 @@ export function MediaTab() {
         restoreLastMedia();
         return;
       }
-      // Задача другой вкладки (Транскрипция/Конвертер) — не трогаем её
-      if (outcome.record.type !== "media") {
-        restoreLastMedia();
-        return;
-      }
       if (outcome.state === "lost") {
-        clearActiveJob();
+        clearActiveJob("media");
         setJobNote("Прошлая фоновая задача не найдена — движок перезапускался.");
         restoreLastMedia();
         return;
       }
       if (outcome.state === "error") {
-        clearActiveJob();
+        clearActiveJob("media");
         setError(outcome.job.error || "Фоновая задача завершилась с ошибкой");
         setPhase("error");
         return;
       }
       const rec = outcome.record;
       if (outcome.state === "done") {
+        clearActiveJob("media"); // результат забрали — слот освобождаем
         const res = outcome.job.result as TaskResult;
         if (res?.file) {
           setResultFile(res.file);
@@ -153,11 +150,22 @@ export function MediaTab() {
       setProgressText("Переподключение к фоновой задаче…");
       setJobNote("Задача выполнялась в фоне — снова следим за ней.");
       try {
-        const res = await watchJobToCompletion<TaskResult>(rec.jobId, (p: EngineProgress) => {
-          setProgress(p.percent);
-          setProgressText(p.stage || "Обработка…");
-          if (p.log?.length) setProgressLog((l) => [...l.slice(-50), ...p.log.slice(-3)]);
-        });
+        const res = await watchJobToCompletion<TaskResult>(
+          rec.jobId,
+          (p: EngineProgress) => {
+            setProgress(p.percent);
+            setProgressText(p.stage || "Обработка…");
+            setJobNote((n) =>
+              p.stage?.startsWith("В очереди")
+                ? "Задача стоит в очереди — движок выполняет другую задачу (например, транскрипцию). Она начнётся автоматически: ничего не пропадёт."
+                : n?.startsWith("Задача стоит в очереди")
+                  ? null
+                  : n
+            );
+            if (p.log?.length) setProgressLog((l) => [...l.slice(-50), ...p.log.slice(-3)]);
+          },
+          "media"
+        );
         if (cancelled) return;
         if (res.status !== "success" || !res.file) {
           throw new Error(res.message || "Движок вернул ошибку");
@@ -193,7 +201,7 @@ export function MediaTab() {
   async function cancelRun() {
     setProgressText("Отменяем задачу…");
     try {
-      await cancelActiveJob();
+      await cancelActiveJob("media");
     } catch {
       /* ignore */
     }
@@ -286,6 +294,13 @@ export function MediaTab() {
         (p: EngineProgress) => {
           setProgress(p.percent);
           setProgressText(p.stage || "Обработка…");
+          setJobNote((n) =>
+            p.stage?.startsWith("В очереди")
+              ? "Задача стоит в очереди — движок выполняет другую задачу (например, транскрипцию). Она начнётся автоматически: ничего не пропадёт, можно переключать вкладки."
+              : n?.startsWith("Задача стоит в очереди")
+                ? null
+                : n
+          );
           if (p.log?.length) {
             setProgressLog((l) => [...l.slice(-50), ...p.log.slice(-3)]);
           }
@@ -644,7 +659,9 @@ export function MediaTab() {
           <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
             <span className="text-xs text-emerald-300/90 inline-flex items-center gap-1.5">
               {supportsJobs
-                ? "Задача выполняется на движке: можно переключать вкладки или закрыть браузер — файл дождётся вас здесь."
+                ? supportsQueue
+                  ? "Задача идёт на движке: можно переключать вкладки и запускать задачи в других разделах — они пойдут параллельно или встанут в очередь, ничего не пропадёт."
+                  : "Задача выполняется на движке: можно переключать вкладки или закрыть браузер — файл дождётся вас здесь."
                 : "Задача идёт в этой вкладке — не закрывайте её. Обновите движок, чтобы задачи выполнялись в фоне."}
             </span>
             <button

@@ -105,6 +105,7 @@ export function TranscribeTab({
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   // Фоновые задачи (Job API): статус поддержки движком + заметка восстановления
   const supportsJobs = !!engineServerHealth?.jobs;
+  const supportsQueue = !!engineServerHealth?.queue; // движок ≥ 1.2.0: очереди + параллельные полосы
   const [jobNote, setJobNote] = useState<string | null>(null);
   const cancelledRef = useRef(false);
 
@@ -235,6 +236,13 @@ export function TranscribeTab({
           (p: EngineProgress) => {
             setProgress(p.percent);
             setProgressText(p.stage || "");
+            setJobNote((n) =>
+              p.stage?.startsWith("В очереди")
+                ? "Задача стоит в очереди — движок выполняет другую задачу. Она начнётся автоматически: ничего не пропадёт, можно спокойно переключать вкладки."
+                : n?.startsWith("Задача стоит в очереди")
+                  ? null
+                  : n
+            );
             if (p.log?.length) {
               setProgressLog((l) => [...l.slice(-50), ...p.log.slice(-3)]);
             }
@@ -490,7 +498,7 @@ export function TranscribeTab({
     (async () => {
       let outcome: Awaited<ReturnType<typeof resumeActiveJob>> | null = null;
       try {
-        outcome = await resumeActiveJob();
+        outcome = await resumeActiveJob("transcribe");
       } catch {
         outcome = null;
       }
@@ -507,19 +515,14 @@ export function TranscribeTab({
         restoreLastResult();
         return;
       }
-      // Задача другой вкладки (Медиа/Конвертер) — её подхватит соответствующая вкладка
-      if (outcome.record.type !== "transcribe") {
-        restoreLastResult();
-        return;
-      }
       if (outcome.state === "lost") {
-        clearActiveJob();
+        clearActiveJob("transcribe");
         setJobNote("Прошлая фоновая задача не найдена — движок перезапускался без журнала задач.");
         restoreLastResult();
         return;
       }
       if (outcome.state === "error") {
-        clearActiveJob();
+        clearActiveJob("transcribe");
         setError(outcome.job.error || "Фоновая задача завершилась с ошибкой");
         setPhase("error");
         return;
@@ -531,6 +534,7 @@ export function TranscribeTab({
         setMode("url");
       }
       if (outcome.state === "done") {
+        clearActiveJob("transcribe"); // результат забрали — слот освобождаем
         setJobNote("Фоновая задача завершилась, пока вас не было — вот её результат.");
         try {
           await applyEngineResult(outcome.job.result as TranscribeResult, {
@@ -551,11 +555,22 @@ export function TranscribeTab({
       setProgressText("Переподключение к фоновой задаче…");
       setJobNote("Задача выполнялась в фоне — снова следим за ней. Пока вас не было, движок продолжал работать.");
       try {
-        const result = await watchJobToCompletion<TranscribeResult>(rec.jobId, (pp: EngineProgress) => {
-          setProgress(pp.percent);
-          setProgressText(pp.stage || "");
-          if (pp.log?.length) setProgressLog((l) => [...l.slice(-50), ...pp.log.slice(-3)]);
-        });
+        const result = await watchJobToCompletion<TranscribeResult>(
+          rec.jobId,
+          (pp: EngineProgress) => {
+            setProgress(pp.percent);
+            setProgressText(pp.stage || "");
+            setJobNote((n) =>
+              pp.stage?.startsWith("В очереди")
+                ? "Задача стоит в очереди — движок выполняет другую задачу. Она начнётся автоматически: ничего не пропадёт."
+                : n?.startsWith("Задача стоит в очереди")
+                  ? null
+                  : n
+            );
+            if (pp.log?.length) setProgressLog((l) => [...l.slice(-50), ...pp.log.slice(-3)]);
+          },
+          "transcribe"
+        );
         if (cancelled || cancelledRef.current) return;
         await applyEngineResult(result, { label: rec.label, targetLangOverride: pref });
       } catch (e: any) {
@@ -585,7 +600,7 @@ export function TranscribeTab({
     cancelledRef.current = true;
     setProgressText("Отменяем задачу…");
     try {
-      await cancelActiveJob();
+      await cancelActiveJob("transcribe");
     } catch {
       /* ignore */
     }
@@ -766,7 +781,9 @@ export function TranscribeTab({
           <span className="text-xs text-emerald-300/90 inline-flex items-center gap-1.5">
             <Server className="w-3.5 h-3.5 flex-shrink-0" />
             {supportsJobs
-              ? "Задача выполняется на движке: можно переключать вкладки или закрыть браузер — результат дождётся вас здесь."
+              ? supportsQueue
+                ? "Задача идёт на движке: можно переключать вкладки и запускать задачи в других разделах — они пойдут параллельно или встанут в очередь, ничего не пропадёт."
+                : "Задача выполняется на движке: можно переключать вкладки или закрыть браузер — результат дождётся вас здесь."
               : "Задача идёт в этой вкладке — не закрывайте её. Обновите движок, чтобы задачи выполнялись в фоне."}
           </span>
           <button
@@ -985,7 +1002,7 @@ export function TranscribeTab({
         </div>
       )}
 
-      {/* Старый движок без Job API — предлагаем обновить */}
+      {/* Старый движок без Job API / без очереди — предлагаем обновить */}
       {engineServerOnline && engineServerHealth && !supportsJobs && (
         <div className="mb-5 p-3 rounded-xl border border-amber-500/30 bg-amber-500/5 text-sm text-amber-200 flex items-start gap-3">
           <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
@@ -995,6 +1012,27 @@ export function TranscribeTab({
             </p>
             <p className="text-xs text-amber-200/80 mt-1 leading-relaxed">
               Обновите движок той же командой установки — профиль, модели и настройки сохранятся. После обновления задачи выполняются в фоне: результат ждёт вас даже после закрытия браузера.
+            </p>
+          </div>
+          {onInstallEngine && (
+            <button
+              onClick={onInstallEngine}
+              className="bg-gradient-primary text-white px-3 py-1.5 rounded-lg text-xs font-medium hover:opacity-90 flex-shrink-0"
+            >
+              Обновить движок
+            </button>
+          )}
+        </div>
+      )}
+      {engineServerOnline && engineServerHealth && supportsJobs && !supportsQueue && (
+        <div className="mb-5 p-3 rounded-xl border border-sky-500/30 bg-sky-500/5 text-sm text-sky-200 flex items-start gap-3">
+          <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="font-medium">
+              Движок {engineServerHealth.version || "1.1.0"} — без очереди задач
+            </p>
+            <p className="text-xs text-sky-200/80 mt-1 leading-relaxed">
+              Обновите движок той же командой установки — задачи на разных вкладках перестанут мешать друг другу: лишние встанут в очередь, а на мощном компьютере тяжёлые задачи пойдут параллельно.
             </p>
           </div>
           {onInstallEngine && (
