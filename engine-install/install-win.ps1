@@ -284,12 +284,19 @@ if (-not (Test-Path $VenvDir)) {
 }
 
 # ─── 7. Установка зависимостей ────────────────────────────────────
-Write-Step "Установка зависимостей (это займёт несколько минут при первом запуске)..."
-& $venvPip install --upgrade pip --quiet
+Write-Step "Установка зависимостей (2-10 минут при первом запуске)..."
+Write-Host "    Окно может «молчать» несколько минут — качаются torch/whisper (~500 МБ)." -ForegroundColor DarkGray
+Write-Host "    Не закрывайте его: когда всё готово, появится [OK] Зависимости установлены." -ForegroundColor DarkGray
+# pip обновляем через «python -m pip»: из pip.exe на Windows pip не может
+# заменить сам себя (файл занят запущенным процессом) и печатает пугающую
+# «ERROR: To modify pip, please run the following command...». python.exe
+# сам не заменяется, поэтому обновление проходит тихо и без ошибок.
+& $venvPython -m pip install --upgrade pip --quiet
 # ВАЖНО: сначала отдельно setuptools<81, потом остальные пакеты.
 # openai-whisper требует pkg_resources (удалён в setuptools 81+).
-& $venvPip install "setuptools<81" --quiet
-& $venvPip install -r $RequirementsFile --quiet --no-cache-dir
+& $venvPython -m pip install "setuptools<81" --quiet
+# БЕЗ --quiet: пусть виден прогресс скачивания — тишина выглядит как зависание.
+& $venvPython -m pip install -r $RequirementsFile --no-cache-dir
 if ($LASTEXITCODE -ne 0) {
     Write-Err "Ошибка установки зависимостей"
     Write-Host ""
