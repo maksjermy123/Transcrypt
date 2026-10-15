@@ -6,7 +6,7 @@ import {
   Download,
   Trash2,
   Loader2,
-  FileArchive,
+  FileText,
   Image as ImageIcon,
   FileAudio,
   Settings2,
@@ -51,19 +51,19 @@ export function ConvertTab() {
       <div className="mb-8">
         <h1 className="text-2xl font-bold mb-1">Конвертер</h1>
         <p className="text-sm text-muted-foreground">
-          Медиа (через локальный ffmpeg, если движок запущен — иначе ffmpeg.wasm), изображения (Canvas), текстовые файлы.
+          Медиа (через локальный ffmpeg, если движок запущен — иначе ffmpeg.wasm), изображения (Canvas), документы Word ↔ PDF ↔ TXT.
         </p>
       </div>
 
       <div className="flex gap-2 mb-6 flex-wrap">
         <ModeBtn active={mode === "media"} onClick={() => setMode("media")} icon={FileAudio} label="Медиа" />
         <ModeBtn active={mode === "image"} onClick={() => setMode("image")} icon={ImageIcon} label="Изображения" />
-        <ModeBtn active={mode === "text"} onClick={() => setMode("text")} icon={FileArchive} label="Текст" />
+        <ModeBtn active={mode === "text"} onClick={() => setMode("text")} icon={FileText} label="Документы" />
       </div>
 
       {mode === "media" && <MediaConverter />}
       {mode === "image" && <ImageConverter />}
-      {mode === "text" && <TextConverter />}
+      {mode === "text" && <DocConverter />}
     </div>
   );
 }
@@ -848,60 +848,395 @@ function ImageConverter() {
   );
 }
 
-function TextConverter() {
+// ═══════════════════════════════════════════════════════════════
+//  Документы: Word ↔ PDF ↔ TXT ↔ RTF/ODT — через локальный движок (≥ 1.3.0).
+//  Фикс «крякозябр»: docx/pdf больше не читаются как UTF-8 в браузере,
+//  а текстовые файлы декодируются умно (UTF-8 → Windows-1251 → KOI8-R).
+//  Текст-в-текст (txt/md/csv/json) работает даже без движка.
+// ═══════════════════════════════════════════════════════════════
+
+const DOC_ACCEPT = ".docx,.doc,.pdf,.txt,.md,.csv,.rtf,.odt";
+
+type DocKind = "word" | "pdf" | "text";
+
+function docKindOf(filename: string): DocKind | null {
+  const ext = filename.split(".").pop()?.toLowerCase() ?? "";
+  if (["docx", "doc", "rtf", "odt"].includes(ext)) return "word";
+  if (ext === "pdf") return "pdf";
+  if (["txt", "md", "csv", "json"].includes(ext)) return "text";
+  return null;
+}
+
+/** Целевые форматы по типу входного файла; engine: true — нужна локальная конвертация на движке */
+const DOC_TARGETS: Record<DocKind, { ext: string; label: string; engine: boolean }[]> = {
+  word: [
+    { ext: "docx", label: ".docx — Word", engine: true },
+    { ext: "pdf", label: ".pdf — PDF", engine: true },
+    { ext: "txt", label: ".txt — текст (UTF-8)", engine: true },
+    { ext: "rtf", label: ".rtf — Rich Text", engine: true },
+    { ext: "odt", label: ".odt — OpenDocument", engine: true },
+  ],
+  pdf: [
+    { ext: "docx", label: ".docx — Word", engine: true },
+    { ext: "txt", label: ".txt — текст (UTF-8)", engine: true },
+  ],
+  text: [
+    { ext: "txt", label: ".txt — текст (исправит кодировку на UTF-8)", engine: false },
+    { ext: "pdf", label: ".pdf — PDF", engine: true },
+    { ext: "docx", label: ".docx — Word", engine: true },
+    { ext: "md", label: ".md — Markdown", engine: false },
+    { ext: "csv", label: ".csv — как есть", engine: false },
+    { ext: "json", label: ".json — форматированный JSON", engine: false },
+  ],
+};
+
+/**
+ * Умное чтение текстового файла в браузере: UTF-8 (строгий) → Windows-1251 → KOI8-R.
+ * Именно f.text() (жёсткий UTF-8) раньше превращал файлы из русской Windows
+ * в «крякозябры» ещё до отправки на движок.
+ */
+async function decodeTextFile(f: File): Promise<{ text: string; encoding: string }> {
+  const buf = await f.arrayBuffer();
+  const b = new Uint8Array(buf);
+  if (b[0] === 0xff && b[1] === 0xfe)
+    return { text: new TextDecoder("utf-16le").decode(buf), encoding: "UTF-16 LE (BOM)" };
+  if (b[0] === 0xfe && b[1] === 0xff)
+    return { text: new TextDecoder("utf-16be").decode(buf), encoding: "UTF-16 BE (BOM)" };
+  if (b[0] === 0xef && b[1] === 0xbb && b[2] === 0xbf)
+    return { text: new TextDecoder("utf-8").decode(buf), encoding: "UTF-8 (BOM)" };
+  const tries: [string, string][] = [
+    ["utf-8", "UTF-8"],
+    ["windows-1251", "Windows-1251"],
+    ["koi8-r", "KOI8-R"],
+  ];
+  for (const [enc, label] of tries) {
+    try {
+      return { text: new TextDecoder(enc, { fatal: true }).decode(buf), encoding: label };
+    } catch {
+      /* пробуем следующую кодировку */
+    }
+  }
+  return { text: new TextDecoder("utf-8").decode(buf), encoding: "UTF-8 (с заменами)" };
+}
+
+function DocConverter() {
+  const { engineServerOnline, engineServerHealth } = useOnboarding();
+  const supportsJobs = !!engineServerHealth?.jobs;
   const [file, setFile] = useState<File | null>(null);
-  const [content, setContent] = useState("");
-  const [target, setTarget] = useState<"txt" | "md" | "json" | "csv">("txt");
+  const [target, setTarget] = useState("txt");
   const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<{ name: string; sizeKB: number; blob: Blob } | null>(null);
+  const [progress, setProgress] = useState(0);
+  const [progressText, setProgressText] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [jobNote, setJobNote] = useState<string | null>(null);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
+  const [resultFile, setResultFile] = useState<string | null>(null);
+  const [resultName, setResultName] = useState("");
+  const [localResult, setLocalResult] = useState<{ name: string; sizeKB: number; blob: Blob } | null>(null);
+  const [preview, setPreview] = useState<{ text: string; encoding: string } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  /** Вытаскиваем имя файла из URL /api/download?file=... */
+  function fileNameFromUrl(fileUrl: string, fallback: string): string {
+    try {
+      const u = new URL(fileUrl.startsWith("http") ? fileUrl : `http://x${fileUrl}`);
+      const fp = u.searchParams.get("file") || u.pathname;
+      return decodeURIComponent(fp.split("/").pop() || fallback);
+    } catch {
+      return fallback;
+    }
+  }
+
+  function persistLastDoc(fileUrl: string, fname: string) {
+    try {
+      localStorage.setItem(
+        "transcrypt.lastConvert",
+        JSON.stringify({ at: Date.now(), file: fileUrl, name: fname })
+      );
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function restoreLastDoc() {
+    try {
+      const raw = localStorage.getItem("transcrypt.lastConvert");
+      if (!raw) return;
+      const r = JSON.parse(raw);
+      if (!r?.file) return;
+      setResultFile(r.file);
+      setResultName(r.name || "output");
+      const when = r.at ? new Date(r.at).toLocaleString() : "";
+      setJobNote(`Восстановлен последний готовый файл${when ? ` (от ${when})` : ""}.`);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  // ═══ Восстановление фоновой задачи при возврате на вкладку ═══
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      let outcome: Awaited<ReturnType<typeof resumeActiveJob>>;
+      try {
+        outcome = await resumeActiveJob("convert");
+      } catch {
+        restoreLastDoc();
+        return;
+      }
+      if (cancelled) return;
+      if (outcome.state === "none" || outcome.state === "offline") {
+        restoreLastDoc();
+        return;
+      }
+      if (outcome.state === "lost") {
+        clearActiveJob("convert");
+        setJobNote("Прошлая фоновая задача не найдена — движок перезапускался.");
+        restoreLastDoc();
+        return;
+      }
+      if (outcome.state === "error") {
+        clearActiveJob("convert");
+        setError(outcome.job.error || "Фоновая задача завершилась с ошибкой");
+        return;
+      }
+      if (outcome.state === "done") {
+        clearActiveJob("convert"); // результат забрали — слот освобождаем
+        const res = outcome.job.result as TaskResult;
+        if (res?.file) {
+          setResultFile(res.file);
+          setResultName(fileNameFromUrl(res.file, "output"));
+          setJobNote("Фоновая конвертация завершилась, пока вас не было — файл готов.");
+        } else {
+          setJobNote(res?.message || "Фоновая задача завершилась.");
+        }
+        return;
+      }
+      // running — переподключаемся к фоновой задаче
+      setBusy(true);
+      setProgress(1);
+      setProgressText("Переподключение к фоновой задаче…");
+      setJobNote("Задача выполнялась в фоне — снова следим за ней.");
+      try {
+        const res = await watchJobToCompletion<TaskResult>(
+          outcome.record.jobId,
+          (p: EngineProgress) => {
+            setProgress(p.percent);
+            setProgressText(p.stage || "Конвертация…");
+          },
+          "convert"
+        );
+        if (cancelled) return;
+        if (res.status !== "success" || !res.file) {
+          throw new Error(res.message || "Движок вернул ошибку");
+        }
+        clearActiveJob("convert");
+        const fname = fileNameFromUrl(res.file, "output");
+        setResultFile(res.file);
+        setResultName(fname);
+        setProgress(100);
+        setProgressText("Готово");
+        persistLastDoc(res.file, fname);
+      } catch (e: any) {
+        if (cancelled) return;
+        setError(e?.message ?? "Ошибка фоновой задачи");
+      } finally {
+        if (!cancelled) setBusy(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Предупреждение при закрытии/обновлении страницы во время задачи
+  useEffect(() => {
+    if (!busy) return;
+    const h = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", h);
+    return () => window.removeEventListener("beforeunload", h);
+  }, [busy]);
 
   async function handleFile(f: File) {
     setFile(f);
-    setResult(null);
-    const text = await f.text();
-    setContent(text);
+    setError(null);
+    setLocalResult(null);
+    setResultFile(null);
+    setDownloadError(null);
+    setJobNote(null);
+    setProgress(0);
+    setProgressText("");
+    const kind = docKindOf(f.name);
+    if (kind) setTarget(DOC_TARGETS[kind][0].ext);
+    if (kind === "text") {
+      try {
+        const dec = await decodeTextFile(f);
+        setPreview({ text: dec.text.slice(0, 4000), encoding: dec.encoding });
+      } catch {
+        setPreview(null);
+      }
+    } else {
+      setPreview(null);
+    }
   }
 
   async function convert() {
     if (!file) return;
+    const kind = docKindOf(file.name);
+    if (!kind) {
+      setError("Неподдерживаемый формат файла. Возьмите DOCX, DOC, PDF, TXT, MD, CSV, RTF или ODT.");
+      return;
+    }
+    const spec = DOC_TARGETS[kind].find((x) => x.ext === target);
     setBusy(true);
+    setError(null);
+    setLocalResult(null);
+    setResultFile(null);
+    setProgress(0);
+    setJobNote(null);
+
     try {
-      let out = content;
-      if (target === "json") {
-        try {
-          JSON.parse(content);
-          out = JSON.stringify(JSON.parse(content), null, 2);
-        } catch {
-          out = JSON.stringify({ content }, null, 2);
+      // ── Локальные текст-преобразования: работают даже без движка ──
+      if (spec && !spec.engine) {
+        setProgressText("Читаем файл…");
+        setProgress(30);
+        const { text } = await decodeTextFile(file);
+        let out = text;
+        if (target === "json") {
+          try {
+            out = JSON.stringify(JSON.parse(text), null, 2);
+          } catch {
+            out = JSON.stringify({ content: text }, null, 2);
+          }
         }
+        const blob = new Blob([out], { type: "text/plain;charset=utf-8" });
+        const base = file.name.replace(/\.[^.]+$/, "");
+        setLocalResult({ name: `${base}.${target}`, sizeKB: blob.size, blob });
+        setProgress(100);
+        setProgressText("Готово");
+        return;
       }
-      const blob = new Blob([out], { type: "text/plain;charset=utf-8" });
-      const baseName = file.name.replace(/\.[^.]+$/, "");
-      setResult({
-        blob,
-        name: `${baseName}.${target}`,
-        sizeKB: Math.round((blob.size / 1024) * 10) / 10,
-      });
+
+      // ── Документные конвертации — только через движок ──
+      if (!engineServerOnline) {
+        throw new Error(
+          "Для конвертации документов (Word, PDF) нужен запущенный локальный движок — конвертация идёт на вашем компьютере, файлы никуда не отправляются. Установить: Настройки → «Установить движок»."
+        );
+      }
+      if (engineServerHealth?.docs === false) {
+        throw new Error(
+          "Установленный движок собран без библиотек конвертации документов. Обновите его: Настройки → «Доступно обновление движка» (та же команда установки, 1–3 минуты)."
+        );
+      }
+
+      setProgressText("Загружаем файл на движок…");
+      setProgress(10);
+      const filePath = await uploadFileToEngine(file, file.name);
+      setProgress(25);
+      setProgressText("Конвертация на движке…");
+
+      const result = await convertViaEngine(
+        filePath,
+        target,
+        (p: EngineProgress) => {
+          setProgress(Math.max(25, p.percent));
+          setProgressText(p.stage || "Конвертация…");
+          setJobNote((n) =>
+            p.stage?.startsWith("В очереди")
+              ? "Задача стоит в очереди — движок выполняет другую задачу. Она начнётся автоматически: ничего не пропадёт."
+              : n?.startsWith("Задача стоит в очереди")
+                ? null
+                : n
+          );
+        },
+        file.name
+      );
+
+      if (result.status !== "success" || !result.file) {
+        throw new Error(result.message || "Движок вернул ошибку");
+      }
+      const fname = fileNameFromUrl(result.file, `output.${target}`);
+      setResultFile(result.file);
+      setResultName(fname);
+      setProgress(100);
+      setProgressText("Готово");
+      persistLastDoc(result.file, fname);
+    } catch (err: any) {
+      console.error(err);
+      setError(err?.message ?? "Ошибка конвертации");
     } finally {
       setBusy(false);
     }
   }
 
-  function download() {
-    if (!result) return;
-    const url = URL.createObjectURL(result.blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = result.name;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  async function cancelRun() {
+    setProgressText("Отменяем задачу…");
+    try {
+      await cancelActiveJob("convert");
+    } catch {
+      /* ignore */
+    }
+    setBusy(false);
+    setProgress(0);
+    setProgressText("");
+    setJobNote("Задача отменена.");
   }
+
+  function download() {
+    if (localResult) {
+      const url = URL.createObjectURL(localResult.blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = localResult.name;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      return;
+    }
+    if (resultFile && engineServerOnline) {
+      setDownloadError(null);
+      downloadEngineFile(resultFile, resultName || `output.${target}`).catch((e: any) => {
+        console.error(e);
+        setDownloadError(e?.message ?? "Не удалось скачать файл");
+      });
+    }
+  }
+
+  function openDirect() {
+    if (!resultFile) return;
+    window.open(engineFileUrl(resultFile), "_blank", "noopener");
+  }
+
+  const kind = file ? docKindOf(file.name) : null;
+  const targets = kind ? DOC_TARGETS[kind] : [];
 
   return (
     <div className="space-y-5">
+      <div className="text-xs px-3 py-2 rounded-lg bg-[#1b2334] text-muted-foreground inline-block">
+        {engineServerOnline ? (
+          <>🟢 Документы конвертируются на вашем компьютере (движок) — Word ↔ PDF ↔ TXT, никуда не отправляются</>
+        ) : (
+          <>🟡 Движок не запущен: Word/PDF недоступны, текстовые форматы (TXT/MD/CSV/JSON) конвертируются в браузере</>
+        )}
+      </div>
+
+      {/* Движок без библиотек документов / устаревший — инструкция обновления на месте.
+          Старые движки (≤ 1.2.2) вообще не присылают docs — им показываем outdated,
+          текст которого упоминает конвертацию документов. */}
+      {engineServerOnline && engineServerHealth && !supportsJobs && (
+        <EngineUpdateGuide reason="no-jobs" health={engineServerHealth} />
+      )}
+      {engineServerOnline && engineServerHealth && supportsJobs && engineServerHealth.docs === false && (
+        <EngineUpdateGuide reason="no-docs" health={engineServerHealth} />
+      )}
+      {engineServerOnline && engineServerHealth && supportsJobs && engineServerHealth.docs !== false && isEngineOutdated(engineServerHealth) && (
+        <EngineUpdateGuide reason="outdated" health={engineServerHealth} />
+      )}
+
       {!file ? (
         <div
           onDragOver={(e) => e.preventDefault()}
@@ -916,7 +1251,7 @@ function TextConverter() {
           <input
             ref={inputRef}
             type="file"
-            accept=".txt,.md,.csv,.json,text/*"
+            accept={DOC_ACCEPT}
             hidden
             onChange={(e) => {
               const f = e.target.files?.[0];
@@ -924,31 +1259,51 @@ function TextConverter() {
             }}
           />
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-[#7c5bf5]/15 mb-4">
-            <Upload className="w-8 h-8 text-[#7c5bf5]" />
+            <FileText className="w-8 h-8 text-[#7c5bf5]" />
           </div>
-          <h3 className="font-semibold mb-1">Загрузите текстовый файл</h3>
-          <p className="text-sm text-muted-foreground">TXT, MD, CSV, JSON — до 10 МБ</p>
+          <h3 className="font-semibold mb-1">Загрузите документ</h3>
+          <p className="text-sm text-muted-foreground">
+            Word (DOCX/DOC), PDF, TXT, RTF, ODT, MD, CSV — конвертация локально на вашем компьютере
+          </p>
         </div>
       ) : (
         <div className="space-y-5">
-          <div className="glass-card rounded-2xl p-5 flex items-center gap-4">
-            <FileArchive className="w-10 h-10 text-[#7c5bf5]" />
-            <div className="flex-1 min-w-0">
-              <div className="font-medium truncate">{file.name}</div>
-              <div className="text-xs text-muted-foreground">
-                {(file.size / 1024).toFixed(1)} КБ · {content.length} символов
+          <div className="glass-card rounded-2xl p-5">
+            <div className="flex items-center gap-4">
+              <FileText className="w-10 h-10 text-[#7c5bf5] flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <div className="font-medium truncate">{file.name}</div>
+                <div className="text-xs text-muted-foreground">
+                  {(file.size / 1024).toFixed(1)} КБ
+                  {preview
+                    ? ` · ${preview.encoding} · ${preview.text.length}+ символов`
+                    : " · бинарный формат (конвертация на движке)"}
+                </div>
               </div>
+              <button
+                onClick={() => {
+                  setFile(null);
+                  setPreview(null);
+                  setLocalResult(null);
+                  setResultFile(null);
+                  setError(null);
+                }}
+                className="p-2 rounded-lg text-muted-foreground hover:text-red-400"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
             </div>
-            <button
-              onClick={() => {
-                setFile(null);
-                setContent("");
-                setResult(null);
-              }}
-              className="p-2 rounded-lg text-muted-foreground hover:text-red-400"
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
+
+            {preview && (
+              <details className="mt-3 text-xs">
+                <summary className="text-muted-foreground cursor-pointer hover:text-foreground">
+                  Предпросмотр ({preview.encoding})
+                </summary>
+                <pre className="max-h-40 overflow-y-auto mt-2 whitespace-pre-wrap break-words text-[11px] text-muted-foreground bg-[#0b0f19] p-3 rounded-lg font-mono">
+                  {preview.text}
+                </pre>
+              </details>
+            )}
           </div>
 
           <div className="glass-card rounded-2xl p-5">
@@ -957,13 +1312,14 @@ function TextConverter() {
                 <label className="text-xs text-muted-foreground block mb-1">В формат</label>
                 <select
                   value={target}
-                  onChange={(e) => setTarget(e.target.value as any)}
+                  onChange={(e) => setTarget(e.target.value)}
                   className="bg-[#0b0f19] border border-[#263147] rounded-lg px-3 py-2 text-sm"
                 >
-                  <option value="txt">.txt (простой текст)</option>
-                  <option value="md">.md (Markdown)</option>
-                  <option value="json">.json (форматированный JSON)</option>
-                  <option value="csv">.csv (как есть)</option>
+                  {targets.map((t) => (
+                    <option key={t.ext} value={t.ext}>
+                      {t.label}
+                    </option>
+                  ))}
                 </select>
               </div>
               <button
@@ -981,11 +1337,63 @@ function TextConverter() {
               </button>
             </div>
 
-            {result && (
+            {busy && (
+              <div className="mt-4">
+                <div className="flex items-center justify-between mb-2 text-sm">
+                  <span>{progressText}</span>
+                  <span className="text-[#7c5bf5] font-mono font-bold">{progress}%</span>
+                </div>
+                <div className="w-full h-1.5 rounded-full bg-[#1b2334] overflow-hidden">
+                  <motion.div
+                    className="h-full bg-gradient-primary"
+                    animate={{ width: `${progress}%` }}
+                    transition={{ duration: 0.3 }}
+                  />
+                </div>
+                {engineServerOnline && supportsJobs && (
+                  <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-xs text-emerald-300/90">
+                      Задача на движке: вкладку можно переключить или закрыть — файл дождётся вас здесь.
+                    </span>
+                    <button
+                      onClick={cancelRun}
+                      className="px-3 py-1.5 rounded-lg bg-[#1b2334] hover:bg-[#263147] text-xs font-medium inline-flex items-center gap-1.5 transition-colors flex-shrink-0"
+                    >
+                      <Square className="w-3 h-3" />
+                      Отменить
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {error && (
+              <div className="mt-4 text-sm text-red-400 bg-red-500/10 p-3 rounded-lg">{error}</div>
+            )}
+
+            {jobNote && !busy && (
+              <div className="mt-4 p-3 rounded-lg border border-[#7c5bf5]/30 bg-[#7c5bf5]/10 text-xs text-[#cfc2ff] flex items-start gap-2">
+                <History className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+                <span className="flex-1">{jobNote}</span>
+                <button
+                  onClick={() => setJobNote(null)}
+                  className="p-0.5 rounded hover:bg-white/10 flex-shrink-0"
+                  title="Скрыть"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+            )}
+
+            {((localResult && !busy) || (resultFile && !busy)) && (
               <div className="mt-5 pt-5 border-t border-[#263147] flex items-center justify-between">
                 <div className="text-sm">
-                  <div className="font-medium">{result.name}</div>
-                  <div className="text-xs text-muted-foreground">{result.sizeKB} КБ</div>
+                  <div className="font-medium">{localResult?.name || resultName}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {localResult
+                      ? `${(localResult.sizeKB / 1024).toFixed(1)} КБ · UTF-8`
+                      : "Готово — файл ждёт на диске движка"}
+                  </div>
                 </div>
                 <button
                   onClick={download}
@@ -995,6 +1403,13 @@ function TextConverter() {
                   Скачать
                 </button>
               </div>
+            )}
+            {resultFile && !localResult && !busy && downloadError && (
+              <DownloadErrorCard
+                error={downloadError}
+                onRetryDirect={openDirect}
+                onClose={() => setDownloadError(null)}
+              />
             )}
           </div>
         </div>

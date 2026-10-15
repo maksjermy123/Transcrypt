@@ -19,9 +19,27 @@ import time
 import uuid
 import threading
 import tempfile
+import importlib.util
 import urllib.parse
 from pathlib import Path
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
+
+
+def _module_available(name: str) -> bool:
+    """Дешёвая проверка наличия модуля в окружении (без импорта — find_spec не тянет пакет)."""
+    try:
+        return importlib.util.find_spec(name) is not None
+    except Exception:
+        return False
+
+
+def docs_conversion_available() -> bool:
+    """Конвертация документов (Word ↔ PDF ↔ TXT) требует весь этот набор.
+    Флаг идёт в /api/health — сайт показывает баннер обновления движка, если его нет."""
+    return all(
+        _module_available(m)
+        for m in ("docx", "pypdf", "reportlab", "pdf2docx", "PIL")
+    )
 
 # Небуферизованный вывод: при запуске через nohup/launchd логи должны
 # появляться в файле сразу, а не после заполнения буфера (иначе логи
@@ -737,10 +755,11 @@ class EngineHTTPRequestHandler(BaseHTTPRequestHandler):
 
         self.send_json({
             "status": "ok",
-            "version": "1.2.2",
+            "version": "1.3.0",
             "jobs": True,  # Job API: фоновые задачи, переживающие закрытие вкладки
             "queue": True,  # очереди задач + видимый статус «В очереди»
             "parallel_heavy": HEAVY_PARALLEL,  # сколько тяжёлых задач идёт одновременно
+            "docs": docs_conversion_available(),  # конвертация Word ↔ PDF ↔ TXT (движок ≥ 1.3.0)
             "platform": sys.platform,
             "system_name": sys_name,
             "device": device_label,

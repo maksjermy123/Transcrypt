@@ -44,6 +44,7 @@ export type EngineHealth = {
   version?: string;
   jobs?: boolean; // Job API: фоновые задачи, переживающие закрытие вкладки (движок ≥ 1.1.0)
   queue?: boolean; // очереди задач + параллельные полосы (движок ≥ 1.2.0)
+  docs?: boolean; // конвертация документов Word ↔ PDF ↔ TXT (движок ≥ 1.3.0)
   parallel_heavy?: number; // сколько тяжёлых задач выполняется одновременно
   platform?: string;
   system_name?: string;

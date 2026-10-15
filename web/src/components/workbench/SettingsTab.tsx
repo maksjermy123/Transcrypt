@@ -293,12 +293,20 @@ export function SettingsTab({ onInstallEngine }: { onInstallEngine: () => void }
             </div>
 
             {/* Движок отстаёт от сайта — постоянное место инструкции обновления */}
-            {(!health.jobs || !health.queue || isEngineOutdated(health)) && (
+            {(!health.jobs || !health.queue || health.docs === false || isEngineOutdated(health)) && (
               <div className="mt-4 rounded-xl border border-sky-500/20 bg-sky-500/5 p-4">
                 <p className="text-xs font-semibold text-sky-200 mb-2">Доступно обновление движка</p>
                 <EngineUpdateGuide
                   embedded
-                  reason={!health.jobs ? "no-jobs" : !health.queue ? "no-queue" : "outdated"}
+                  reason={
+                    !health.jobs
+                      ? "no-jobs"
+                      : !health.queue
+                        ? "no-queue"
+                        : health.docs === false
+                          ? "no-docs"
+                          : "outdated"
+                  }
                   health={health}
                 />
               </div>

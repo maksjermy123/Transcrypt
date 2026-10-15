@@ -7,15 +7,145 @@ from src.utils.fs import ensure_dir, find_soffice_executable
 from src.utils.app_paths import cyrillic_font_candidates
 
 class Converter:
+    # Популярные кодировки текстовых файлов (UTF-8 первый — строгий, сразу отсеивает
+    # чужие кодировки; однобайтовые CP1251/KOI8-R почти никогда не бросают ошибку,
+    # поэтому идут после строгих). Порядок = приоритет угадывания.
+    TEXT_ENCODINGS = (
+        "utf-8-sig",
+        "utf-8",
+        "windows-1251",   # самый частый источник «крякозябр»: текст из Word/Блокнота на русской Windows
+        "utf-16",         # со строгой проверкой: нечётная длина/битые пары отбросят его
+        "koi8-r",
+        "cp866",
+        "mac-cyrillic",
+    )
+
     def __init__(self):
         self.logger = logging.getLogger(__name__)
+
+    # ─────────────────────────────────────────────────────────────
+    #  Кодировки: чтение/нормализация текстов (фикс «крякозябр»)
+    # ─────────────────────────────────────────────────────────────
+
+    @classmethod
+    def decode_bytes(cls, data: bytes) -> str:
+        """Декодирует байты, перебирая популярные кодировки (UTF-8 → CP1251 → KOI8-R → UTF-16…).
+        Гарантирует отсутствие replacement-символов U+FFFD в результате."""
+        for enc in cls.TEXT_ENCODINGS:
+            try:
+                text = data.decode(enc)
+            except (UnicodeDecodeError, UnicodeError):
+                continue
+            # Однобайтовые кодировки декодируют почти любой мусор — не считаем удачей,
+            # если в тексте всё же появились replacement-символы
+            if "\ufffd" in text and enc not in ("utf-8", "utf-8-sig"):
+                continue
+            return text
+        # Последний шанс — UTF-8 с заменой ошибок (лучше, чем исключение)
+        return data.decode("utf-8", errors="replace")
+
+    @classmethod
+    def read_text_smart(cls, path: str) -> str:
+        """Читает текстовый файл в любой популярной кодировке (UTF-8/CP1251/KOI8-R/UTF-16)."""
+        with open(path, "rb") as f:
+            return cls.decode_bytes(f.read())
+
+    @classmethod
+    def write_text_utf8(cls, path: str, text: str) -> None:
+        """Записывает текст в UTF-8 (единая кодировка результатов конвертации)."""
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(text)
+
+    @classmethod
+    def normalize_txt_utf8(cls, path: str) -> None:
+        """Перекодирует готовый .txt на месте в UTF-8.
+        LibreOffice/textutil на Windows отдают результат в системной кодировке
+        (CP1251) — именно отсюда «крякозябры» в скачанном файле."""
+        try:
+            with open(path, "rb") as f:
+                data = f.read()
+            text = cls.decode_bytes(data)
+            if not text:
+                return
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(text)
+        except Exception as e:  # noqa: BLE001 — нормализация не должна ронять конвертацию
+            logging.getLogger(__name__).warning(f"normalize_txt_utf8 failed for {path}: {e}")
+
+    def _register_cyrillic_font(self) -> str:
+        """Регистрирует TTF-шрифт с кириллицей для reportlab. Возвращает имя шрифта."""
+        try:
+            from reportlab.pdfbase import pdfmetrics
+            from reportlab.pdfbase.ttfonts import TTFont
+
+            for path in cyrillic_font_candidates():
+                if path and os.path.exists(path):
+                    pdfmetrics.registerFont(TTFont("VPAuto", path))
+                    return "VPAuto"
+        except Exception as e:  # noqa: BLE001
+            self.logger.warning(f"Font registration failed: {e}")
+        return "Helvetica"  # без кириллицы — последний фолбэк
+
+    def _extract_docx_blocks(self, input_docx: str) -> list[str]:
+        """Вытаскивает абзацы и строки таблиц из DOCX (python-docx)."""
+        from docx import Document
+
+        doc = Document(input_docx)
+        blocks = [p.text.rstrip() for p in doc.paragraphs]
+        for table in doc.tables:
+            for row in table.rows:
+                cells = [c.text.strip().replace("\t", "    ") for c in row.cells]
+                blocks.append("    ".join(cells))
+        return blocks
+
+    def _docx_to_pdf_reportlab(self, input_docx: str, output_pdf: str) -> str:
+        """Чистый Python fallback DOCX→PDF: python-docx (текст) + reportlab (рендер).
+        Работает БЕЗ Microsoft Word и LibreOffice — закрывает главный кейс студентов,
+        у которых нет ни того, ни другого. Сохраняет абзацы, переносы и таблицы как текст."""
+        from reportlab.lib.pagesizes import A4
+        from reportlab.pdfgen import canvas
+        from reportlab.lib.utils import simpleSplit
+
+        blocks = self._extract_docx_blocks(input_docx)
+
+        font_name = self._register_cyrillic_font()
+        font_size = 11
+        line_height = font_size * 1.4
+
+        ensure_dir(os.path.dirname(output_pdf))
+        c = canvas.Canvas(output_pdf, pagesize=A4)
+        width, height = A4
+        margin = 50
+        y = height - margin
+
+        def new_page():
+            nonlocal y
+            c.showPage()
+            c.setFont(font_name, font_size)
+            y = height - margin
+
+        for block in blocks:
+            if not block:
+                y -= line_height * 0.6  # пустая строка = отбивка абзаца
+                continue
+            for line in simpleSplit(block, font_name, font_size, width - 2 * margin):
+                if y < margin:
+                    new_page()
+                c.drawString(margin, y, line)
+                y -= line_height
+        c.save()
+        if not os.path.exists(output_pdf) or os.path.getsize(output_pdf) == 0:
+            raise RuntimeError("reportlab не создал PDF-файл")
+        return output_pdf
 
     def _convert_office_with_soffice(self, input_path: str, output_path: str, output_ext: str) -> str | None:
         soffice = find_soffice_executable()
         if not soffice:
             return None
 
-        convert_to = "txt:Text" if output_ext == ".txt" else output_ext.lstrip(".")
+        # «Text (encoded):UTF8» — форсируем UTF-8: фильтр «Text» пишет в системной
+        # кодировке (на русской Windows это CP1251 → «крякозябры» у пользователя)
+        convert_to = "txt:Text (encoded):UTF8" if output_ext == ".txt" else output_ext.lstrip(".")
         with tempfile.TemporaryDirectory(prefix="voxpaperai-convert-office-") as tmpdir:
             subprocess.run(
                 [soffice, "--headless", "--convert-to", convert_to, "--outdir", tmpdir, input_path],
@@ -29,6 +159,8 @@ class Converter:
                 return None
             ensure_dir(os.path.dirname(output_path))
             shutil.copy2(expected, output_path)
+            if output_ext == ".txt":
+                self.normalize_txt_utf8(output_path)  # страховка: всё в UTF-8
             return output_path
 
     def _docx_to_pdf(self, input_docx, output_pdf):
@@ -60,7 +192,18 @@ class Converter:
             if os.path.exists(output_pdf):
                 return output_pdf
 
-        raise RuntimeError("Не найден рабочий конвертер DOCX→PDF. Нужен Microsoft Word (docx2pdf) или LibreOffice (soffice).")
+        # Чистый Python fallback (без Word и LibreOffice): python-docx + reportlab.
+        # Качество проще, чем у Word — но конвертация РАБОТАЕТ у любого студента,
+        # а кириллица рендерится через системный TTF-шрифт.
+        try:
+            return self._docx_to_pdf_reportlab(input_docx, output_pdf)
+        except Exception as e:
+            self.logger.error(f"reportlab DOCX→PDF fallback failed: {e}")
+
+        raise RuntimeError(
+            "Конвертация DOCX→PDF не удалась: нужны Microsoft Word (docx2pdf), LibreOffice (soffice) "
+            "или библиотеки python-docx + reportlab (входят в движок ≥ 1.3.0 — переустановите его командой установки)."
+        )
 
     def _ffmpeg(self):
         """Returns full path to ffmpeg binary (falls back to bare name)."""
@@ -216,7 +359,13 @@ class Converter:
                 
             # 2. PDF -> DOCX
             elif input_ext == '.pdf' and output_format == 'docx':
-                from pdf2docx import Converter as PDFConverter
+                try:
+                    from pdf2docx import Converter as PDFConverter
+                except ImportError:
+                    raise RuntimeError(
+                        "Для PDF→DOCX не хватает библиотеки pdf2docx в окружении движка — "
+                        "переустановите движок командой установки (движок ≥ 1.3.0 включает её)."
+                    )
                 cv = PDFConverter(input_path)
                 cv.convert(output_path, start=0, end=None)
                 cv.close()
@@ -227,34 +376,16 @@ class Converter:
                 from reportlab.lib.pagesizes import letter
                 from reportlab.pdfgen import canvas
                 from reportlab.lib.utils import simpleSplit
-                from reportlab.pdfbase import pdfmetrics
-                from reportlab.pdfbase.ttfonts import TTFont
-                
+
                 c = canvas.Canvas(output_path, pagesize=letter)
                 width, height = letter
-                
+
                 # Font Registration for Cyrillic
-                font_name = "Helvetica" # Fallback
-                try:
-                    font_paths = cyrillic_font_candidates()
-                    
-                    found_font = None
-                    for path in font_paths:
-                        if os.path.exists(path):
-                            found_font = path
-                            break
-                            
-                    if found_font:
-                        pdfmetrics.registerFont(TTFont('Arial', found_font))
-                        font_name = 'Arial'
-                    else:
-                        print("Warning: Arial font not found. Cyrillic might not render correctly in PDF.")
-                except Exception as e:
-                     print(f"Font registration warning: {e}")
-                
-                # Reading text
-                with open(input_path, 'r', encoding='utf-8') as f:
-                    text = f.read()
+                font_name = self._register_cyrillic_font()
+
+                # Читаем текст в любой кодировке (UTF-8/CP1251/KOI8-R…) —
+                # раньше жёсткий UTF-8 давал «крякозябры» для файлов из Windows
+                text = self.read_text_smart(input_path)
                 
                 text_object = c.beginText(40, height - 40)
                 text_object.setFont(font_name, 10) 
@@ -275,6 +406,40 @@ class Converter:
                 c.save()
                 return output_path
                 
+            # 3.4 DOCX -> TXT: python-docx напрямую — UTF-8 сразу, без внешних программ.
+            # Раньше эта ветка уходила в LibreOffice, который на Windows пишет TXT
+            # в системной CP1251 — пользователь получал «крякозябры».
+            if input_ext == '.docx' and output_format == 'txt':
+                try:
+                    blocks = self._extract_docx_blocks(input_path)
+                    self.write_text_utf8(output_path, "\n".join(blocks) + ("\n" if blocks else ""))
+                    return output_path
+                except Exception as e:
+                    # Явный фолбэк на LibreOffice/textutil (не полагаемся на провал в elif-цепочку)
+                    self.logger.warning(f"python-docx DOCX→TXT failed ({e}) — fallback to soffice/textutil")
+                    office_result = self._convert_office_with_soffice(input_path, output_path, output_ext)
+                    if office_result:
+                        return office_result
+                    raise ValueError(
+                        "Конвертация DOCX→TXT требует python-docx (движок ≥ 1.3.0), LibreOffice или textutil (macOS)."
+                    )
+
+            # 3.4b TXT -> DOCX: python-docx напрямую, чтение в любой кодировке
+            elif input_ext == '.txt' and output_format == 'docx':
+                try:
+                    from docx import Document
+                except ImportError:
+                    raise RuntimeError(
+                        "Для TXT→DOCX не хватает библиотеки python-docx в окружении движка — "
+                        "переустановите движок командой установки (движок ≥ 1.3.0 включает её)."
+                    )
+                doc = Document()
+                text = self.read_text_smart(input_path)
+                for line in text.splitlines():
+                    doc.add_paragraph(line.rstrip())
+                doc.save(output_path)
+                return output_path
+
             # 3.5 Office-family document conversion via LibreOffice (supports ODT round-trip).
             elif input_ext in ['.odt', '.docx', '.doc', '.rtf', '.rtfd', '.txt'] and output_format in ['docx', 'odt', 'pdf', 'txt', 'rtf']:
                 office_result = self._convert_office_with_soffice(input_path, output_path, output_ext)
@@ -294,6 +459,9 @@ class Converter:
                 cmd = ["textutil", "-convert", intermediate_ext, input_path, "-output", temp_output]
                 subprocess.run(cmd, check=True)
 
+                if output_format == 'txt':
+                    self.normalize_txt_utf8(temp_output)  # textutil может дать не-UTF-8
+
                 if output_format == 'pdf':
                     self._docx_to_pdf(temp_output, output_path)
                     try:
@@ -306,37 +474,38 @@ class Converter:
             # 3.6 macOS textutil for rich text (ODT, RTF) -> DOCX legacy fallback
             # (kept branch 3.5 above handles odt/rtf/rtfd/docx/doc/txt; branch 3.6
             # was unreachable dead code and has been removed.)
-
-            # 4. TXT -> DOCX
-            elif input_ext == '.txt' and output_format == 'docx':
-                from docx import Document
-                doc = Document()
-                with open(input_path, 'r', encoding='utf-8') as f:
-                    for line in f:
-                        doc.add_paragraph(line.strip())
-                doc.save(output_path)
-                return output_path
+            # (TXT→DOCX теперь в ветке 3.4b — python-docx без внешних программ.)
 
             # 5. Any -> TXT
             elif output_format == 'txt':
                 text = ""
                 if input_ext == '.pdf':
-                    from pypdf import PdfReader
+                    try:
+                        from pypdf import PdfReader
+                    except ImportError:
+                        raise RuntimeError(
+                            "Для PDF→TXT не хватает библиотеки pypdf в окружении движка — "
+                            "переустановите движок командой установки (движок ≥ 1.3.0 включает её)."
+                        )
                     reader = PdfReader(input_path)
                     for page in reader.pages:
                         text += page.extract_text() + "\n"
-                elif input_ext in ['.docx', '.doc']:
-                    from docx import Document
-                    doc = Document(input_path)
-                    for para in doc.paragraphs:
-                        text += para.text + "\n"
+                elif input_ext == '.docx':
+                    blocks = self._extract_docx_blocks(input_path)
+                    text = "\n".join(blocks) + ("\n" if blocks else "")
+                elif input_ext == '.doc':
+                    office_result = self._convert_office_with_soffice(input_path, output_path, '.txt')
+                    if office_result:
+                        return office_result
+                    raise ValueError(
+                        "Извлечение текста из .doc требует LibreOffice (soffice) или textutil (macOS)."
+                    )
                 else:
                     # Fallback or just copy if it's already text?
                     # If it's unknown binary, we can't extract easily without textract.
                     raise ValueError(f"Text extraction from {input_ext} not supported without external tools.")
 
-                with open(output_path, 'w', encoding='utf-8') as f:
-                    f.write(text)
+                self.write_text_utf8(output_path, text)
                 return output_path
                 
             else:
