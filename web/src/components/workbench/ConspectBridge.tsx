@@ -14,6 +14,7 @@
  */
 
 import { useState } from "react";
+import { useI18n, translate } from "@/lib/i18n";
 import { Sparkles, ChevronDown, FileText, Copy, Check, ExternalLink, HelpCircle } from "lucide-react";
 import { copyTextToClipboard } from "@/lib/clipboard";
 import { downloadFile, formatStamp, type Segment } from "@/lib/subtitles";
@@ -34,38 +35,38 @@ const TEMPLATES: { id: TemplateId; label: string; build: (ctx: { title: string }
     id: "lecture",
     label: "Конспект лекции",
     build: ({ title }) =>
-      `Я приложил(а) файл с транскриптом («${title}»).\n\n` +
-      "Сделай по нему подробный конспект для подготовки к занятиям:\n" +
-      "1. Тема и основные вопросы, которые разбираются.\n" +
-      "2. Тезисы по смысловым разделам (с подзаголовками).\n" +
-      "3. Все термины и определения — отдельным блоком «Словарь».\n" +
-      "4. Примеры и аргументы, которыми это подтверждается.\n" +
-      "5. Итог: 3–5 главных мыслей и что важно для экзамена.\n\n" +
-      "Пиши структурировано (Markdown, заголовки и списки). Не выдумывай то, чего нет в транскрипте.",
+      translate("Я приложил(а) файл с транскриптом («{t}»).\n\n", { t: title }) +
+      translate("Сделай по нему подробный конспект для подготовки к занятиям:\n") +
+      translate("1. Тема и основные вопросы, которые разбираются.\n") +
+      translate("2. Тезисы по смысловым разделам (с подзаголовками).\n") +
+      translate("3. Все термины и определения — отдельным блоком «Словарь».\n") +
+      translate("4. Примеры и аргументы, которыми это подтверждается.\n") +
+      translate("5. Итог: 3–5 главных мыслей и что важно для экзамена.\n\n") +
+      translate("Пиши структурировано (Markdown, заголовки и списки). Не выдумывай то, чего нет в транскрипте."),
   },
   {
     id: "summary",
     label: "Краткое резюме",
     build: ({ title }) =>
-      `Я приложил(а) файл с транскриптом («${title}»). Сделай краткое резюме: ` +
-      "5–7 предложений, передающих суть. Затем списком: 3 главных вывода. " +
-      "Пиши только по материалу транскрипта, без домыслов.",
+      translate("Я приложил(а) файл с транскриптом («{t}»). Сделай краткое резюме: ", { t: title }) +
+      translate("5–7 предложений, передающих суть. Затем списком: 3 главных вывода. ") +
+      translate("Пиши только по материалу транскрипта, без домыслов."),
   },
   {
     id: "questions",
     label: "Вопросы для самопроверки",
     build: ({ title }) =>
-      `Я приложил(а) файл с транскриптом («${title}»). Составь 12–15 вопросов для самопроверки ` +
-      "по этому материалу: от простых (факты) к сложным (анализ и применение). " +
-      "В конце дай блок «Ответы» с краткими ответами на каждый вопрос.",
+      translate("Я приложил(а) файл с транскриптом («{t}»). Составь 12–15 вопросов для самопроверки ", { t: title }) +
+      translate("по этому материалу: от простых (факты) к сложным (анализ и применение). ") +
+      translate("В конце дай блок «Ответы» с краткими ответами на каждый вопрос."),
   },
   {
     id: "flashcards",
     label: "Карточки для запоминания",
     build: ({ title }) =>
-      `Я приложил(а) файл с транскриптом («${title}»). Составь 15–20 карточек для запоминания ` +
-      "в формате «Вопрос — короткий ответ» (одна строка: вопрос; следующая — ответ). " +
-      "Термины, даты, формулы и классификации — в первую очередь. Только факты из транскрипта.",
+      translate("Я приложил(а) файл с транскриптом («{t}»). Составь 15–20 карточек для запоминания ", { t: title }) +
+      translate("в формате «Вопрос — короткий ответ» (одна строка: вопрос; следующая — ответ). ") +
+      translate("Термины, даты, формулы и классификации — в первую очередь. Только факты из транскрипта."),
   },
 ];
 
@@ -79,6 +80,7 @@ interface ConspectBridgeProps {
 }
 
 export function ConspectBridge({ text, segments, sourceLabel }: ConspectBridgeProps) {
+  const { t, lang } = useI18n();
   const [open, setOpen] = useState(false);
   const [template, setTemplate] = useState<TemplateId>(() => {
     try {
@@ -103,8 +105,8 @@ export function ConspectBridge({ text, segments, sourceLabel }: ConspectBridgePr
 
   function buildTranscriptFile(): string {
     const lines = [
-      `Транскрипт: ${sourceLabel || "аудио/видео"}`,
-      `Создан: ${new Date().toLocaleString("ru-RU")}`,
+      `Транскрипт: ${sourceLabel || t("аудио/видео")}`,
+      t("Создан: {d}", { d: new Date().toLocaleString(lang === "en" ? "en-US" : "ru-RU") }),
       "",
     ];
     if (segments.length > 0) {
@@ -117,11 +119,11 @@ export function ConspectBridge({ text, segments, sourceLabel }: ConspectBridgePr
 
   async function launch(provider: (typeof PROVIDERS)[number]) {
     const fileName = transcriptFileName();
-    const title = sourceLabel || "лекция/запись";
+    const title = sourceLabel || t("лекция/запись");
     // 1. Транскрипт — файлом (AI-чаты принимают файлы любого объёма)
     downloadFile(fileName, buildTranscriptFile(), "text/plain");
     // 2. Промт — текстом в буфер обмена
-    const prompt = TEMPLATES.find((t) => t.id === template)?.build({ title }) ?? "";
+    const prompt = TEMPLATES.find((tp) => tp.id === template)?.build({ title }) ?? "";
     await copyTextToClipboard(prompt);
     setCopiedFlag(true);
     setTimeout(() => setCopiedFlag(false), 3000);
@@ -136,8 +138,8 @@ export function ConspectBridge({ text, segments, sourceLabel }: ConspectBridgePr
   }
 
   async function reCopyPrompt() {
-    const title = sourceLabel || "лекция/запись";
-    const ok = await copyTextToClipboard(TEMPLATES.find((t) => t.id === template)?.build({ title }) ?? "");
+    const title = sourceLabel || t("лекция/запись");
+    const ok = await copyTextToClipboard(TEMPLATES.find((tp) => tp.id === template)?.build({ title }) ?? "");
     if (ok) {
       setCopiedFlag(true);
       setTimeout(() => setCopiedFlag(false), 2000);
@@ -149,16 +151,16 @@ export function ConspectBridge({ text, segments, sourceLabel }: ConspectBridgePr
       <div className="flex flex-wrap items-center gap-3 justify-between">
         <div className="flex items-center gap-2 min-w-0">
           <Sparkles className="w-4 h-4 text-[#7c5bf5] flex-shrink-0" />
-          <span className="text-sm font-semibold">Конспект в AI</span>
+          <span className="text-sm font-semibold">{t("Конспект в AI")}</span>
           <select
             value={template}
             onChange={(e) => setTemplate(e.target.value as TemplateId)}
             className="bg-[#0b0f19] border border-[#263147] rounded-lg px-2.5 py-1.5 text-xs"
-            title="Что попросить у нейросети"
+            title={t("Что попросить у нейросети")}
           >
-            {TEMPLATES.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.label}
+            {TEMPLATES.map((tp) => (
+              <option key={tp.id} value={tp.id}>
+                {t(tp.label)}
               </option>
             ))}
           </select>
@@ -167,8 +169,7 @@ export function ConspectBridge({ text, segments, sourceLabel }: ConspectBridgePr
           onClick={() => setOpen((v) => !v)}
           className="bg-gradient-primary text-white px-4 py-2 rounded-xl text-sm font-medium hover:opacity-90 inline-flex items-center gap-2"
         >
-          Открыть в моём AI
-          <ChevronDown className={`w-4 h-4 transition-transform ${open ? "rotate-180" : ""}`} />
+          {t("Открыть в моём AI")} <ChevronDown className={`w-4 h-4 transition-transform ${open ? "rotate-180" : ""}`} />
         </button>
       </div>
 
@@ -178,7 +179,7 @@ export function ConspectBridge({ text, segments, sourceLabel }: ConspectBridgePr
             <button
               key={p.id}
               onClick={() => launch(p)}
-              title={p.hint}
+              title={t(p.hint)}
               className="px-3 py-2.5 rounded-xl bg-[#1b2334] hover:bg-[#263147] text-sm font-medium inline-flex items-center justify-center gap-2 transition-colors"
             >
               <ExternalLink className="w-3.5 h-3.5 text-[#7c5bf5]" />
@@ -191,12 +192,11 @@ export function ConspectBridge({ text, segments, sourceLabel }: ConspectBridgePr
       {sent && (
         <div className="mt-3 rounded-xl border border-[#7c5bf5]/30 bg-[#7c5bf5]/10 p-3 text-xs text-[#cfc2ff] space-y-2">
           <p className="font-medium text-[13px]">
-            Файл «{sent.fileName}» скачан, промт скопирован. Открываем {sent.providerLabel} — осталось три шага:
-          </p>
+            {t("Файл «")}{sent.fileName}{t("» скачан, промт скопирован. Открываем")} {sent.providerLabel}  {t("— осталось три шага:")} </p>
           <ol className="list-decimal ml-4 space-y-0.5">
-            <li>Прикрепите скачанный файл кнопкой со скрепкой (+ / «Прикрепить файл»)</li>
-            <li>Вставьте промт из буфера обмена (Ctrl+V / Cmd+V)</li>
-            <li>Отправьте сообщение</li>
+            <li>{t("Прикрепите скачанный файл кнопкой со скрепкой (+ / «Прикрепить файл»)")}</li>
+            <li>{t("Вставьте промт из буфера обмена (Ctrl+V / Cmd+V)")}</li>
+            <li>{t("Отправьте сообщение")}</li>
           </ol>
           <div className="flex flex-wrap gap-2 pt-1">
             <button
@@ -204,27 +204,25 @@ export function ConspectBridge({ text, segments, sourceLabel }: ConspectBridgePr
               className="px-2.5 py-1.5 rounded-lg bg-[#1b2334] hover:bg-[#263147] text-xs font-medium inline-flex items-center gap-1.5"
             >
               {copiedFlag ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-              {copiedFlag ? "Скопировано" : "Скопировать промт ещё раз"}
+              {copiedFlag ? t("Скопировано") : t("Скопировать промт ещё раз")}
             </button>
             <button
               onClick={() => downloadFile(sent.fileName, buildTranscriptFile(), "text/plain")}
               className="px-2.5 py-1.5 rounded-lg bg-[#1b2334] hover:bg-[#263147] text-xs font-medium inline-flex items-center gap-1.5"
             >
               <FileText className="w-3.5 h-3.5" />
-              Скачать файл ещё раз
-            </button>
+              {t("Скачать файл ещё раз")} </button>
             <button
               onClick={() => window.open(sent.providerUrl, "_blank", "noopener,noreferrer")}
               className="px-2.5 py-1.5 rounded-lg bg-[#1b2334] hover:bg-[#263147] text-xs font-medium inline-flex items-center gap-1.5"
             >
               <ExternalLink className="w-3.5 h-3.5" />
-              Открыть {sent.providerLabel}
+              {t("Открыть")} {sent.providerLabel}
             </button>
           </div>
           <p className="text-muted-foreground flex items-start gap-1.5 pt-0.5">
             <HelpCircle className="w-3 h-3 mt-0.5 flex-shrink-0" />
-            Логинимся к вашему AI — VoxPaperAi не видит ваш аккаунт: промт и файл остаются на вашем компьютере до отправки.
-          </p>
+            {t("Логинимся к вашему AI — VoxPaperAi не видит ваш аккаунт: промт и файл остаются на вашем компьютере до отправки.")} </p>
         </div>
       )}
     </div>

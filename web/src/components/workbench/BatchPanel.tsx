@@ -167,7 +167,7 @@ export function BatchPanel({ engineOnline, supportsJobs, model, language, onOpen
               status: "error",
               percent: 100,
               stage: "Ошибка",
-              error: info.error || "задача завершилась с ошибкой",
+              error: info.error || t("задача завершилась с ошибкой"),
               finishedAt: Date.now(),
             });
           } else if (info.status === "cancelled") {
@@ -175,10 +175,10 @@ export function BatchPanel({ engineOnline, supportsJobs, model, language, onOpen
           } else {
             const stage =
               info.status === "queued" && info.queuePosition && info.queuePosition > 1
-                ? `В очереди — впереди ещё ${info.queuePosition - 1}`
+                ? t("В очереди — впереди ещё {n}", { n: info.queuePosition - 1 })
                 : info.status === "queued"
-                  ? "В очереди"
-                  : info.stage || "Выполняется";
+                  ? t("В очереди")
+                  : info.stage || t("Выполняется");
             updateItem(it.jobId, { status: info.status, percent: info.percent, stage });
           }
         } catch {
@@ -216,7 +216,7 @@ export function BatchPanel({ engineOnline, supportsJobs, model, language, onOpen
           u
         );
         if (!jobId) {
-          setNotice("Движок не поддерживает очередь задач — обновите движок (баннер выше).");
+          setNotice(t("Движок не поддерживает очередь задач — обновите движок (Настройки → «Доступно обновление движка»)."));
           break;
         }
         const item: BatchItem = {
@@ -244,7 +244,7 @@ export function BatchPanel({ engineOnline, supportsJobs, model, language, onOpen
             f.name
           );
           if (!jobId) {
-            setNotice("Движок не поддерживает очередь задач — обновите движок (баннер выше).");
+            setNotice(t("Движок не поддерживает очередь задач — обновите движок (Настройки → «Доступно обновление движка»)."));
             break;
           }
           const item: BatchItem = {
@@ -263,13 +263,13 @@ export function BatchPanel({ engineOnline, supportsJobs, model, language, onOpen
           });
           created++;
         } catch (e: any) {
-          setNotice(`Не удалось загрузить «${f.name}» на движок: ${e?.message ?? "ошибка"}`);
+          setNotice(`Не удалось загрузить «${f.name}» на движок: ${e?.message ?? t("ошибка")}`);
         }
       }
     } finally {
       setBusy(false);
       if (created > 0) {
-        setNotice(`Добавлено задач: ${created}. Движок выполнит их сам — можно переключать вкладки и закрывать браузер.`);
+        setNotice(t("Добавлено задач: {n}. Движок выполнит их сам — можно переключать вкладки и закрывать браузер.", { n: created }));
         setUrlsText("");
         if (txtInputRef.current) txtInputRef.current.value = "";
         if (filesInputRef.current) filesInputRef.current.value = "";
@@ -282,7 +282,7 @@ export function BatchPanel({ engineOnline, supportsJobs, model, language, onOpen
     reader.onload = () => {
       const urls = parseUrls(String(reader.result || ""));
       if (!urls.length) {
-        setNotice("В файле не найдено ни одной ссылки (нужны http(s):// ссылки, по одной в строке).");
+        setNotice(t("В файле не найдено ни одной ссылки (нужны http(s):// ссылки, по одной в строке)."));
         return;
       }
       void launchBatch(urls, []);
@@ -296,7 +296,7 @@ export function BatchPanel({ engineOnline, supportsJobs, model, language, onOpen
       (f) => f.type.startsWith("audio/") || f.type.startsWith("video/")
     );
     if (!files.length) {
-      setNotice("Выберите аудио или видео файлы.");
+      setNotice(t("Выберите аудио или видео файлы."));
       return;
     }
     await launchBatch([], files);
@@ -324,7 +324,7 @@ export function BatchPanel({ engineOnline, supportsJobs, model, language, onOpen
           text: it.result!.text,
         }).replace(/^# .*\n/, "")}`
     );
-    downloadFile("transcrypt-batch.md", `# Пакетная транскрипция\n\n${parts.join("\n\n---\n\n")}`, "text/markdown");
+    downloadFile("transcrypt-batch.md", t("# Пакетная транскрипция") + "\n\n" + parts.join("\n\n---\n\n"), "text/markdown");
   }
 
   const doneCount = items.filter((it) => it.status === "done").length;
@@ -343,7 +343,7 @@ export function BatchPanel({ engineOnline, supportsJobs, model, language, onOpen
           {t("Пакетная обработка")}
           {items.length > 0 && (
             <span className="text-xs font-normal text-muted-foreground">
-              · {doneCount} готово{pendingCount ? `, ${pendingCount} в работе` : ""}
+              · {doneCount}  {t("готово")}{pendingCount ? t(", {n} в работе", { n: pendingCount }) : ""}
             </span>
           )}
         </span>
@@ -355,19 +355,16 @@ export function BatchPanel({ engineOnline, supportsJobs, model, language, onOpen
           {!engineOnline ? (
             <div className="text-xs text-amber-300 flex items-start gap-2">
               <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-              Для пакетной обработки нужен локальный движок — он скачивает видео и выполняет задачи в фоне.
-            </div>
+              {t("Для пакетной обработки нужен локальный движок — он скачивает видео и выполняет задачи в фоне.")} </div>
           ) : !supportsJobs ? (
             <div className="text-xs text-amber-300 flex items-start gap-2">
               <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-              Ваш движок устарел: обновите его (баннер выше), чтобы ставить задачи в очередь.
-            </div>
+              {t("Ваш движок устарел: обновите его (Настройки → «Доступно обновление движка»), чтобы ставить задачи в очередь.")} </div>
           ) : (
             <>
               <div>
                 <label className="text-xs text-muted-foreground mb-1.5 block">
-                  Ссылки на видео — по одной в строке
-                </label>
+                  {t("Ссылки на видео — по одной в строке")} </label>
                 <textarea
                   value={urlsText}
                   onChange={(e) => setUrlsText(e.target.value)}
@@ -381,8 +378,7 @@ export function BatchPanel({ engineOnline, supportsJobs, model, language, onOpen
                     className="px-3 py-2 rounded-xl bg-[#1b2334] hover:bg-[#263147] text-xs font-medium inline-flex items-center gap-1.5 transition-colors"
                   >
                     <FileText className="w-3.5 h-3.5" />
-                    Загрузить ссылки из .txt файла
-                  </button>
+                    {t("Загрузить ссылки из .txt файла")} </button>
                   <input
                     ref={txtInputRef}
                     type="file"
@@ -398,8 +394,7 @@ export function BatchPanel({ engineOnline, supportsJobs, model, language, onOpen
                     className="px-3 py-2 rounded-xl bg-[#1b2334] hover:bg-[#263147] text-xs font-medium inline-flex items-center gap-1.5 transition-colors"
                   >
                     <FolderOpen className="w-3.5 h-3.5" />
-                    Выбрать несколько файлов
-                  </button>
+                    {t("Выбрать несколько файлов")} </button>
                   <input
                     ref={filesInputRef}
                     type="file"
@@ -414,7 +409,7 @@ export function BatchPanel({ engineOnline, supportsJobs, model, language, onOpen
                     className="bg-gradient-primary text-white px-4 py-2 rounded-xl text-xs font-semibold hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center gap-1.5 ml-auto"
                   >
                     {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
-                    {busy ? "Добавляем…" : `В очередь: ${active || 0} ${active === 1 ? "задача" : active < 5 ? "задачи" : "задач"}`}
+                    {busy ? t("Добавляем…") : t("В очередь: {n} {w}", { n: active || 0, w: active === 1 ? t("задача") : active < 5 ? t("задачи") : t("задач") })}
                   </button>
                 </div>
               </div>
@@ -450,7 +445,7 @@ export function BatchPanel({ engineOnline, supportsJobs, model, language, onOpen
                       </span>
                       {it.status === "running" || it.status === "queued" ? (
                         <span className="text-muted-foreground flex-shrink-0">
-                          {it.stage}
+                          {t(it.stage)}
                           {it.status === "running" ? ` · ${it.percent}%` : ""}
                         </span>
                       ) : it.status === "error" ? (
@@ -464,8 +459,7 @@ export function BatchPanel({ engineOnline, supportsJobs, model, language, onOpen
                             className="px-2.5 py-1 rounded-lg bg-[#1b2334] hover:bg-[#263147] font-medium inline-flex items-center gap-1"
                           >
                             <FolderOpen className="w-3 h-3" />
-                            Открыть
-                          </button>
+                            {t("Открыть")} </button>
                           <button
                             onClick={() => downloadItemTxt(it)}
                             className="px-2.5 py-1 rounded-lg bg-[#1b2334] hover:bg-[#263147] font-medium inline-flex items-center gap-1"
@@ -475,12 +469,12 @@ export function BatchPanel({ engineOnline, supportsJobs, model, language, onOpen
                           </button>
                         </span>
                       ) : (
-                        <span className="text-muted-foreground flex-shrink-0">Отменена</span>
+                        <span className="text-muted-foreground flex-shrink-0">{t("Отменена")}</span>
                       )}
                       {(it.status === "queued" || it.status === "running") && (
                         <button
                           onClick={() => void cancelItem(it)}
-                          title="Отменить задачу"
+                          title={t("Отменить задачу")}
                           className="p-1 rounded-md hover:bg-white/10 text-muted-foreground hover:text-red-400 flex-shrink-0"
                         >
                           <Square className="w-3 h-3" />
@@ -495,8 +489,7 @@ export function BatchPanel({ engineOnline, supportsJobs, model, language, onOpen
                       className="px-3 py-1.5 rounded-lg bg-[#1b2334] hover:bg-[#263147] text-xs font-medium inline-flex items-center gap-1.5 disabled:opacity-40"
                     >
                       <Download className="w-3.5 h-3.5" />
-                      Скачать всё одним .md
-                    </button>
+                      {t("Скачать всё одним .md")} </button>
                     <button
                       onClick={() => {
                         const rest = items.filter((it) => it.status !== "done");
@@ -507,8 +500,7 @@ export function BatchPanel({ engineOnline, supportsJobs, model, language, onOpen
                       className="px-3 py-1.5 rounded-lg bg-[#1b2334] hover:bg-[#263147] text-xs font-medium inline-flex items-center gap-1.5 disabled:opacity-40"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
-                      Убрать готовые
-                    </button>
+                      {t("Убрать готовые")} </button>
                   </div>
                 </div>
               )}

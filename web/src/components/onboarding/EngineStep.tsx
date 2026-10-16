@@ -22,8 +22,8 @@ export function EngineStep({ onNext }: { onNext: () => void }) {
   const [progress, setProgress] = useState(engineStatus === "ready" ? 100 : 0);
   const [phaseText, setPhaseText] = useState(
     engineStatus === "ready"
-      ? "Браузерный движок уже установлен"
-      : "Готов к установке"
+      ? t("Браузерный движок уже установлен")
+      : t("Готов к установке")
   );
   // Авто-переход после подключения локального движка
   const [showConnected, setShowConnected] = useState(false);
@@ -36,7 +36,7 @@ export function EngineStep({ onNext }: { onNext: () => void }) {
   async function startInstall() {
     installedHere.current = true;
     setPhase("downloading-wasm");
-    setPhaseText("Загружаем WASM-рантайм transformers.js…");
+    setPhaseText(t("Загружаем WASM-рантайм transformers.js…"));
     setEngineStatus("loading");
     setProgress(10);
     setEngineProgress(10);
@@ -49,7 +49,7 @@ export function EngineStep({ onNext }: { onNext: () => void }) {
           setEngineProgress(pct);
           setPhase("downloading-model-base");
           setPhaseText(
-            `Скачиваем Whisper Base… ${Math.round(info.progress * 100)}%`
+            t("Скачиваем Whisper Base… {p}%", { p: Math.round(info.progress * 100) })
           );
         } else if (info.status === "done") {
           setProgress(85);
@@ -61,7 +61,7 @@ export function EngineStep({ onNext }: { onNext: () => void }) {
       });
 
       setPhase("ready");
-      setPhaseText("Браузерный движок готов");
+      setPhaseText(t("Браузерный движок готов"));
       setProgress(100);
       setEngineProgress(100);
       setEngineStatus("ready");
@@ -69,9 +69,9 @@ export function EngineStep({ onNext }: { onNext: () => void }) {
     } catch (err: any) {
       console.error(err);
       setPhase("error");
-      setPhaseText(err?.message ?? "Ошибка установки движка");
+      setPhaseText(err?.message ?? t("Ошибка установки движка"));
       setEngineStatus("error");
-      setEngineError(err?.message ?? "Ошибка установки движка");
+      setEngineError(err?.message ?? t("Ошибка установки движка"));
     }
   }
 
@@ -114,10 +114,8 @@ export function EngineStep({ onNext }: { onNext: () => void }) {
           </div>
           <h2 className="text-3xl font-bold mb-3">{t("Установить движок")}</h2>
           <p className="text-muted-foreground max-w-lg mx-auto">
-            Локальный движок — это сердце VoxPaperAi. Он будет работать на вашем
-            компьютере: распознавание через нативный Whisper, скачивание с
-            YouTube/TikTok, ffmpeg-операции. Никаких архивов скачивать не нужно —{" "}
-            <span className="text-foreground font-medium">одна команда, и всё установится само</span>.
+            {t("Локальный движок — это сердце VoxPaperAi. Он будет работать на вашем компьютере: распознавание через нативный Whisper, скачивание с YouTube/TikTok, ffmpeg-операции. Никаких архивов скачивать не нужно —")}{" "}
+            <span className="text-foreground font-medium">{t("одна команда, и всё установится само")}</span>.
           </p>
         </div>
 
@@ -131,8 +129,7 @@ export function EngineStep({ onNext }: { onNext: () => void }) {
             <div className="flex items-center gap-3">
               <CheckCircle2 className="w-5 h-5 text-emerald-400 flex-shrink-0" />
               <span className="text-sm text-emerald-300 font-medium">
-                Движок подключён! Переходим к выбору Whisper…
-              </span>
+                {t("Движок подключён! Переходим к выбору Whisper…")} </span>
             </div>
             <div className="w-full h-1 rounded-full bg-emerald-500/20 overflow-hidden mt-3">
               <motion.div
@@ -153,21 +150,17 @@ export function EngineStep({ onNext }: { onNext: () => void }) {
           <summary className="cursor-pointer flex items-center gap-3 text-sm font-medium">
             <Globe className="w-4 h-4 text-[#7c5bf5]" />
             <span className="flex-1">
-              Браузерный движок — {browserReady ? "установлен ✓" : "необязательно, запасной вариант"}
+              {t("Браузерный движок —")} {browserReady ? t("установлен ✓") : t("необязательно, запасной вариант")}
             </span>
-            <span className="text-xs text-muted-foreground">~120 МБ в кеш браузера</span>
+            <span className="text-xs text-muted-foreground">{t("~120 МБ в кеш браузера")}</span>
           </summary>
           <div className="mt-4">
             <p className="text-xs text-muted-foreground mb-4 leading-relaxed">
-              Распознаёт локальные файлы прямо в браузере, даже если движок не
-              запущен. Не обязательно — локальный движок тоже умеет работать с
-              файлами и делает это быстрее.
-            </p>
+              {t("Распознаёт локальные файлы прямо в браузере, даже если движок не запущен. Не обязательно — локальный движок тоже умеет работать с файлами и делает это быстрее.")} </p>
             {browserReady ? (
               <div className="text-sm text-emerald-400 inline-flex items-center gap-2">
                 <CheckCircle2 className="w-4 h-4" />
-                Готово — Whisper работает в браузере
-              </div>
+                {t("Готово — Whisper работает в браузере")} </div>
             ) : phase === "error" ? (
               <div className="space-y-3">
                 <div className="text-sm text-red-400 flex items-center gap-2">
@@ -178,8 +171,7 @@ export function EngineStep({ onNext }: { onNext: () => void }) {
                   onClick={startInstall}
                   className="bg-gradient-primary text-white px-5 py-2 rounded-xl text-sm font-medium hover:opacity-90"
                 >
-                  Повторить установку
-                </button>
+                  {t("Повторить установку")} </button>
               </div>
             ) : phase === "idle" ? (
               <button
@@ -187,8 +179,7 @@ export function EngineStep({ onNext }: { onNext: () => void }) {
                 className="bg-[#1b2334] hover:bg-[#263147] text-foreground px-5 py-2 rounded-xl text-sm font-medium transition-colors inline-flex items-center gap-2"
               >
                 <Globe className="w-4 h-4" />
-                Установить браузерный движок
-              </button>
+                {t("Установить браузерный движок")} </button>
             ) : (
               <div className="flex items-center gap-3">
                 <Loader2 className="w-4 h-4 text-[#7c5bf5] animate-spin" />
@@ -227,11 +218,9 @@ export function EngineStep({ onNext }: { onNext: () => void }) {
         </div>
         <h2 className="text-3xl font-bold mb-3">{t("Установить браузерный движок")}</h2>
         <p className="text-muted-foreground max-w-lg mx-auto">
-          Браузерный движок — это{" "}
+          {t("Браузерный движок — это")}{" "}
           <span className="text-foreground font-mono text-sm">transformers.js</span>{" "}
-          (~5 МБ) и WASM-бинарник (~20 МБ). Скачиваются один раз и кешируются в
-          браузере. Никаких exe, dmg, zip — только кеш браузера.
-        </p>
+          {t("(~5 МБ) и WASM-бинарник (~20 МБ). Скачиваются один раз и кешируются в браузере. Никаких exe, dmg, zip — только кеш браузера.")} </p>
       </div>
 
       {/* Браузерный движок */}
@@ -278,22 +267,19 @@ export function EngineStep({ onNext }: { onNext: () => void }) {
             className="bg-gradient-primary text-white px-6 py-2.5 rounded-xl font-medium hover:opacity-90 transition-opacity glow-primary inline-flex items-center gap-2"
           >
             <Globe className="w-4 h-4" />
-            Установить браузерный движок
-          </button>
+            {t("Установить браузерный движок")} </button>
         )}
         {phase === "ready" && (
           <div className="text-sm text-emerald-400 inline-flex items-center gap-2">
             <CheckCircle2 className="w-4 h-4" />
-            Готово — Whisper работает в браузере
-            <button
+            {t("Готово — Whisper работает в браузере")} <button
               onClick={() => {
                 setPhase("idle");
                 setProgress(0);
               }}
               className="text-xs text-muted-foreground hover:text-foreground ml-3"
             >
-              Переустановить
-            </button>
+              {t("Переустановить")} </button>
           </div>
         )}
         {phase === "error" && (
@@ -301,8 +287,7 @@ export function EngineStep({ onNext }: { onNext: () => void }) {
             onClick={startInstall}
             className="bg-gradient-primary text-white px-6 py-2.5 rounded-xl font-medium hover:opacity-90"
           >
-            Повторить установку
-          </button>
+            {t("Повторить установку")} </button>
         )}
       </div>
 
@@ -313,8 +298,7 @@ export function EngineStep({ onNext }: { onNext: () => void }) {
       {engineServerOnline && (
         <div className="mt-5 p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/25 flex items-center gap-3 text-sm text-emerald-300">
           <Server className="w-5 h-5 flex-shrink-0" />
-          Локальный движок тоже online — доступны все функции, включая YouTube
-        </div>
+          {t("Локальный движок тоже online — доступны все функции, включая YouTube")} </div>
       )}
 
       {/* Продолжить: браузерный движок готов (свежеустановлен или уже из кеша) */}
@@ -328,12 +312,10 @@ export function EngineStep({ onNext }: { onNext: () => void }) {
             onClick={onNext}
             className="bg-gradient-primary text-white px-8 py-3.5 rounded-xl font-medium hover:opacity-90 transition-opacity glow-primary inline-flex items-center gap-2"
           >
-            Продолжить — выбрать уровень Whisper
-            <ArrowRight className="w-5 h-5" />
+            {t("Продолжить — выбрать уровень Whisper")} <ArrowRight className="w-5 h-5" />
           </button>
           <p className="text-xs text-muted-foreground mt-3">
-            Следующий шаг: выбор одного из 5 уровней модели Whisper.
-          </p>
+            {t("Следующий шаг: выбор одного из 5 уровней модели Whisper.")} </p>
         </motion.div>
       )}
     </motion.div>

@@ -56,9 +56,7 @@ export function AboutTab() {
         <div>
           <h2 className="text-2xl font-bold">VoxPaperAi</h2>
           <p className="text-sm text-muted-foreground">
-            Транскрибация, медиа-обработка, конвертация и перевод — на ресурсах вашего
-            компьютера, без серверов и без скачивания архивов.
-          </p>
+            {t("Транскрибация, медиа-обработка, конвертация и перевод — на ресурсах вашего компьютера, без серверов и без скачивания архивов.")} </p>
           <div className="flex flex-wrap gap-2 mt-2.5">
             <span className="text-xs px-2.5 py-1 rounded-lg bg-[#7c5bf5]/15 text-[#b9a8f7]">
               {MODEL_INFO[selectedModel ?? "base"].name}
@@ -70,7 +68,7 @@ export function AboutTab() {
                   : "bg-amber-500/10 text-amber-400"
               }`}
             >
-              {engineServerOnline ? "Движок online" : "Браузерный режим"}
+              {engineServerOnline ? t("Движок online") : t("Браузерный режим")}
             </span>
           </div>
         </div>
@@ -91,7 +89,7 @@ export function AboutTab() {
                 </div>
                 <h3 className="font-semibold text-sm">{t(f.title)}</h3>
               </div>
-              <p className="text-xs text-muted-foreground leading-relaxed">{f.text}</p>
+              <p className="text-xs text-muted-foreground leading-relaxed">{t(f.text)}</p>
             </div>
           );
         })}
@@ -100,57 +98,34 @@ export function AboutTab() {
       {/* Как это работает */}
       <section className="rounded-2xl border border-[#263147]/60 bg-[#111827]/40 p-5">
         <h3 className="font-semibold text-sm mb-3 flex items-center gap-2">
-          <Zap className="w-4 h-4 text-[#7c5bf5]" /> Как это работает
-        </h3>
+          <Zap className="w-4 h-4 text-[#7c5bf5]" />  {t("Как это работает")} </h3>
         <div className="space-y-3 text-xs text-muted-foreground leading-relaxed">
           <p>
-            <b className="text-foreground">Браузерный режим.</b> Whisper (transformers.js,
-            WASM/WebGPU) и ffmpeg (ffmpeg.wasm) выполняются внутри вкладки — задействуются
-            CPU/GPU и память вашего компьютера. Модель скачивается один раз и кешируется:
-            при следующих открытиях страницы движок подтягивается мгновенно, повторных
-            загрузок нет.
-          </p>
+            <b className="text-foreground">{t("Браузерный режим.")}</b>  {t("Whisper (transformers.js, WASM/WebGPU) и ffmpeg (ffmpeg.wasm) выполняются внутри вкладки — задействуются CPU/GPU и память вашего компьютера. Модель скачивается один раз и кешируется: при следующих открытиях страницы движок подтягивается мгновенно, повторных загрузок нет.")} </p>
           <p>
-            <b className="text-foreground">Режим с движком.</b> Локальный Python-движок
-            (engine_server.py) добавляет URL-задачи через yt-dlp с impersonate Chrome,
-            нативный Whisper (в 5–10 раз быстрее WASM) и системный ffmpeg. Страница сама
-            пингует 127.0.0.1:8765 и подключается, как только движок запущен.
-          </p>
+            <b className="text-foreground">{t("Режим с движком.")}</b>  {t("Локальный Python-движок (engine_server.py) добавляет URL-задачи через yt-dlp с impersonate Chrome, нативный Whisper (в 5–10 раз быстрее WASM) и системный ffmpeg. Страница сама пингует 127.0.0.1:8765 и подключается, как только движок запущен.")} </p>
           <p>
-            <b className="text-foreground">Subtitles-First.</b> Для ссылок сначала
-            проверяются субтитры платформы (ru → en → uk): если они есть, готовый текст
-            с таймкодами возвращается за секунды. Whisper включается только когда
-            субтитров нет.
-          </p>
+            <b className="text-foreground">Subtitles-First.</b>  {t("Для ссылок сначала проверяются субтитры платформы (ru → en → uk): если они есть, готовый текст с таймкодами возвращается за секунды. Whisper включается только когда субтитров нет.")} </p>
         </div>
       </section>
 
       {/* Ограничения */}
       <section className="rounded-2xl border border-[#263147]/60 bg-[#111827]/40 p-5">
         <h3 className="font-semibold text-sm mb-3 flex items-center gap-2">
-          <Globe className="w-4 h-4 text-[#7c5bf5]" /> Ограничения
-        </h3>
+          <Globe className="w-4 h-4 text-[#7c5bf5]" />  {t("Ограничения")} </h3>
         <ul className="space-y-2 text-xs text-muted-foreground leading-relaxed">
           <li className="flex gap-2">
             <span className="text-[#7c5bf5]">•</span>
-            URL-задачи (YouTube/TikTok) требуют локальный движок — браузер один не справится
-            из-за CORS и bot-защиты платформ.
-          </li>
+            {t("URL-задачи (YouTube/TikTok) требуют локальный движок — браузер один не справится из-за CORS и bot-защиты платформ.")} </li>
           <li className="flex gap-2">
             <span className="text-[#7c5bf5]">•</span>
-            В браузере доступны модели Tiny/Base/Small; Medium и Large-v3 — через движок
-            (нативный Whisper).
-          </li>
+            {t("В браузере доступны модели Tiny/Base/Small; Medium и Large-v3 — через движок (нативный Whisper).")} </li>
           <li className="flex gap-2">
             <span className="text-[#7c5bf5]">•</span>
-            Перевод идёт через онлайн-API (Google/DeepL) — как и в десктопной версии.
-            Текст уходит в сеть, сами файлы остаются на компьютере.
-          </li>
+            {t("Перевод идёт через онлайн-API (Google/DeepL) — как и в десктопной версии. Текст уходит в сеть, сами файлы остаются на компьютере.")} </li>
           <li className="flex gap-2">
             <span className="text-[#7c5bf5]">•</span>
-            PDF LAYOUT лучше всего работает с текстовыми PDF; для сканов без текстового
-            слоя используйте FAST-режим после OCR.
-          </li>
+            {t("PDF LAYOUT лучше всего работает с текстовыми PDF; для сканов без текстового слоя используйте FAST-режим после OCR.")} </li>
         </ul>
       </section>
     </div>

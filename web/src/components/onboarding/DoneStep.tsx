@@ -32,7 +32,7 @@ export function DoneStep({ onStart }: { onStart: () => void }) {
     } else {
       // Современные браузеры: показываем подсказку
       alert(
-        `Чтобы добавить VoxPaperAi в закладки:\n\n• Windows/Linux: нажмите Ctrl + D\n• macOS: нажмите Cmd + D\n\nЗатем в появившемся окне нажмите "Готово".`
+        t("Чтобы добавить VoxPaperAi в закладки:\n\n• Windows/Linux: нажмите Ctrl + D\n• macOS: нажмите Cmd + D\n\nЗатем в появившемся окне нажмите «Готово».")
       );
     }
     setBookmarked(true);

@@ -21,7 +21,6 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useOnboarding } from "@/lib/onboarding-store";
-import { EngineUpdateGuide, isEngineOutdated } from "@/components/workbench/EngineUpdateGuide";
 import {
   mediaViaEngine,
   downloadEngineFile,
@@ -107,7 +106,7 @@ export function MediaTab() {
       setResultName(r.name || "output.bin");
       setPhase("done");
       const when = r.at ? new Date(r.at).toLocaleString() : "";
-      setJobNote(`Восстановлен последний готовый файл${when ? ` (от ${when})` : ""}.`);
+      setJobNote(t("Восстановлен последний готовый файл{when}.", { when: when ? t("(от {d})", { d: when }) : "" }));
     } catch {
       /* ignore */
     }
@@ -131,13 +130,13 @@ export function MediaTab() {
       }
       if (outcome.state === "lost") {
         clearActiveJob("media");
-        setJobNote("Прошлая фоновая задача не найдена — движок перезапускался.");
+        setJobNote(t("Прошлая фоновая задача не найдена — движок перезапускался."));
         restoreLastMedia();
         return;
       }
       if (outcome.state === "error") {
         clearActiveJob("media");
-        setError(outcome.job.error || "Фоновая задача завершилась с ошибкой");
+        setError(outcome.job.error || t("Фоновая задача завершилась с ошибкой"));
         setPhase("error");
         return;
       }
@@ -150,26 +149,26 @@ export function MediaTab() {
           setResultName(fileNameFromUrl(res.file));
           setPhase("done");
           setProgress(100);
-          setJobNote("Фоновая задача завершилась, пока вас не было — файл готов.");
+          setJobNote(t("Фоновая задача завершилась, пока вас не было — файл готов."));
         } else {
-          setJobNote(res?.message || "Фоновая задача завершилась.");
+          setJobNote(res?.message || t("Фоновая задача завершилась."));
         }
         return;
       }
       // running — переподключаемся
       setPhase("running");
       setProgress(1);
-      setProgressText("Переподключение к фоновой задаче…");
-      setJobNote("Задача выполнялась в фоне — снова следим за ней.");
+      setProgressText(t("Переподключение к фоновой задаче…"));
+      setJobNote(t("Задача выполнялась в фоне — снова следим за ней."));
       try {
         const res = await watchJobToCompletion<TaskResult>(
           rec.jobId,
           (p: EngineProgress) => {
             setProgress(p.percent);
-            setProgressText(p.stage || "Обработка…");
+            setProgressText(p.stage || t("Обработка…"));
             setJobNote((n) =>
               p.stage?.startsWith("В очереди")
-                ? "Задача стоит в очереди — движок выполняет другую задачу (например, транскрипцию). Она начнётся автоматически: ничего не пропадёт."
+                ? t("Задача стоит в очереди — движок выполняет другую задачу (например, транскрипцию). Она начнётся автоматически: ничего не пропадёт.")
                 : n?.startsWith("Задача стоит в очереди")
                   ? null
                   : n
@@ -180,17 +179,17 @@ export function MediaTab() {
         );
         if (cancelled) return;
         if (res.status !== "success" || !res.file) {
-          throw new Error(res.message || "Движок вернул ошибку");
+          throw new Error(res.message || t("Движок вернул ошибку"));
         }
         setResultFile(res.file);
         setResultName(fileNameFromUrl(res.file));
         setPhase("done");
         setProgress(100);
-        setProgressText("Готово");
+        setProgressText(t("Готово"));
         persistLastMedia(res.file, fileNameFromUrl(res.file));
       } catch (e: any) {
         if (cancelled) return;
-        setError(e?.message ?? "Ошибка фоновой задачи");
+        setError(e?.message ?? t("Ошибка фоновой задачи"));
         setPhase("error");
       }
     })();
@@ -211,7 +210,7 @@ export function MediaTab() {
   }, [phase]);
 
   async function cancelRun() {
-    setProgressText("Отменяем задачу…");
+    setProgressText(t("Отменяем задачу…"));
     try {
       await cancelActiveJob("media");
     } catch {
@@ -220,7 +219,7 @@ export function MediaTab() {
     setPhase("idle");
     setProgress(0);
     setProgressText("");
-    setJobNote("Задача отменена.");
+    setJobNote(t("Задача отменена."));
   }
 
   function reset() {
@@ -266,15 +265,15 @@ export function MediaTab() {
     setDragFileOver(false);
     const f = e.dataTransfer.files?.[0];
     if (!f) return;
-    const t = (f.type || "").toLowerCase();
+    const mime = (f.type || "").toLowerCase();
     if (action === "clean_audio") {
-      const avOk = t.startsWith("audio/") || t.startsWith("video/") || AV_EXT_RE.test(f.name);
+      const avOk = mime.startsWith("audio/") || mime.startsWith("video/") || AV_EXT_RE.test(f.name);
       if (!avOk) {
-        setError("Перетащите аудио- или видео-файл (MP3, WAV, M4A, MP4, MKV…)");
+        setError(t("Перетащите аудио- или видео-файл (MP3, WAV, M4A, MP4, MKV…)"));
         return;
       }
-    } else if (!(t.startsWith("video/") || VIDEO_EXT_RE.test(f.name))) {
-      setError("Для вшивания субтитров перетащите видео (MP4, MKV, WebM, MOV…)");
+    } else if (!(mime.startsWith("video/") || VIDEO_EXT_RE.test(f.name))) {
+      setError(t("Для вшивания субтитров перетащите видео (MP4, MKV, WebM, MOV…)"));
       return;
     }
     setLocalFile(f);
@@ -288,9 +287,9 @@ export function MediaTab() {
     setDragSubOver(false);
     const f = e.dataTransfer.files?.[0];
     if (!f) return;
-    const t = (f.type || "").toLowerCase();
-    if (!(t.startsWith("text/") || SUB_EXT_RE.test(f.name))) {
-      setError("Перетащите файл субтитров .srt или .vtt");
+    const mime = (f.type || "").toLowerCase();
+    if (!(mime.startsWith("text/") || SUB_EXT_RE.test(f.name))) {
+      setError(t("Перетащите файл субтитров .srt или .vtt"));
       return;
     }
     setSubtitleFile(f);
@@ -300,7 +299,7 @@ export function MediaTab() {
 
   async function run() {
     if (!engineServerOnline) {
-      setError("Медиа-операции требуют локальный движок (engine_server.py). Запустите его и обновите страницу.");
+      setError(t("Медиа-операции требуют локальный движок (engine_server.py). Запустите его и обновите страницу."));
       return;
     }
 
@@ -309,7 +308,7 @@ export function MediaTab() {
     setProgressLog([]);
     setProgress(0);
     setPhase("running");
-    setProgressText("Запускаем задачу на движке…");
+    setProgressText(t("Запускаем задачу на движке…"));
     setJobNote(null);
     setDownloadError(null);
 
@@ -320,19 +319,19 @@ export function MediaTab() {
       // Для clean/hardsub: загружаем локальный файл если есть
       if (action === "clean_audio" || action === "hardsub") {
         if (localFile) {
-          setProgressText("Загружаем файл на движок…");
+          setProgressText(t("Загружаем файл на движок…"));
           setProgress(15);
           filePath = await uploadFileToEngine(localFile, localFileName);
           setProgress(25);
         }
         if (action === "hardsub" && subtitleFile) {
-          setProgressText("Загружаем субтитры на движок…");
+          setProgressText(t("Загружаем субтитры на движок…"));
           subFilePath = await uploadFileToEngine(subtitleFile, subtitleName);
           setProgress(30);
         }
       }
 
-      setProgressText("Запуск обработки на движке…");
+      setProgressText(t("Запуск обработки на движке…"));
       const result = await mediaViaEngine(
         {
           action,
@@ -345,10 +344,10 @@ export function MediaTab() {
         },
         (p: EngineProgress) => {
           setProgress(p.percent);
-          setProgressText(p.stage || "Обработка…");
+          setProgressText(p.stage || t("Обработка…"));
           setJobNote((n) =>
             p.stage?.startsWith("В очереди")
-              ? "Задача стоит в очереди — движок выполняет другую задачу (например, транскрипцию). Она начнётся автоматически: ничего не пропадёт, можно переключать вкладки."
+              ? t("Задача стоит в очереди — движок выполняет другую задачу (например, транскрипцию). Она начнётся автоматически: ничего не пропадёт, можно переключать вкладки.")
               : n?.startsWith("Задача стоит в очереди")
                 ? null
                 : n
@@ -361,7 +360,7 @@ export function MediaTab() {
       );
 
       if (result.status !== "success" || !result.file) {
-        throw new Error(result.message || "Движок вернул ошибку");
+        throw new Error(result.message || t("Движок вернул ошибку"));
       }
 
       const fileUrl = result.file;
@@ -370,11 +369,11 @@ export function MediaTab() {
       setResultName(fname);
       setPhase("done");
       setProgress(100);
-      setProgressText("Готово");
+      setProgressText(t("Готово"));
       persistLastMedia(fileUrl, fname);
     } catch (err: any) {
       console.error(err);
-      setError(err?.message ?? "Ошибка обработки");
+      setError(err?.message ?? t("Ошибка обработки"));
       setPhase("error");
     }
   }
@@ -386,7 +385,7 @@ export function MediaTab() {
       await downloadEngineFile(resultFile, resultName || "output");
     } catch (e: any) {
       console.error(e);
-      setDownloadError(e?.message ?? "Не удалось скачать файл");
+      setDownloadError(e?.message ?? t("Не удалось скачать файл"));
     }
   }
 
@@ -406,25 +405,23 @@ export function MediaTab() {
         <div className="mb-6">
           <h1 className="text-2xl font-bold mb-1">{t("Медиа операции")}</h1>
           <p className="text-sm text-muted-foreground">
-            Скачать видео/аудио, очистить аудио, вшить субтитры — через локальный движок с yt-dlp и ffmpeg.
-          </p>
+            {t("Скачать видео/аудио, очистить аудио, вшить субтитры — через локальный движок с yt-dlp и ffmpeg.")} </p>
         </div>
 
         <div className="glass-card rounded-2xl p-8 text-center">
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-amber-500/15 mb-4">
             <ServerOff className="w-8 h-8 text-amber-400" />
           </div>
-          <h3 className="font-semibold mb-2">Локальный движок не найден</h3>
+          <h3 className="font-semibold mb-2">{t("Локальный движок не найден")}</h3>
           <p className="text-sm text-muted-foreground mb-5 max-w-md mx-auto">
-            Медиа-операции (скачивание с YouTube, очистка аудио, hardsub) работают через локальный Python-движок — только yt-dlp умеет обходить блокировки YouTube и только ffmpeg поддерживает все форматы.
-          </p>
+            {t("Медиа-операции (скачивание с YouTube, очистка аудио, hardsub) работают через локальный Python-движок — только yt-dlp умеет обходить блокировки YouTube и только ffmpeg поддерживает все форматы.")} </p>
           <div className="text-left max-w-md mx-auto bg-[#0b0f19] rounded-xl p-4 font-mono text-xs space-y-1">
-            <div className="text-muted-foreground"># Установить зависимости (один раз):</div>
+            <div className="text-muted-foreground">{t("# Установить зависимости (один раз):")}</div>
             <div className="text-foreground">pip install -r requirements.txt</div>
-            <div className="text-muted-foreground mt-2"># Запустить движок:</div>
+            <div className="text-muted-foreground mt-2">{t("# Запустить движок:")}</div>
             <div className="text-foreground">python engine_server.py</div>
-            <div className="text-muted-foreground mt-2"># Движок откроется на http://127.0.0.1:8765</div>
-            <div className="text-muted-foreground"># Обновите эту страницу — индикатор станет зелёным</div>
+            <div className="text-muted-foreground mt-2">{t("# Движок откроется на http://127.0.0.1:8765")}</div>
+            <div className="text-muted-foreground">{t("# Обновите эту страницу — индикатор станет зелёным")}</div>
           </div>
           <a
             href="https://github.com/maksjermy123/Transcrypt#-локальный-движок-опционально-для-url-задач"
@@ -432,8 +429,7 @@ export function MediaTab() {
             rel="noopener noreferrer"
             className="inline-block mt-5 text-[#7c5bf5] hover:underline text-sm"
           >
-            Подробная инструкция в README →
-          </a>
+            {t("Подробная инструкция в README →")} </a>
         </div>
       </div>
     );
@@ -444,20 +440,11 @@ export function MediaTab() {
       <div className="mb-6">
         <h1 className="text-2xl font-bold mb-1">{t("Медиа операции")}</h1>
         <p className="text-sm text-muted-foreground">
-          Скачать видео/аудио, очистить звук, вшить субтитры. Все операции через локальный движок с yt-dlp (обходит блокировки YouTube) и ffmpeg.
-        </p>
+          {t("Скачать видео/аудио, очистить звук, вшить субтитры. Все операции через локальный движок с yt-dlp (обходит блокировки YouTube) и ffmpeg.")} </p>
       </div>
 
-      {/* Старый движок — инструкция обновления раскрывается на месте */}
-      {engineServerOnline && engineServerHealth && !supportsJobs && (
-        <EngineUpdateGuide reason="no-jobs" health={engineServerHealth} />
-      )}
-      {engineServerOnline && engineServerHealth && supportsJobs && !supportsQueue && (
-        <EngineUpdateGuide reason="no-queue" health={engineServerHealth} />
-      )}
-      {engineServerOnline && engineServerHealth && supportsJobs && supportsQueue && isEngineOutdated(engineServerHealth) && (
-        <EngineUpdateGuide reason="outdated" health={engineServerHealth} />
-      )}
+      {/* Баннер обновления движка перенесён в Настройки — вкладки не засоряем сообщениями:
+          индикатор в шапке зелёный = всё работает, а обновление доступно в Настройках. */}
 
       {/* Баннер восстановления фоновой задачи / результата */}
       {jobNote && (
@@ -467,7 +454,7 @@ export function MediaTab() {
           <button
             onClick={() => setJobNote(null)}
             className="p-1 rounded-md hover:bg-white/10 flex-shrink-0"
-            title="Скрыть"
+            title={t("Скрыть")}
           >
             <X className="w-3.5 h-3.5" />
           </button>
@@ -493,9 +480,9 @@ export function MediaTab() {
               }`}
             >
               <Icon className="w-5 h-5 mb-2" />
-              <div className="font-medium text-sm mb-0.5">{a.label}</div>
+              <div className="font-medium text-sm mb-0.5">{t(a.label)}</div>
               <div className={`text-xs ${active ? "text-white/80" : "text-muted-foreground"}`}>
-                {a.desc}
+                {t(a.desc)}
               </div>
             </button>
           );
@@ -511,8 +498,8 @@ export function MediaTab() {
         >
           <label className="text-xs text-muted-foreground mb-2 block">
             {action === "clean_audio" || action === "hardsub"
-              ? "URL источника (опционально, если нет локального файла)"
-              : "Ссылка на видео"}
+              ? t("URL источника (опционально, если нет локального файла)")
+              : t("Ссылка на видео")}
           </label>
           <div className="flex gap-2">
             <div className="flex-1 relative">
@@ -543,7 +530,7 @@ export function MediaTab() {
           className="glass-card rounded-2xl p-5 mb-4"
         >
           <label className="text-xs text-muted-foreground mb-2 block">
-            {action === "clean_audio" ? "Аудио-файл (или используйте URL выше) — можно перетащить сюда" : "Видео-файл (или используйте URL выше) — можно перетащить сюда"}
+            {action === "clean_audio" ? t("Аудио-файл (или используйте URL выше) — можно перетащить сюда") : t("Видео-файл (или используйте URL выше) — можно перетащить сюда")}
           </label>
           {!localFile ? (
             <label className={`block border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors ${
@@ -557,7 +544,7 @@ export function MediaTab() {
               />
               <Upload className={`w-6 h-6 mx-auto mb-2 ${dragFileOver ? "text-[#7c5bf5]" : "text-muted-foreground"}`} />
               <span className="text-sm text-foreground">
-                {dragFileOver ? "Отпустите файл здесь" : "Нажмите или перетащите файл"}
+                {dragFileOver ? t("Отпустите файл здесь") : t("Нажмите или перетащите файл")}
               </span>
             </label>
           ) : (
@@ -592,8 +579,7 @@ export function MediaTab() {
           className="glass-card rounded-2xl p-5 mb-4"
         >
           <label className="text-xs text-muted-foreground mb-2 block">
-            Файл субтитров (.srt или .vtt) — опционально, можно перетащить
-          </label>
+            {t("Файл субтитров (.srt или .vtt) — опционально, можно перетащить")} </label>
           {!subtitleFile ? (
             <label className={`block border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors ${
               dragSubOver ? "border-[#7c5bf5] bg-[#7c5bf5]/5" : "border-[#263147] hover:border-[#7c5bf5]/50"
@@ -606,12 +592,10 @@ export function MediaTab() {
               />
               <Film className={`w-6 h-6 mx-auto mb-2 ${dragSubOver ? "text-[#7c5bf5]" : "text-muted-foreground"}`} />
               <span className="text-sm text-foreground">
-                {dragSubOver ? "Отпустите файл здесь" : "Загрузите .srt или .vtt"}
+                {dragSubOver ? t("Отпустите файл здесь") : t("Загрузите .srt или .vtt")}
               </span>
               <span className="block text-xs text-muted-foreground mt-1">
-                Если не указать, движок попробует скачать субтитры с YouTube (язык: {subLang}),
-                а если их нет — сгенерирует через Whisper.
-              </span>
+                {t("Если не указать, движок попробует скачать субтитры с YouTube (язык:")} {subLang}{t("), а если их нет — сгенерирует через Whisper.")} </span>
             </label>
           ) : (
             <div className="flex items-center gap-3">
@@ -632,15 +616,15 @@ export function MediaTab() {
           <div className="mt-3 flex flex-wrap items-center gap-4">
             <div className="flex items-center gap-2">
               <Settings2 className="w-3.5 h-3.5 text-muted-foreground" />
-              <label className="text-xs text-muted-foreground">Язык субтитров для поиска на YouTube:</label>
+              <label className="text-xs text-muted-foreground">{t("Язык субтитров для поиска на YouTube:")}</label>
               <select
                 value={subLang}
                 onChange={(e) => setSubLang(e.target.value)}
                 className="bg-[#0b0f19] border border-[#263147] rounded-lg px-2 py-1 text-xs"
               >
-                <option value="ru">Русский</option>
+                <option value="ru">{t("Русский")}</option>
                 <option value="en">English</option>
-                <option value="uk">Українська</option>
+                <option value="uk">{t("Українська")}</option>
                 <option value="de">Deutsch</option>
                 <option value="fr">Français</option>
                 <option value="es">Español</option>
@@ -651,16 +635,16 @@ export function MediaTab() {
               </select>
             </div>
             <div className="flex items-center gap-2">
-              <label className="text-xs text-muted-foreground">Перевести субтитры на:</label>
+              <label className="text-xs text-muted-foreground">{t("Перевести субтитры на:")}</label>
               <select
                 value={subTranslate}
                 onChange={(e) => setSubTranslate(e.target.value)}
                 className="bg-[#0b0f19] border border-[#263147] rounded-lg px-2 py-1 text-xs"
               >
-                <option value="-">Без перевода</option>
-                <option value="ru">Русский</option>
+                <option value="-">{t("Без перевода")}</option>
+                <option value="ru">{t("Русский")}</option>
                 <option value="en">English</option>
-                <option value="uk">Українська</option>
+                <option value="uk">{t("Українська")}</option>
                 <option value="de">Deutsch</option>
                 <option value="fr">Français</option>
                 <option value="es">Español</option>
@@ -680,10 +664,9 @@ export function MediaTab() {
           <div className="flex items-start gap-3">
             <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
             <div className="flex-1">
-              <p className="text-sm text-amber-200 font-medium mb-1">На движке нет ffmpeg</p>
+              <p className="text-sm text-amber-200 font-medium mb-1">{t("На движке нет ffmpeg")}</p>
               <p className="text-xs text-amber-200/80 leading-relaxed">
-                Эта операция требует ffmpeg. Переустановите движок той же командой — установщик
-                скачает его автоматически. Или вручную: <code className="font-mono">brew install ffmpeg</code> (macOS) /{" "}
+                {t("Эта операция требует ffmpeg. Переустановите движок той же командой — установщик скачает его автоматически. Или вручную:")} <code className="font-mono">brew install ffmpeg</code> (macOS) /{" "}
                 <code className="font-mono">apt install ffmpeg</code> (Linux).
               </p>
             </div>
@@ -694,10 +677,8 @@ export function MediaTab() {
       {/* Описание конвейера hardsub */}
       {action === "hardsub" && (
         <div className="text-xs text-muted-foreground mb-4 px-1 leading-relaxed">
-          Конвейер: скачивание видео → субтитры (YouTube или Whisper) → перевод (по желанию) →{" "}
-          <span className="text-foreground">умное вшивание</span>: субтитры внизу по центру с отступами
-          и обводкой — не перекрывают центр кадра, размер шрифта подстраивается под разрешение.
-        </div>
+          {t("Конвейер: скачивание видео → субтитры (YouTube или Whisper) → перевод (по желанию) →")}{" "}
+          <span className="text-foreground">{t("умное вшивание")}</span>{t(": субтитры внизу по центру с отступами и обводкой — не перекрывают центр кадра, размер шрифта подстраивается под разрешение.")} </div>
       )}
 
       {/* Run button */}
@@ -710,15 +691,15 @@ export function MediaTab() {
           {phase === "running" ? (
             <>
               <Loader2 className="w-4 h-4 animate-spin" />
-              {progressText || "Обработка…"}
+              {progressText || t("Обработка…")}
             </>
           ) : (
             <>
               <Sparkles className="w-4 h-4" />
-              {action === "download_video" && "Скачать видео"}
-              {action === "download_audio" && "Скачать аудио"}
-              {action === "clean_audio" && "Очистить аудио"}
-              {action === "hardsub" && "Вшить субтитры"}
+              {action === "download_video" && t("Скачать видео")}
+              {action === "download_audio" && t("Скачать аудио")}
+              {action === "clean_audio" && t("Очистить аудио")}
+              {action === "hardsub" && t("Вшить субтитры")}
             </>
           )}
         </button>
@@ -741,8 +722,7 @@ export function MediaTab() {
           {progressLog.length > 0 && (
             <details className="mt-3 text-xs">
               <summary className="text-muted-foreground cursor-pointer hover:text-foreground">
-                Лог ({progressLog.length} строк)
-              </summary>
+                {t("Лог (")}{progressLog.length}  {t("строк)")} </summary>
               <div className="max-h-32 overflow-y-auto mt-2 font-mono text-[10px] text-muted-foreground bg-[#0b0f19] p-2 rounded-lg">
                 {progressLog.map((l, i) => (
                   <div key={i} className="truncate">{l}</div>
@@ -754,24 +734,23 @@ export function MediaTab() {
             <span className="text-xs text-emerald-300/90 inline-flex items-center gap-1.5">
               {supportsJobs
                 ? supportsQueue
-                  ? "Задача идёт на движке: можно переключать вкладки и запускать задачи в других разделах — они пойдут параллельно или встанут в очередь, ничего не пропадёт."
-                  : "Задача выполняется на движке: можно переключать вкладки или закрыть браузер — файл дождётся вас здесь."
-                : "Задача идёт в этой вкладке — не закрывайте её. Обновите движок, чтобы задачи выполнялись в фоне."}
+                  ? t("Задача идёт на движке: можно переключать вкладки и запускать задачи в других разделах — они пойдут параллельно или встанут в очередь, ничего не пропадёт.")
+                  : t("Задача выполняется на движке: можно переключать вкладки или закрыть браузер — файл дождётся вас здесь.")
+                : t("Задача идёт в этой вкладке — не закрывайте её. Обновите движок, чтобы задачи выполнялись в фоне.")}
             </span>
             <button
               onClick={cancelRun}
               className="px-3 py-1.5 rounded-lg bg-[#1b2334] hover:bg-[#263147] text-xs font-medium inline-flex items-center gap-1.5 transition-colors flex-shrink-0"
             >
               <Square className="w-3 h-3" />
-              Отменить
-            </button>
+              {t("Отменить")} </button>
           </div>
         </div>
       )}
 
       {error && (
         <div className="glass-card rounded-2xl p-4 mb-4 border-red-500/40">
-          <div className="text-sm text-red-400">Ошибка: {error}</div>
+          <div className="text-sm text-red-400">{t("Ошибка:")} {error}</div>
         </div>
       )}
 
@@ -786,7 +765,7 @@ export function MediaTab() {
             <div>
               <div className="flex items-center gap-2 mb-1">
                 <Download className="w-5 h-5 text-emerald-500" />
-                <h3 className="font-semibold">Файл готов!</h3>
+                <h3 className="font-semibold">{t("Файл готов!")}</h3>
               </div>
               <div className="text-sm text-foreground">{resultName}</div>
             </div>
@@ -795,8 +774,7 @@ export function MediaTab() {
               className="bg-emerald-500/15 text-emerald-400 px-5 py-2.5 rounded-xl font-medium inline-flex items-center gap-2 hover:bg-emerald-500/25"
             >
               <Download className="w-4 h-4" />
-              Скачать
-            </button>
+              {t("Скачать")} </button>
           </div>
         </motion.div>
       )}
@@ -811,25 +789,24 @@ export function MediaTab() {
           <div className="flex items-start gap-3">
             <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
             <div className="flex-1 min-w-0">
-              <p className="text-sm text-amber-200 font-medium mb-1">Скачивание не удалось</p>
+              <p className="text-sm text-amber-200 font-medium mb-1">{t("Скачивание не удалось")}</p>
               <p className="text-xs text-amber-200/80 mb-2">{downloadError}</p>
               <ul className="text-xs text-amber-200/70 leading-relaxed list-disc pl-4 space-y-0.5 mb-3">
-                <li>Мы уже попробовали скачать файл напрямую — проверьте загрузки браузера.</li>
-                <li>Движок мог перезапуститься и удалить файл — запустите задачу заново.</li>
-                <li>Движок до 1.2.2 не умеет отдавать файлы с русскими названиями — обновите его (Настройки → «Доступно обновление движка»).</li>
+                <li>{t("Мы уже попробовали скачать файл напрямую — проверьте загрузки браузера.")}</li>
+                <li>{t("Движок мог перезапуститься и удалить файл — запустите задачу заново.")}</li>
+                <li>{t("Движок до 1.2.2 не умеет отдавать файлы с русскими названиями — обновите его (Настройки → «Доступно обновление движка»).")}</li>
               </ul>
               <button
                 onClick={openDirect}
                 className="px-3 py-1.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-200 text-xs font-medium inline-flex items-center gap-1.5 transition-colors"
               >
                 <Download className="w-3.5 h-3.5" />
-                Открыть файл напрямую
-              </button>
+                {t("Открыть файл напрямую")} </button>
             </div>
             <button
               onClick={() => setDownloadError(null)}
               className="p-1 rounded-md hover:bg-white/10 flex-shrink-0"
-              title="Скрыть"
+              title={t("Скрыть")}
             >
               <X className="w-3.5 h-3.5" />
             </button>

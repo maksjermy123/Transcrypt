@@ -41,12 +41,12 @@ export function ModelDownloadStep({ onNext }: { onNext: () => void }) {
         setPhase("loading");
         setModelStatus("downloading");
         setModelProgress(0);
-        setModelProgressText("Подготовка…");
+        setModelProgressText(t("Подготовка…"));
 
         await loadWhisperPipeline(browserSafeModel(selectedModel), (info: ProgressInfo) => {
           if (info.status === "initiate" || info.status === "download") {
             setFilesTotal((n) => Math.max(n, 1));
-            setModelProgressText("Загрузка файлов модели…");
+            setModelProgressText(t("Загрузка файлов модели…"));
           }
           if (info.status === "progress" && info.progress != null) {
             const pct = Math.round(info.progress * 100);
@@ -54,18 +54,18 @@ export function ModelDownloadStep({ onNext }: { onNext: () => void }) {
             if (info.file || info.name) {
               const fname = (info.file || info.name || "").split("/").pop() || "";
               setCurrentFile(fname);
-              setModelProgressText(`Загружаем ${fname} — ${pct}%`);
+              setModelProgressText(t("Загружаем {f} — {p}%", { f: fname, p: pct }));
             } else {
-              setModelProgressText(`Загрузка модели… ${pct}%`);
+              setModelProgressText(t("Загрузка модели… {p}%", { p: pct }));
             }
           }
           if (info.status === "done") {
             setFilesDone((n) => n + 1);
-            setModelProgressText(`Файл готов. Загружаем следующий…`);
+            setModelProgressText(t("Файл готов. Загружаем следующий…"));
           }
           if (info.status === "ready") {
             setModelProgress(100);
-            setModelProgressText("Модель загружена и готова к работе");
+            setModelProgressText(t("Модель загружена и готова к работе"));
             setPhase("ready");
             setModelStatus("downloaded");
             setModelError(null);
@@ -80,7 +80,7 @@ export function ModelDownloadStep({ onNext }: { onNext: () => void }) {
         console.error(err);
         setPhase("error");
         setModelStatus("error");
-        setModelError(err?.message ?? "Ошибка загрузки модели");
+        setModelError(err?.message ?? t("Ошибка загрузки модели"));
       }
     })();
   }, [selectedModel, isEngine]);
@@ -88,8 +88,8 @@ export function ModelDownloadStep({ onNext }: { onNext: () => void }) {
   const info = selectedModel ? MODEL_INFO[selectedModel] : null;
   const engineSizeLabel = info
     ? info.engineSizeMB >= 1000
-      ? `${(info.engineSizeMB / 1000).toFixed(1)} ГБ`
-      : `${info.engineSizeMB} МБ`
+      ? t("{n} ГБ", { n: (info.engineSizeMB / 1000).toFixed(1) })
+      : t("{n} МБ", { n: info.engineSizeMB })
     : "";
 
   // ═══════════ РЕЖИМ ДВИЖКА: без скачивания в браузере ═══════════
@@ -105,8 +105,7 @@ export function ModelDownloadStep({ onNext }: { onNext: () => void }) {
         <div className="text-center mb-10">
           <h2 className="text-3xl font-bold mb-3">{t("Модель готова к работе")}</h2>
           <p className="text-muted-foreground max-w-lg mx-auto">
-            Всё настроено — вручную ничего скачивать не нужно.
-          </p>
+            {t("Всё настроено — вручную ничего скачивать не нужно.")} </p>
         </div>
 
         <div className="glass-card rounded-2xl p-6 mb-6">
@@ -116,30 +115,28 @@ export function ModelDownloadStep({ onNext }: { onNext: () => void }) {
             </div>
             <div className="flex-1">
               <h3 className="font-semibold mb-1">
-                Уровень: {info?.name ?? `Whisper ${selectedModel}`}
+                {t("Уровень:")} {info?.name ?? `Whisper ${selectedModel}`}
               </h3>
               <p className="text-sm text-muted-foreground leading-relaxed">
-                Локальный движок загрузит модель{" "}
-                <span className="text-foreground font-medium">автоматически при первой транскрибации</span>{" "}
-                (~{engineSizeLabel}). Уже со второй задачи распознавание начнётся
-                мгновенно — модель останется на диске.
-              </p>
+                {t("Локальный движок загрузит модель")}{" "}
+                <span className="text-foreground font-medium">{t("автоматически при первой транскрибации")}</span>{" "}
+                (~{engineSizeLabel}{t("). Уже со второй задачи распознавание начнётся мгновенно — модель останется на диске.")} </p>
             </div>
           </div>
 
           <div className="space-y-2.5 text-sm text-muted-foreground bg-[#0b0f19]/40 rounded-xl p-4 border border-[#263147]">
             <div className="flex items-start gap-2.5">
               <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />
-              <span>Нативный Whisper работает напрямую на вашем CPU — в разы быстрее браузерного.</span>
+              <span>{t("Нативный Whisper работает напрямую на вашем CPU — в разы быстрее браузерного.")}</span>
             </div>
             <div className="flex items-start gap-2.5">
               <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />
-              <span>Никаких архивов и ручных загрузок — движок сам скачает модель с официального репозитория OpenAI.</span>
+              <span>{t("Никаких архивов и ручных загрузок — движок сам скачает модель с официального репозитория OpenAI.")}</span>
             </div>
             {engineServerOnline && (
               <div className="flex items-start gap-2.5">
                 <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />
-                <span>Движок сейчас online — можно работать сразу после завершения настройки.</span>
+                <span>{t("Движок сейчас online — можно работать сразу после завершения настройки.")}</span>
               </div>
             )}
           </div>
@@ -150,8 +147,7 @@ export function ModelDownloadStep({ onNext }: { onNext: () => void }) {
             onClick={onNext}
             className="bg-gradient-primary text-white px-8 py-3.5 rounded-xl font-medium hover:opacity-90 transition-opacity glow-primary inline-flex items-center gap-2"
           >
-            Завершить настройку
-            <ArrowRight className="w-5 h-5" />
+            {t("Завершить настройку")} <ArrowRight className="w-5 h-5" />
           </button>
         </div>
       </motion.div>
@@ -170,10 +166,7 @@ export function ModelDownloadStep({ onNext }: { onNext: () => void }) {
       <div className="text-center mb-10">
         <h2 className="text-3xl font-bold mb-3">{t("Загрузка модели Whisper")}</h2>
         <p className="text-muted-foreground max-w-lg mx-auto">
-          Модель скачивается один раз и кешируется в браузере. При следующем
-          открытии страницы она загрузится мгновенно — без повторной загрузки из
-          интернета.
-        </p>
+          {t("Модель скачивается один раз и кешируется в браузере. При следующем открытии страницы она загрузится мгновенно — без повторной загрузки из интернета.")} </p>
       </div>
 
       <div className="glass-card rounded-2xl p-6 mb-6">
@@ -188,19 +181,19 @@ export function ModelDownloadStep({ onNext }: { onNext: () => void }) {
           <div className="flex-1">
             <div className="font-medium text-sm">
               {phase === "ready"
-                ? "Готово! Модель в кеше браузера."
+                ? t("Готово! Модель в кеше браузера.")
                 : phase === "error"
-                ? "Ошибка загрузки"
-                : modelProgressText || "Инициализация…"}
+                ? t("Ошибка загрузки")
+                : modelProgressText || t("Инициализация…")}
             </div>
             {currentFile && phase === "loading" && (
               <div className="text-xs text-muted-foreground truncate">
-                Текущий файл: {currentFile}
+                {t("Текущий файл:")} {currentFile}
               </div>
             )}
             {filesTotal > 0 && (
               <div className="text-xs text-muted-foreground">
-                Загружено файлов: {filesDone} из {filesTotal}
+                {t("Загружено файлов:")} {filesDone}  {t("из")} {filesTotal}
               </div>
             )}
           </div>
@@ -221,10 +214,7 @@ export function ModelDownloadStep({ onNext }: { onNext: () => void }) {
         <div className="mt-4 text-xs text-muted-foreground flex items-start gap-2">
           <Info className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
           <span>
-            Файлы приходят напрямую с Hugging Face в кеш браузера — никаких
-            архивов на диск. Используются ресурсы вашего процессора при
-            распознавании.
-          </span>
+            {t("Файлы приходят напрямую с Hugging Face в кеш браузера — никаких архивов на диск. Используются ресурсы вашего процессора при распознавании.")} </span>
         </div>
       </div>
 
@@ -238,16 +228,14 @@ export function ModelDownloadStep({ onNext }: { onNext: () => void }) {
             onClick={onNext}
             className="bg-gradient-primary text-white px-8 py-3.5 rounded-xl font-medium hover:opacity-90 transition-opacity glow-primary"
           >
-            Открыть финальный шаг →
-          </button>
+            {t("Открыть финальный шаг →")} </button>
         </motion.div>
       )}
 
       {phase === "error" && (
         <div className="text-center">
           <p className="text-sm text-red-400 mb-3">
-            Не удалось загрузить модель. Проверьте интернет-соединение и попробуйте снова.
-          </p>
+            {t("Не удалось загрузить модель. Проверьте интернет-соединение и попробуйте снова.")} </p>
           <button
             onClick={() => {
               started.current = false;
@@ -255,8 +243,7 @@ export function ModelDownloadStep({ onNext }: { onNext: () => void }) {
             }}
             className="bg-gradient-primary text-white px-8 py-3.5 rounded-xl font-medium hover:opacity-90"
           >
-            Повторить загрузку
-          </button>
+            {t("Повторить загрузку")} </button>
         </div>
       )}
     </motion.div>

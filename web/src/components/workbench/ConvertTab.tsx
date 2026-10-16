@@ -19,7 +19,7 @@ import { useState, useRef, useCallback, useEffect } from "react";
 
 import { convertMedia, downloadBytes, getFFmpeg } from "@/lib/ffmpeg";
 import { useOnboarding } from "@/lib/onboarding-store";
-import { EngineUpdateGuide, isEngineOutdated } from "@/components/workbench/EngineUpdateGuide";
+import { translate, useI18n } from "@/lib/i18n";
 import {
   convertViaEngine,
   uploadFileToEngine,
@@ -45,20 +45,20 @@ const MEDIA_FORMATS = [
 ];
 
 export function ConvertTab() {
+  const { t } = useI18n();
   const [mode, setMode] = useState<Mode>("media");
   return (
     <div className="max-w-4xl mx-auto px-6 py-8">
       <div className="mb-8">
-        <h1 className="text-2xl font-bold mb-1">Конвертер</h1>
+        <h1 className="text-2xl font-bold mb-1">{t("Конвертер")}</h1>
         <p className="text-sm text-muted-foreground">
-          Медиа (через локальный ffmpeg, если движок запущен — иначе ffmpeg.wasm), изображения (Canvas), документы Word ↔ PDF ↔ TXT.
-        </p>
+          {t("Медиа (через локальный ffmpeg, если движок запущен — иначе ffmpeg.wasm), изображения (Canvas), документы Word ↔ PDF ↔ TXT.")} </p>
       </div>
 
       <div className="flex gap-2 mb-6 flex-wrap">
-        <ModeBtn active={mode === "media"} onClick={() => setMode("media")} icon={FileAudio} label="Медиа" />
-        <ModeBtn active={mode === "image"} onClick={() => setMode("image")} icon={ImageIcon} label="Изображения" />
-        <ModeBtn active={mode === "text"} onClick={() => setMode("text")} icon={FileText} label="Документы" />
+        <ModeBtn active={mode === "media"} onClick={() => setMode("media")} icon={FileAudio} label={t("Медиа")} />
+        <ModeBtn active={mode === "image"} onClick={() => setMode("image")} icon={ImageIcon} label={t("Изображения")} />
+        <ModeBtn active={mode === "text"} onClick={() => setMode("text")} icon={FileText} label={t("Документы")} />
       </div>
 
       {mode === "media" && <MediaConverter />}
@@ -95,6 +95,7 @@ function ModeBtn({
 }
 
 function MediaConverter() {
+  const { t } = useI18n();
   const { engineServerOnline, engineServerHealth } = useOnboarding();
   const supportsJobs = !!engineServerHealth?.jobs;
   const supportsQueue = !!engineServerHealth?.queue; // движок ≥ 1.2.0: очереди задач
@@ -144,7 +145,7 @@ function MediaConverter() {
       setResultFile(r.file);
       setResultName(r.name || "output");
       const when = r.at ? new Date(r.at).toLocaleString() : "";
-      setJobNote(`Восстановлен последний готовый файл${when ? ` (от ${when})` : ""}.`);
+      setJobNote(t("Восстановлен последний готовый файл{when}.", { when: when ? t("(от {d})", { d: when }) : "" }));
     } catch {
       /* ignore */
     }
@@ -168,13 +169,13 @@ function MediaConverter() {
       }
       if (outcome.state === "lost") {
         clearActiveJob("convert");
-        setJobNote("Прошлая фоновая задача не найдена — движок перезапускался.");
+        setJobNote(t("Прошлая фоновая задача не найдена — движок перезапускался."));
         restoreLastConvert();
         return;
       }
       if (outcome.state === "error") {
         clearActiveJob("convert");
-        setError(outcome.job.error || "Фоновая задача завершилась с ошибкой");
+        setError(outcome.job.error || t("Фоновая задача завершилась с ошибкой"));
         return;
       }
       const rec = outcome.record;
@@ -184,26 +185,26 @@ function MediaConverter() {
         if (res?.file) {
           setResultFile(res.file);
           setResultName(fileNameFromUrl(res.file, `output.${target}`));
-          setJobNote("Фоновая конвертация завершилась, пока вас не было — файл готов.");
+          setJobNote(t("Фоновая конвертация завершилась, пока вас не было — файл готов."));
         } else {
-          setJobNote(res?.message || "Фоновая задача завершилась.");
+          setJobNote(res?.message || t("Фоновая задача завершилась."));
         }
         return;
       }
       // running — переподключаемся
       setBusy(true);
       setProgress(1);
-      setProgressText("Переподключение к фоновой задаче…");
-      setJobNote("Задача выполнялась в фоне — снова следим за ней.");
+      setProgressText(t("Переподключение к фоновой задаче…"));
+      setJobNote(t("Задача выполнялась в фоне — снова следим за ней."));
       try {
         const res = await watchJobToCompletion<TaskResult>(
           rec.jobId,
           (p: EngineProgress) => {
             setProgress(p.percent);
-            setProgressText(p.stage || "Конвертация…");
+            setProgressText(p.stage || t("Конвертация…"));
             setJobNote((n) =>
               p.stage?.startsWith("В очереди")
-                ? "Задача стоит в очереди — движок выполняет другую задачу. Она начнётся автоматически: ничего не пропадёт."
+                ? t("Задача стоит в очереди — движок выполняет другую задачу. Она начнётся автоматически: ничего не пропадёт.")
                 : n?.startsWith("Задача стоит в очереди")
                   ? null
                   : n
@@ -214,17 +215,17 @@ function MediaConverter() {
         );
         if (cancelled) return;
         if (res.status !== "success" || !res.file) {
-          throw new Error(res.message || "Движок вернул ошибку");
+          throw new Error(res.message || t("Движок вернул ошибку"));
         }
         const fname = fileNameFromUrl(res.file, `output.${target}`);
         setResultFile(res.file);
         setResultName(fname);
         setProgress(100);
-        setProgressText("Готово");
+        setProgressText(t("Готово"));
         persistLastConvert(res.file, fname);
       } catch (e: any) {
         if (cancelled) return;
-        setError(e?.message ?? "Ошибка фоновой задачи");
+        setError(e?.message ?? t("Ошибка фоновой задачи"));
       } finally {
         if (!cancelled) setBusy(false);
       }
@@ -246,7 +247,7 @@ function MediaConverter() {
   }, [busy]);
 
   async function cancelRun() {
-    setProgressText("Отменяем задачу…");
+    setProgressText(t("Отменяем задачу…"));
     try {
       await cancelActiveJob("convert");
     } catch {
@@ -255,7 +256,7 @@ function MediaConverter() {
     setBusy(false);
     setProgress(0);
     setProgressText("");
-    setJobNote("Задача отменена.");
+    setJobNote(t("Задача отменена."));
   }
 
   const handleFile = useCallback((f: File) => {
@@ -280,18 +281,18 @@ function MediaConverter() {
     try {
       if (engineServerOnline) {
         // ===== Через локальный движок =====
-        setProgressText("Загружаем файл на движок…");
+        setProgressText(t("Загружаем файл на движок…"));
         setProgress(10);
         const filePath = await uploadFileToEngine(file, file.name);
         setProgress(25);
-        setProgressText("Конвертация на движке…");
+        setProgressText(t("Конвертация на движке…"));
 
         const result = await convertViaEngine(filePath, target, (p: EngineProgress) => {
           setProgress(p.percent);
-          setProgressText(p.stage || "Конвертация…");
+          setProgressText(p.stage || t("Конвертация…"));
           setJobNote((n) =>
             p.stage?.startsWith("В очереди")
-              ? "Задача стоит в очереди — движок выполняет другую задачу. Она начнётся автоматически: ничего не пропадёт, можно переключать вкладки."
+              ? t("Задача стоит в очереди — движок выполняет другую задачу. Она начнётся автоматически: ничего не пропадёт, можно переключать вкладки.")
               : n?.startsWith("Задача стоит в очереди")
                 ? null
                 : n
@@ -302,7 +303,7 @@ function MediaConverter() {
         }, file.name);
 
         if (result.status !== "success" || !result.file) {
-          throw new Error(result.message || "Движок вернул ошибку");
+          throw new Error(result.message || t("Движок вернул ошибку"));
         }
 
         // Извлекаем имя
@@ -317,13 +318,13 @@ function MediaConverter() {
         setResultFile(result.file);
         setResultName(fname);
         setProgress(100);
-        setProgressText("Готово");
+        setProgressText(t("Готово"));
         persistLastConvert(result.file, fname);
         return;
       }
 
       // ===== Fallback на ffmpeg.wasm в браузере =====
-      setProgressText("Загружаем ffmpeg.wasm…");
+      setProgressText(t("Загружаем ffmpeg.wasm…"));
       setProgress(5);
       await getFFmpeg();
       setProgress(15);
@@ -342,7 +343,7 @@ function MediaConverter() {
         extra.push("-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac");
       }
 
-      setProgressText("Конвертация через ffmpeg.wasm…");
+      setProgressText(t("Конвертация через ffmpeg.wasm…"));
       const out = await convertMedia(inBytes, inName, outName, extra, (m) => {
         setLog((l) => [...l.slice(-50), m]);
       });
@@ -354,10 +355,10 @@ function MediaConverter() {
         data: out,
       });
       setProgress(100);
-      setProgressText("Готово");
+      setProgressText(t("Готово"));
     } catch (err: any) {
       console.error(err);
-      setError(err?.message ?? "Ошибка конвертации");
+      setError(err?.message ?? t("Ошибка конвертации"));
     } finally {
       setBusy(false);
     }
@@ -370,7 +371,7 @@ function MediaConverter() {
         await downloadEngineFile(resultFile, resultName || `output.${target}`);
       } catch (e: any) {
         console.error(e);
-        setDownloadError(e?.message ?? "Не удалось скачать файл");
+        setDownloadError(e?.message ?? t("Не удалось скачать файл"));
       }
       return;
     }
@@ -388,22 +389,14 @@ function MediaConverter() {
     <div className="space-y-5">
       <div className="text-xs px-3 py-2 rounded-lg bg-[#1b2334] text-muted-foreground inline-block">
         {engineServerOnline ? (
-          <>🟢 Через локальный движок (нативный ffmpeg) — быстрее, больше форматов</>
+          <>{t("🟢 Через локальный движок (нативный ffmpeg) — быстрее, больше форматов")}</>
         ) : (
-          <>🟡 Через ffmpeg.wasm в браузере — медленнее, но без установки</>
+          <>{t("🟡 Через ffmpeg.wasm в браузере — медленнее, но без установки")}</>
         )}
       </div>
 
-      {/* Старый движок — инструкция обновления раскрывается на месте */}
-      {engineServerOnline && engineServerHealth && !supportsJobs && (
-        <EngineUpdateGuide reason="no-jobs" health={engineServerHealth} />
-      )}
-      {engineServerOnline && engineServerHealth && supportsJobs && !supportsQueue && (
-        <EngineUpdateGuide reason="no-queue" health={engineServerHealth} />
-      )}
-      {engineServerOnline && engineServerHealth && supportsJobs && supportsQueue && isEngineOutdated(engineServerHealth) && (
-        <EngineUpdateGuide reason="outdated" health={engineServerHealth} />
-      )}
+      {/* Баннер обновления движка перенесён в Настройки — вкладки не засоряем сообщениями:
+          индикатор в шапке зелёный = всё работает, а обновление доступно в Настройках. */}
 
       {!file ? (
         <div className="space-y-4">
@@ -430,10 +423,9 @@ function MediaConverter() {
             <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-[#7c5bf5]/15 mb-4">
               <FileAudio className="w-8 h-8 text-[#7c5bf5]" />
             </div>
-            <h3 className="font-semibold mb-1">Загрузите аудио или видео</h3>
+            <h3 className="font-semibold mb-1">{t("Загрузите аудио или видео")}</h3>
             <p className="text-sm text-muted-foreground">
-              MP3, WAV, M4A, MP4, MKV, WebM, MOV — до 500 МБ
-            </p>
+              {t("MP3, WAV, M4A, MP4, MKV, WebM, MOV — до 500 МБ")} </p>
           </div>
 
           {/* Восстановленный результат фоновой конвертации — виден и без выбранного файла */}
@@ -444,7 +436,7 @@ function MediaConverter() {
               <button
                 onClick={() => setJobNote(null)}
                 className="p-0.5 rounded hover:bg-white/10 flex-shrink-0"
-                title="Скрыть"
+                title={t("Скрыть")}
               >
                 <X className="w-4 h-4 text-muted-foreground" />
               </button>
@@ -457,15 +449,14 @@ function MediaConverter() {
                   <Download className="w-4 h-4 text-emerald-500" />
                   {resultName}
                 </div>
-                <div className="text-xs text-muted-foreground mt-0.5">Готово — файл ждёт на диске движка</div>
+                <div className="text-xs text-muted-foreground mt-0.5">{t("Готово — файл ждёт на диске движка")}</div>
               </div>
               <button
                 onClick={download}
                 className="bg-emerald-500/15 text-emerald-400 px-4 py-2 rounded-lg font-medium inline-flex items-center gap-2 hover:bg-emerald-500/25"
               >
                 <Download className="w-4 h-4" />
-                Скачать
-              </button>
+                {t("Скачать")} </button>
             </div>
           )}
           {resultFile && !busy && downloadError && (
@@ -483,7 +474,7 @@ function MediaConverter() {
             <div className="flex-1 min-w-0">
               <div className="font-medium truncate">{file.name}</div>
               <div className="text-xs text-muted-foreground">
-                {(file.size / 1024 / 1024).toFixed(2)} МБ · {file.type || "неизвестный формат"}
+                {(file.size / 1024 / 1024).toFixed(2)}  {t("МБ ·")} {file.type || t("неизвестный формат")}
               </div>
             </div>
             <button
@@ -503,8 +494,7 @@ function MediaConverter() {
               <div className="flex-1 min-w-48">
                 <label className="text-xs text-muted-foreground block mb-1 flex items-center gap-1.5">
                   <Settings2 className="w-3 h-3" />
-                  Формат
-                </label>
+                  {t("Формат")} </label>
                 <select
                   value={target}
                   onChange={(e) => setTarget(e.target.value)}
@@ -521,7 +511,7 @@ function MediaConverter() {
               {target === "mp3" && (
                 <div className="flex-1 min-w-48">
                   <label className="text-xs text-muted-foreground block mb-1">
-                    Битрейт MP3: {bitrate} kbps
+                    {t("Битрейт MP3:")} {bitrate} kbps
                   </label>
                   <input
                     type="range"
@@ -542,10 +532,9 @@ function MediaConverter() {
               >
                 {busy ? (
                   <>
-                    <Loader2 className="w-4 h-4 animate-spin" /> Конвертация…
-                  </>
+                    <Loader2 className="w-4 h-4 animate-spin" />  {t("Конвертация…")} </>
                 ) : (
-                  "Сконвертировать"
+                  t("Сконвертировать")
                 )}
               </button>
             </div>
@@ -566,8 +555,7 @@ function MediaConverter() {
                 {log.length > 0 && (
                   <details className="text-xs">
                     <summary className="text-muted-foreground cursor-pointer hover:text-foreground">
-                      Лог ({log.length} строк)
-                    </summary>
+                      {t("Лог (")}{log.length}  {t("строк)")} </summary>
                     <div className="max-h-32 overflow-y-auto mt-2 font-mono text-[10px] text-muted-foreground bg-[#0b0f19] p-2 rounded-lg">
                       {log.map((l, i) => (
                         <div key={i} className="truncate">{l}</div>
@@ -579,16 +567,15 @@ function MediaConverter() {
                   <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
                     <span className="text-xs text-emerald-300/90">
                       {supportsJobs
-                        ? "Задача на движке: вкладку можно переключить или закрыть — файл дождётся вас здесь."
-                        : "Задача идёт в этой вкладке — не закрывайте её."}
+                        ? t("Задача на движке: вкладку можно переключить или закрыть — файл дождётся вас здесь.")
+                        : t("Задача идёт в этой вкладке — не закрывайте её.")}
                     </span>
                     <button
                       onClick={cancelRun}
                       className="px-3 py-1.5 rounded-lg bg-[#1b2334] hover:bg-[#263147] text-xs font-medium inline-flex items-center gap-1.5 transition-colors flex-shrink-0"
                     >
                       <Square className="w-3 h-3" />
-                      Отменить
-                    </button>
+                      {t("Отменить")} </button>
                   </div>
                 )}
               </div>
@@ -607,7 +594,7 @@ function MediaConverter() {
                 <button
                   onClick={() => setJobNote(null)}
                   className="p-0.5 rounded hover:bg-white/10 flex-shrink-0"
-                  title="Скрыть"
+                  title={t("Скрыть")}
                 >
                   <X className="w-3 h-3" />
                 </button>
@@ -623,7 +610,7 @@ function MediaConverter() {
                 <div className="text-sm">
                   <div className="font-medium">{result?.name || resultName}</div>
                   <div className="text-xs text-muted-foreground">
-                    {result ? `${(result.sizeKB / 1024).toFixed(2)} МБ` : "Готово"}
+                    {result ? `${(result.sizeKB / 1024).toFixed(2)} МБ` : t("Готово")}
                   </div>
                 </div>
                 <button
@@ -631,8 +618,7 @@ function MediaConverter() {
                   className="bg-emerald-500/15 text-emerald-400 px-4 py-2 rounded-lg font-medium inline-flex items-center gap-2 hover:bg-emerald-500/25"
                 >
                   <Download className="w-4 h-4" />
-                  Скачать
-                </button>
+                  {t("Скачать")} </button>
               </motion.div>
             )}
             {resultFile && !result && !busy && downloadError && (
@@ -650,6 +636,7 @@ function MediaConverter() {
 }
 
 function ImageConverter() {
+  const { t } = useI18n();
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [target, setTarget] = useState<"png" | "jpeg" | "webp">("png");
@@ -681,7 +668,7 @@ function ImageConverter() {
       canvas.width = img.naturalWidth;
       canvas.height = img.naturalHeight;
       const ctx = canvas.getContext("2d");
-      if (!ctx) throw new Error("Canvas не поддерживается");
+      if (!ctx) throw new Error(t("Canvas не поддерживается"));
       ctx.drawImage(img, 0, 0);
 
       const mime = `image/${target}`;
@@ -693,7 +680,7 @@ function ImageConverter() {
         )
       );
 
-      if (!blob) throw new Error("Не удалось сконвертировать");
+      if (!blob) throw new Error(t("Не удалось сконвертировать"));
       const baseName = file.name.replace(/\.[^.]+$/, "");
       setResult({
         blob,
@@ -746,8 +733,8 @@ function ImageConverter() {
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-[#7c5bf5]/15 mb-4">
             <Upload className="w-8 h-8 text-[#7c5bf5]" />
           </div>
-          <h3 className="font-semibold mb-1">Загрузите изображение</h3>
-          <p className="text-sm text-muted-foreground">PNG, JPEG, WebP — до 20 МБ</p>
+          <h3 className="font-semibold mb-1">{t("Загрузите изображение")}</h3>
+          <p className="text-sm text-muted-foreground">{t("PNG, JPEG, WebP — до 20 МБ")}</p>
         </div>
       ) : (
         <div className="space-y-5">
@@ -760,7 +747,7 @@ function ImageConverter() {
             <div className="flex-1 min-w-0">
               <div className="font-medium truncate">{file.name}</div>
               <div className="text-xs text-muted-foreground">
-                {(file.size / 1024).toFixed(1)} КБ · {file.type}
+                {(file.size / 1024).toFixed(1)}  {t("КБ ·")} {file.type}
               </div>
             </div>
             <button
@@ -778,22 +765,22 @@ function ImageConverter() {
           <div className="glass-card rounded-2xl p-5">
             <div className="flex flex-wrap gap-4 items-end">
               <div>
-                <label className="text-xs text-muted-foreground block mb-1">Формат</label>
+                <label className="text-xs text-muted-foreground block mb-1">{t("Формат")}</label>
                 <select
                   value={target}
                   onChange={(e) => setTarget(e.target.value as any)}
                   className="bg-[#0b0f19] border border-[#263147] rounded-lg px-3 py-2 text-sm"
                 >
-                  <option value="png">PNG (без потерь)</option>
-                  <option value="jpeg">JPEG (сжатие)</option>
-                  <option value="webp">WebP (компактный)</option>
+                  <option value="png">{t("PNG (без потерь)")}</option>
+                  <option value="jpeg">{t("JPEG (сжатие)")}</option>
+                  <option value="webp">{t("WebP (компактный)")}</option>
                 </select>
               </div>
 
               {target === "jpeg" && (
                 <div className="flex-1 min-w-48">
                   <label className="text-xs text-muted-foreground block mb-1">
-                    Качество: {Math.round(quality * 100)}%
+                    {t("Качество:")} {Math.round(quality * 100)}%
                   </label>
                   <input
                     type="range"
@@ -814,10 +801,9 @@ function ImageConverter() {
               >
                 {busy ? (
                   <>
-                    <Loader2 className="w-4 h-4 animate-spin" /> Конвертация…
-                  </>
+                    <Loader2 className="w-4 h-4 animate-spin" />  {t("Конвертация…")} </>
                 ) : (
-                  "Сконвертировать"
+                  t("Сконвертировать")
                 )}
               </button>
             </div>
@@ -830,15 +816,14 @@ function ImageConverter() {
               >
                 <div className="text-sm">
                   <div className="font-medium">{result.name}</div>
-                  <div className="text-xs text-muted-foreground">{result.sizeKB} КБ</div>
+                  <div className="text-xs text-muted-foreground">{result.sizeKB}  {t("КБ")}</div>
                 </div>
                 <button
                   onClick={download}
                   className="bg-emerald-500/15 text-emerald-400 px-4 py-2 rounded-lg font-medium inline-flex items-center gap-2 hover:bg-emerald-500/25"
                 >
                   <Download className="w-4 h-4" />
-                  Скачать
-                </button>
+                  {t("Скачать")} </button>
               </motion.div>
             )}
           </div>
@@ -916,10 +901,11 @@ async function decodeTextFile(f: File): Promise<{ text: string; encoding: string
       /* пробуем следующую кодировку */
     }
   }
-  return { text: new TextDecoder("utf-8").decode(buf), encoding: "UTF-8 (с заменами)" };
+  return { text: new TextDecoder("utf-8").decode(buf), encoding: translate("UTF-8 (с заменами)") };
 }
 
 function DocConverter() {
+  const { t } = useI18n();
   const { engineServerOnline, engineServerHealth } = useOnboarding();
   const supportsJobs = !!engineServerHealth?.jobs;
   const [file, setFile] = useState<File | null>(null);
@@ -967,7 +953,7 @@ function DocConverter() {
       setResultFile(r.file);
       setResultName(r.name || "output");
       const when = r.at ? new Date(r.at).toLocaleString() : "";
-      setJobNote(`Восстановлен последний готовый файл${when ? ` (от ${when})` : ""}.`);
+      setJobNote(t("Восстановлен последний готовый файл{when}.", { when: when ? t("(от {d})", { d: when }) : "" }));
     } catch {
       /* ignore */
     }
@@ -991,13 +977,13 @@ function DocConverter() {
       }
       if (outcome.state === "lost") {
         clearActiveJob("convert");
-        setJobNote("Прошлая фоновая задача не найдена — движок перезапускался.");
+        setJobNote(t("Прошлая фоновая задача не найдена — движок перезапускался."));
         restoreLastDoc();
         return;
       }
       if (outcome.state === "error") {
         clearActiveJob("convert");
-        setError(outcome.job.error || "Фоновая задача завершилась с ошибкой");
+        setError(outcome.job.error || t("Фоновая задача завершилась с ошибкой"));
         return;
       }
       if (outcome.state === "done") {
@@ -1006,40 +992,40 @@ function DocConverter() {
         if (res?.file) {
           setResultFile(res.file);
           setResultName(fileNameFromUrl(res.file, "output"));
-          setJobNote("Фоновая конвертация завершилась, пока вас не было — файл готов.");
+          setJobNote(t("Фоновая конвертация завершилась, пока вас не было — файл готов."));
         } else {
-          setJobNote(res?.message || "Фоновая задача завершилась.");
+          setJobNote(res?.message || t("Фоновая задача завершилась."));
         }
         return;
       }
       // running — переподключаемся к фоновой задаче
       setBusy(true);
       setProgress(1);
-      setProgressText("Переподключение к фоновой задаче…");
-      setJobNote("Задача выполнялась в фоне — снова следим за ней.");
+      setProgressText(t("Переподключение к фоновой задаче…"));
+      setJobNote(t("Задача выполнялась в фоне — снова следим за ней."));
       try {
         const res = await watchJobToCompletion<TaskResult>(
           outcome.record.jobId,
           (p: EngineProgress) => {
             setProgress(p.percent);
-            setProgressText(p.stage || "Конвертация…");
+            setProgressText(p.stage || t("Конвертация…"));
           },
           "convert"
         );
         if (cancelled) return;
         if (res.status !== "success" || !res.file) {
-          throw new Error(res.message || "Движок вернул ошибку");
+          throw new Error(res.message || t("Движок вернул ошибку"));
         }
         clearActiveJob("convert");
         const fname = fileNameFromUrl(res.file, "output");
         setResultFile(res.file);
         setResultName(fname);
         setProgress(100);
-        setProgressText("Готово");
+        setProgressText(t("Готово"));
         persistLastDoc(res.file, fname);
       } catch (e: any) {
         if (cancelled) return;
-        setError(e?.message ?? "Ошибка фоновой задачи");
+        setError(e?.message ?? t("Ошибка фоновой задачи"));
       } finally {
         if (!cancelled) setBusy(false);
       }
@@ -1087,7 +1073,7 @@ function DocConverter() {
     if (!file) return;
     const kind = docKindOf(file.name);
     if (!kind) {
-      setError("Неподдерживаемый формат файла. Возьмите DOCX, DOC, PDF, TXT, MD, CSV, RTF или ODT.");
+      setError(t("Неподдерживаемый формат файла. Возьмите DOCX, DOC, PDF, TXT, MD, CSV, RTF или ODT."));
       return;
     }
     const spec = DOC_TARGETS[kind].find((x) => x.ext === target);
@@ -1101,7 +1087,7 @@ function DocConverter() {
     try {
       // ── Локальные текст-преобразования: работают даже без движка ──
       if (spec && !spec.engine) {
-        setProgressText("Читаем файл…");
+        setProgressText(t("Читаем файл…"));
         setProgress(30);
         const { text } = await decodeTextFile(file);
         let out = text;
@@ -1116,37 +1102,37 @@ function DocConverter() {
         const base = file.name.replace(/\.[^.]+$/, "");
         setLocalResult({ name: `${base}.${target}`, sizeKB: blob.size, blob });
         setProgress(100);
-        setProgressText("Готово");
+        setProgressText(t("Готово"));
         return;
       }
 
       // ── Документные конвертации — только через движок ──
       if (!engineServerOnline) {
         throw new Error(
-          "Для конвертации документов (Word, PDF) нужен запущенный локальный движок — конвертация идёт на вашем компьютере, файлы никуда не отправляются. Установить: Настройки → «Установить движок»."
+          t("Для конвертации документов (Word, PDF) нужен запущенный локальный движок — конвертация идёт на вашем компьютере, файлы никуда не отправляются. Установить: Настройки → «Установить движок».")
         );
       }
       if (engineServerHealth?.docs === false) {
         throw new Error(
-          "Установленный движок собран без библиотек конвертации документов. Обновите его: Настройки → «Доступно обновление движка» (та же команда установки, 1–3 минуты)."
+          t("Установленный движок собран без библиотек конвертации документов. Обновите его: Настройки → «Доступно обновление движка» (та же команда установки, 1–3 минуты).")
         );
       }
 
-      setProgressText("Загружаем файл на движок…");
+      setProgressText(t("Загружаем файл на движок…"));
       setProgress(10);
       const filePath = await uploadFileToEngine(file, file.name);
       setProgress(25);
-      setProgressText("Конвертация на движке…");
+      setProgressText(t("Конвертация на движке…"));
 
       const result = await convertViaEngine(
         filePath,
         target,
         (p: EngineProgress) => {
           setProgress(Math.max(25, p.percent));
-          setProgressText(p.stage || "Конвертация…");
+          setProgressText(p.stage || t("Конвертация…"));
           setJobNote((n) =>
             p.stage?.startsWith("В очереди")
-              ? "Задача стоит в очереди — движок выполняет другую задачу. Она начнётся автоматически: ничего не пропадёт."
+              ? t("Задача стоит в очереди — движок выполняет другую задачу. Она начнётся автоматически: ничего не пропадёт.")
               : n?.startsWith("Задача стоит в очереди")
                 ? null
                 : n
@@ -1156,24 +1142,24 @@ function DocConverter() {
       );
 
       if (result.status !== "success" || !result.file) {
-        throw new Error(result.message || "Движок вернул ошибку");
+        throw new Error(result.message || t("Движок вернул ошибку"));
       }
       const fname = fileNameFromUrl(result.file, `output.${target}`);
       setResultFile(result.file);
       setResultName(fname);
       setProgress(100);
-      setProgressText("Готово");
+      setProgressText(t("Готово"));
       persistLastDoc(result.file, fname);
     } catch (err: any) {
       console.error(err);
-      setError(err?.message ?? "Ошибка конвертации");
+      setError(err?.message ?? t("Ошибка конвертации"));
     } finally {
       setBusy(false);
     }
   }
 
   async function cancelRun() {
-    setProgressText("Отменяем задачу…");
+    setProgressText(t("Отменяем задачу…"));
     try {
       await cancelActiveJob("convert");
     } catch {
@@ -1182,7 +1168,7 @@ function DocConverter() {
     setBusy(false);
     setProgress(0);
     setProgressText("");
-    setJobNote("Задача отменена.");
+    setJobNote(t("Задача отменена."));
   }
 
   function download() {
@@ -1201,7 +1187,7 @@ function DocConverter() {
       setDownloadError(null);
       downloadEngineFile(resultFile, resultName || `output.${target}`).catch((e: any) => {
         console.error(e);
-        setDownloadError(e?.message ?? "Не удалось скачать файл");
+        setDownloadError(e?.message ?? t("Не удалось скачать файл"));
       });
     }
   }
@@ -1218,24 +1204,13 @@ function DocConverter() {
     <div className="space-y-5">
       <div className="text-xs px-3 py-2 rounded-lg bg-[#1b2334] text-muted-foreground inline-block">
         {engineServerOnline ? (
-          <>🟢 Документы конвертируются на вашем компьютере (движок) — Word ↔ PDF ↔ TXT, никуда не отправляются</>
+          <>{t("🟢 Документы конвертируются на вашем компьютере (движок) — Word ↔ PDF ↔ TXT, никуда не отправляются")}</>
         ) : (
-          <>🟡 Движок не запущен: Word/PDF недоступны, текстовые форматы (TXT/MD/CSV/JSON) конвертируются в браузере</>
+          <>{t("🟡 Движок не запущен: Word/PDF недоступны, текстовые форматы (TXT/MD/CSV/JSON) конвертируются в браузере")}</>
         )}
       </div>
 
-      {/* Движок без библиотек документов / устаревший — инструкция обновления на месте.
-          Старые движки (≤ 1.2.2) вообще не присылают docs — им показываем outdated,
-          текст которого упоминает конвертацию документов. */}
-      {engineServerOnline && engineServerHealth && !supportsJobs && (
-        <EngineUpdateGuide reason="no-jobs" health={engineServerHealth} />
-      )}
-      {engineServerOnline && engineServerHealth && supportsJobs && engineServerHealth.docs === false && (
-        <EngineUpdateGuide reason="no-docs" health={engineServerHealth} />
-      )}
-      {engineServerOnline && engineServerHealth && supportsJobs && engineServerHealth.docs !== false && isEngineOutdated(engineServerHealth) && (
-        <EngineUpdateGuide reason="outdated" health={engineServerHealth} />
-      )}
+      {/* Баннер обновления движка перенесён в Настройки — вкладки не засоряем сообщениями */}
 
       {!file ? (
         <div
@@ -1261,10 +1236,9 @@ function DocConverter() {
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-[#7c5bf5]/15 mb-4">
             <FileText className="w-8 h-8 text-[#7c5bf5]" />
           </div>
-          <h3 className="font-semibold mb-1">Загрузите документ</h3>
+          <h3 className="font-semibold mb-1">{t("Загрузите документ")}</h3>
           <p className="text-sm text-muted-foreground">
-            Word (DOCX/DOC), PDF, TXT, RTF, ODT, MD, CSV — конвертация локально на вашем компьютере
-          </p>
+            {t("Word (DOCX/DOC), PDF, TXT, RTF, ODT, MD, CSV — конвертация локально на вашем компьютере")} </p>
         </div>
       ) : (
         <div className="space-y-5">
@@ -1274,10 +1248,9 @@ function DocConverter() {
               <div className="flex-1 min-w-0">
                 <div className="font-medium truncate">{file.name}</div>
                 <div className="text-xs text-muted-foreground">
-                  {(file.size / 1024).toFixed(1)} КБ
-                  {preview
-                    ? ` · ${preview.encoding} · ${preview.text.length}+ символов`
-                    : " · бинарный формат (конвертация на движке)"}
+                  {(file.size / 1024).toFixed(1)}  {t("КБ")} {preview
+                    ? t(" · {enc} · {n}+ символов", { enc: preview.encoding, n: preview.text.length })
+                    : t(" · бинарный формат (конвертация на движке)")}
                 </div>
               </div>
               <button
@@ -1297,7 +1270,7 @@ function DocConverter() {
             {preview && (
               <details className="mt-3 text-xs">
                 <summary className="text-muted-foreground cursor-pointer hover:text-foreground">
-                  Предпросмотр ({preview.encoding})
+                  {t("Предпросмотр (")}{preview.encoding})
                 </summary>
                 <pre className="max-h-40 overflow-y-auto mt-2 whitespace-pre-wrap break-words text-[11px] text-muted-foreground bg-[#0b0f19] p-3 rounded-lg font-mono">
                   {preview.text}
@@ -1309,7 +1282,7 @@ function DocConverter() {
           <div className="glass-card rounded-2xl p-5">
             <div className="flex flex-wrap gap-4 items-end">
               <div>
-                <label className="text-xs text-muted-foreground block mb-1">В формат</label>
+                <label className="text-xs text-muted-foreground block mb-1">{t("В формат")}</label>
                 <select
                   value={target}
                   onChange={(e) => setTarget(e.target.value)}
@@ -1329,10 +1302,9 @@ function DocConverter() {
               >
                 {busy ? (
                   <>
-                    <Loader2 className="w-4 h-4 animate-spin" /> Конвертация…
-                  </>
+                    <Loader2 className="w-4 h-4 animate-spin" />  {t("Конвертация…")} </>
                 ) : (
-                  "Сконвертировать"
+                  t("Сконвертировать")
                 )}
               </button>
             </div>
@@ -1353,15 +1325,13 @@ function DocConverter() {
                 {engineServerOnline && supportsJobs && (
                   <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
                     <span className="text-xs text-emerald-300/90">
-                      Задача на движке: вкладку можно переключить или закрыть — файл дождётся вас здесь.
-                    </span>
+                      {t("Задача на движке: вкладку можно переключить или закрыть — файл дождётся вас здесь.")} </span>
                     <button
                       onClick={cancelRun}
                       className="px-3 py-1.5 rounded-lg bg-[#1b2334] hover:bg-[#263147] text-xs font-medium inline-flex items-center gap-1.5 transition-colors flex-shrink-0"
                     >
                       <Square className="w-3 h-3" />
-                      Отменить
-                    </button>
+                      {t("Отменить")} </button>
                   </div>
                 )}
               </div>
@@ -1378,7 +1348,7 @@ function DocConverter() {
                 <button
                   onClick={() => setJobNote(null)}
                   className="p-0.5 rounded hover:bg-white/10 flex-shrink-0"
-                  title="Скрыть"
+                  title={t("Скрыть")}
                 >
                   <X className="w-3 h-3" />
                 </button>
@@ -1391,8 +1361,8 @@ function DocConverter() {
                   <div className="font-medium">{localResult?.name || resultName}</div>
                   <div className="text-xs text-muted-foreground">
                     {localResult
-                      ? `${(localResult.sizeKB / 1024).toFixed(1)} КБ · UTF-8`
-                      : "Готово — файл ждёт на диске движка"}
+                      ? t("{n} КБ · UTF-8", { n: (localResult.sizeKB / 1024).toFixed(1) })
+                      : t("Готово — файл ждёт на диске движка")}
                   </div>
                 </div>
                 <button
@@ -1400,8 +1370,7 @@ function DocConverter() {
                   className="bg-emerald-500/15 text-emerald-400 px-4 py-2 rounded-lg font-medium inline-flex items-center gap-2 hover:bg-emerald-500/25"
                 >
                   <Download className="w-4 h-4" />
-                  Скачать
-                </button>
+                  {t("Скачать")} </button>
               </div>
             )}
             {resultFile && !localResult && !busy && downloadError && (
@@ -1431,30 +1400,30 @@ function DownloadErrorCard({
   onRetryDirect: () => void;
   onClose: () => void;
 }) {
+  const { t } = useI18n();
   return (
     <div className="glass-card rounded-2xl p-4 mt-3 border-amber-500/30 bg-amber-500/5">
       <div className="flex items-start gap-3">
         <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
         <div className="flex-1 min-w-0">
-          <p className="text-sm text-amber-200 font-medium mb-1">Скачивание не удалось</p>
+          <p className="text-sm text-amber-200 font-medium mb-1">{t("Скачивание не удалось")}</p>
           <p className="text-xs text-amber-200/80 mb-2">{error}</p>
           <ul className="text-xs text-amber-200/70 leading-relaxed list-disc pl-4 space-y-0.5 mb-3">
-            <li>Мы уже попробовали скачать файл напрямую — проверьте загрузки браузера.</li>
-            <li>Движок мог перезапуститься и удалить файл — запустите конвертацию заново.</li>
-            <li>Движок до 1.2.2 не умеет отдавать файлы с русскими названиями — обновите его (Настройки → «Доступно обновление движка»).</li>
+            <li>{t("Мы уже попробовали скачать файл напрямую — проверьте загрузки браузера.")}</li>
+            <li>{t("Движок мог перезапуститься и удалить файл — запустите конвертацию заново.")}</li>
+            <li>{t("Движок до 1.2.2 не умеет отдавать файлы с русскими названиями — обновите его (Настройки → «Доступно обновление движка»).")}</li>
           </ul>
           <button
             onClick={onRetryDirect}
             className="px-3 py-1.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-200 text-xs font-medium inline-flex items-center gap-1.5 transition-colors"
           >
             <Download className="w-3.5 h-3.5" />
-            Открыть файл напрямую
-          </button>
+            {t("Открыть файл напрямую")} </button>
         </div>
         <button
           onClick={onClose}
           className="p-1 rounded-md hover:bg-white/10 flex-shrink-0"
-          title="Скрыть"
+          title={t("Скрыть")}
         >
           <X className="w-3.5 h-3.5" />
         </button>

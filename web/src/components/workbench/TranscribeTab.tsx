@@ -54,7 +54,6 @@ import {
 } from "@/lib/subtitles";
 import { copyTextToClipboard } from "@/lib/clipboard";
 import { useI18n } from "@/lib/i18n";
-import { EngineUpdateGuide, isEngineOutdated } from "@/components/workbench/EngineUpdateGuide";
 import { ConspectBridge } from "@/components/workbench/ConspectBridge";
 import { BatchPanel, type BatchItem } from "@/components/workbench/BatchPanel";
 
@@ -172,11 +171,11 @@ export function TranscribeTab({
       const f = e.dataTransfer.files?.[0];
       if (!f) return;
       // macOS иногда отдаёт пустой MIME-тип — доверяем и расширению
-      const t = (f.type || "").toLowerCase();
-      if (t.startsWith("audio/") || t.startsWith("video/") || AV_EXT_RE.test(f.name)) {
+      const mime = (f.type || "").toLowerCase();
+      if (mime.startsWith("audio/") || mime.startsWith("video/") || AV_EXT_RE.test(f.name)) {
         handleFile(f);
       } else {
-        setError("Это не похоже на аудио или видео — перетащите файл MP3, WAV, M4A, MP4, MKV, WebM или MOV");
+        setError(t("Это не похоже на аудио или видео — перетащите файл MP3, WAV, M4A, MP4, MKV, WebM или MOV"));
       }
     },
     [handleFile]
@@ -222,40 +221,40 @@ export function TranscribeTab({
     const useUrl = mode === "url" && urlValue && isUrl(urlValue);
 
     if (mode === "url" && !urlValue) {
-      setError("Введите URL видео");
+      setError(t("Введите URL видео"));
       return;
     }
     if (mode === "url" && !isUrl(urlValue)) {
-      setError("Некорректный URL (нужно http:// или https://)");
+      setError(t("Некорректный URL (нужно http:// или https://)"));
       return;
     }
     if (mode === "file" && !file) {
-      setError("Загрузите файл");
+      setError(t("Загрузите файл"));
       return;
     }
 
     // URL-задача требует локальный движок
     if (useUrl && !engineServerOnline) {
       setError(
-        "URL-задачи (YouTube, TikTok) требуют локальный движок — yt-dlp с impersonate Chrome. Запустите engine_server.py на компьютере и обновите страницу."
+        t("URL-задачи (YouTube, TikTok) требуют локальный движок — yt-dlp с impersonate Chrome. Запустите engine_server.py на компьютере и обновите страницу.")
       );
       return;
     }
 
     setPhase(useUrl ? "running" : "loading-engine");
-    setProgressText(useUrl ? "Запрос к локальному движку…" : "Подгружаем Whisper из кеша…");
+    setProgressText(useUrl ? t("Запрос к локальному движку…") : t("Подгружаем Whisper из кеша…"));
 
     try {
       if (engineServerOnline) {
         // ===== Локальный движок: Subtitles-First стратегия для URL, нативный Whisper для файлов =====
         setPhase("running");
         setProgress(5);
-        setProgressText("Локальный движок: запускаем задачу…");
+        setProgressText(t("Локальный движок: запускаем задачу…"));
 
         let filePath: string | undefined;
         if (mode === "file" && file) {
           // Загружаем файл на движок
-          setProgressText("Загружаем файл на движок…");
+          setProgressText(t("Загружаем файл на движок…"));
           setProgress(15);
           const { uploadFileToEngine } = await import("@/lib/engine-bridge");
           filePath = await uploadFileToEngine(file as File, fileName);
@@ -275,7 +274,7 @@ export function TranscribeTab({
             setProgressText(p.stage || "");
             setJobNote((n) =>
               p.stage?.startsWith("В очереди")
-                ? "Задача стоит в очереди — движок выполняет другую задачу. Она начнётся автоматически: ничего не пропадёт, можно спокойно переключать вкладки."
+                ? t("Задача стоит в очереди — движок выполняет другую задачу. Она начнётся автоматически: ничего не пропадёт, можно спокойно переключать вкладки.")
                 : n?.startsWith("Задача стоит в очереди")
                   ? null
                   : n
@@ -284,7 +283,7 @@ export function TranscribeTab({
               setProgressLog((l) => [...l.slice(-50), ...p.log.slice(-3)]);
             }
           },
-          useUrl ? urlValue : fileName || "локальный файл"
+          useUrl ? urlValue : fileName || t("локальный файл")
         );
 
         await applyEngineResult(result, { label: useUrl ? urlValue : fileName });
@@ -293,20 +292,20 @@ export function TranscribeTab({
 
       // ===== Браузерный режим: только локальные файлы =====
       if (!file) {
-        setError("В браузерном режиме можно распознавать только локальные файлы");
+        setError(t("В браузерном режиме можно распознавать только локальные файлы"));
         return;
       }
       setPhase("loading-engine");
       setProgress(5);
-      setProgressText("Подгружаем Whisper из кеша…");
+      setProgressText(t("Подгружаем Whisper из кеша…"));
 
       await loadWhisperPipeline(browserSafeModel(selectedModel));
       setPhase("running");
       setProgress(10);
-      setProgressText("Распознавание речи…");
+      setProgressText(t("Распознавание речи…"));
       const result = await transcribeAudio(file, language, (p) => {
         setProgress(10 + Math.round(p * 0.9));
-        if (p > 0) setProgressText(`Распознавание речи… ${p}%`);
+        if (p > 0) setProgressText(t("Распознавание речи… {p}%", { p }));
       });
       const resText = result.text || "";
       const segs: Seg[] = (result.chunks || []).map((c: any) => ({
@@ -318,16 +317,16 @@ export function TranscribeTab({
       }));
       setText(resText);
       setSegments(segs);
-      setSourceLabel(`Whisper ${browserSafeModel(selectedModel)} (браузер)`);
+      setSourceLabel(t("Whisper {m} (браузер)", { m: browserSafeModel(selectedModel) }));
 
       // Выбран конечный язык — переводим ДО выдачи результата
       const tr = await translateIfNeeded(resText, segs);
 
       setPhase("done");
       setProgress(100);
-      setProgressText("Готово");
+      setProgressText(t("Готово"));
       persistLastResult({
-        sourceLabel: `Whisper ${browserSafeModel(selectedModel)} (браузер)`,
+        sourceLabel: t("Whisper {m} (браузер)", { m: browserSafeModel(selectedModel) }),
         text: resText,
         segments: segs,
         targetLang,
@@ -341,7 +340,7 @@ export function TranscribeTab({
         return;
       }
       console.error(err);
-      setError(err?.message ?? "Ошибка распознавания");
+      setError(err?.message ?? t("Ошибка распознавания"));
       setPhase("error");
     }
   }
@@ -374,7 +373,7 @@ export function TranscribeTab({
       apiKey: deeplKey || undefined,
       engineOnline: engineServerOnline,
     };
-    setProgressText(`Переводим на ${label}…`);
+    setProgressText(t("Переводим на {l}…", { l: label }));
     try {
       if (origSegs.length > 0) {
         // Сегменты переводим построчно батчами — таймкоды сохраняются
@@ -383,7 +382,7 @@ export function TranscribeTab({
           {
             ...opts,
             onProgress: (pct) => {
-              setProgressText(`Переводим на ${label}… ${pct}%`);
+              setProgressText(t("Переводим на {l}… {p}%", { l: label, p: pct }));
               setProgress(Math.min(99, pct));
             },
           }
@@ -397,19 +396,19 @@ export function TranscribeTab({
         setTranslatedText(tText);
         return { tText, tSegs, err: null };
       } else {
-        const t = await translateText(origText, {
+        const translated = await translateText(origText, {
           ...opts,
           onProgress: (pct, eta) => {
-            setProgressText(`Переводим на ${label}… ${pct}%${eta ? " · " + eta : ""}`);
+            setProgressText(t("Переводим на {l}… {p}%{eta}", { l: label, p: pct, eta: eta ? " · " + eta : "" }));
             setProgress(Math.min(99, pct));
           },
         });
-        setTranslatedText(t);
-        return { tText: t, tSegs: [], err: null };
+        setTranslatedText(translated);
+        return { tText: translated, tSegs: [], err: null };
       }
     } catch (err: any) {
       console.error("Перевод транскрипции не удался:", err);
-      const msg = err?.message ?? "неизвестная ошибка";
+      const msg = err?.message ?? t("неизвестная ошибка");
       setTranslError(msg);
       return { tText: "", tSegs: [], err: msg };
     }
@@ -423,7 +422,7 @@ export function TranscribeTab({
     const tr = await translateIfNeeded(text, segments, lang);
     setPhase("done");
     setProgress(100);
-    setProgressText("Готово");
+    setProgressText(t("Готово"));
     persistLastResult({
       sourceLabel,
       text,
@@ -464,7 +463,7 @@ export function TranscribeTab({
     opts: { label?: string; targetLangOverride?: string }
   ) {
     if (result.status !== "success") {
-      throw new Error("Движок вернул ошибку");
+      throw new Error(t("Движок вернул ошибку"));
     }
     const resText = result.text || "";
     // Сегментов нет в ответе движка (он отдаёт text + файлы) — скачиваем SRT и парсим
@@ -478,7 +477,7 @@ export function TranscribeTab({
         console.warn("Не удалось загрузить SRT:", e);
       }
     }
-    const srcLabel = result.source || opts.label || "Локальный движок";
+    const srcLabel = result.source || opts.label || t("Локальный движок");
     setText(resText);
     setSegments(resSegs);
     setSourceLabel(srcLabel);
@@ -490,7 +489,7 @@ export function TranscribeTab({
 
     setPhase("done");
     setProgress(100);
-    setProgressText("Готово");
+    setProgressText(t("Готово"));
     persistLastResult({
       sourceLabel: srcLabel,
       text: resText,
@@ -519,9 +518,9 @@ export function TranscribeTab({
       setSegView("translation");
       setPhase("done");
       setProgress(100);
-      setProgressText("Готово");
+      setProgressText(t("Готово"));
       const when = r.at ? new Date(r.at).toLocaleString() : "";
-      setJobNote(`Восстановлен последний результат${when ? ` (от ${when})` : ""}.`);
+      setJobNote(t("Восстановлен последний результат{when}.", { when: when ? t("(от {d})", { d: when }) : "" }));
     } catch {
       /* ignore */
     }
@@ -554,13 +553,13 @@ export function TranscribeTab({
       }
       if (outcome.state === "lost") {
         clearActiveJob("transcribe");
-        setJobNote("Прошлая фоновая задача не найдена — движок перезапускался без журнала задач.");
+        setJobNote(t("Прошлая фоновая задача не найдена — движок перезапускался без журнала задач."));
         restoreLastResult();
         return;
       }
       if (outcome.state === "error") {
         clearActiveJob("transcribe");
-        setError(outcome.job.error || "Фоновая задача завершилась с ошибкой");
+        setError(outcome.job.error || t("Фоновая задача завершилась с ошибкой"));
         setPhase("error");
         return;
       }
@@ -572,7 +571,7 @@ export function TranscribeTab({
       }
       if (outcome.state === "done") {
         clearActiveJob("transcribe"); // результат забрали — слот освобождаем
-        setJobNote("Фоновая задача завершилась, пока вас не было — вот её результат.");
+        setJobNote(t("Фоновая задача завершилась, пока вас не было — вот её результат."));
         try {
           await applyEngineResult(outcome.job.result as TranscribeResult, {
             label: rec.label,
@@ -580,7 +579,7 @@ export function TranscribeTab({
           });
         } catch (e: any) {
           if (!cancelled) {
-            setError(e?.message ?? "Не удалось показать результат фоновой задачи");
+            setError(e?.message ?? t("Не удалось показать результат фоновой задачи"));
             setPhase("error");
           }
         }
@@ -589,8 +588,8 @@ export function TranscribeTab({
       // outcome.state === "running" — переподключаемся к слежению за задачей
       setPhase("running");
       setProgress(1);
-      setProgressText("Переподключение к фоновой задаче…");
-      setJobNote("Задача выполнялась в фоне — снова следим за ней. Пока вас не было, движок продолжал работать.");
+      setProgressText(t("Переподключение к фоновой задаче…"));
+      setJobNote(t("Задача выполнялась в фоне — снова следим за ней. Пока вас не было, движок продолжал работать."));
       try {
         const result = await watchJobToCompletion<TranscribeResult>(
           rec.jobId,
@@ -599,7 +598,7 @@ export function TranscribeTab({
             setProgressText(pp.stage || "");
             setJobNote((n) =>
               pp.stage?.startsWith("В очереди")
-                ? "Задача стоит в очереди — движок выполняет другую задачу. Она начнётся автоматически: ничего не пропадёт."
+                ? t("Задача стоит в очереди — движок выполняет другую задачу. Она начнётся автоматически: ничего не пропадёт.")
                 : n?.startsWith("Задача стоит в очереди")
                   ? null
                   : n
@@ -612,7 +611,7 @@ export function TranscribeTab({
         await applyEngineResult(result, { label: rec.label, targetLangOverride: pref });
       } catch (e: any) {
         if (cancelled || cancelledRef.current) return;
-        setError(e?.message ?? "Фоновая задача завершилась с ошибкой");
+        setError(e?.message ?? t("Фоновая задача завершилась с ошибкой"));
         setPhase("error");
       }
     })();
@@ -635,7 +634,7 @@ export function TranscribeTab({
   /** Отмена активной задачи (фоновая на движке или legacy) */
   async function cancelRun() {
     cancelledRef.current = true;
-    setProgressText("Отменяем задачу…");
+    setProgressText(t("Отменяем задачу…"));
     try {
       await cancelActiveJob("transcribe");
     } catch {
@@ -644,7 +643,7 @@ export function TranscribeTab({
     setPhase("idle");
     setProgress(0);
     setProgressText("");
-    setJobNote("Задача отменена.");
+    setJobNote(t("Задача отменена."));
   }
 
   // Что показываем/экспортируем: перевод (по умолчанию) или оригинал
@@ -681,7 +680,7 @@ export function TranscribeTab({
     downloadFile(
       `transcrypt${exportSuffix}.md`,
       buildMarkdown({
-        title: sourceLabel || "Транскрипт",
+        title: sourceLabel || t("Транскрипт"),
         source: sourceLabel,
         segments: viewSegments,
         text: viewText,
@@ -703,10 +702,10 @@ export function TranscribeTab({
     if (u && /youtube\.com|youtu\.be/i.test(u)) {
       const link = u + (u.includes("?") ? "&" : "?") + "t=" + Math.floor(sec) + "s";
       void copyTextToClipboard(link);
-      setJobNote(`Ссылка с таймкодом ${formatStamp(sec)} скопирована — откройте её, чтобы прослушать момент.`);
+      setJobNote(t("Ссылка с таймкодом {t} скопирована — откройте её, чтобы прослушать момент.", { t: formatStamp(sec) }));
     } else {
       void copyTextToClipboard(formatStamp(sec));
-      setJobNote(`Таймкод ${formatStamp(sec)} скопирован.`);
+      setJobNote(t("Таймкод {t} скопирован.", { t: formatStamp(sec) }));
     }
   }
 
@@ -717,10 +716,10 @@ export function TranscribeTab({
     setSegments([]);
     clearTranslation();
     setSourceLabel(it.result.source || it.label);
-    setJobNote(`Результат пакетной обработки: ${it.label}`);
+    setJobNote(t("Результат пакетной обработки: {x}", { x: it.label }));
     setPhase("done");
     setProgress(100);
-    setProgressText("Готово");
+    setProgressText(t("Готово"));
     if (it.result.files?.srt) {
       try {
         const blob = await fetchEngineFile(it.result.files.srt);
@@ -790,13 +789,13 @@ export function TranscribeTab({
       <div className="flex items-center gap-3">
         <Mic className="w-5 h-5 text-[#7c5bf5]" />
         <div>
-          <div className="font-medium text-sm">Исходный язык</div>
+          <div className="font-medium text-sm">{t("Исходный язык")}</div>
           <select
             value={language}
             onChange={(e) => setLanguage(e.target.value)}
             className="bg-[#0b0f19] border border-[#263147] rounded-lg px-3 py-1.5 text-sm mt-1"
           >
-            <option value="auto">Автоопределение</option>
+            <option value="auto">{t("Автоопределение")}</option>
             {LANG_OPTIONS.map((l) => (
               <option key={l.code} value={l.code}>{l.label}</option>
             ))}
@@ -806,7 +805,7 @@ export function TranscribeTab({
       <div className="flex items-center gap-3">
         <Languages className="w-5 h-5 text-emerald-400" />
         <div>
-          <div className="font-medium text-sm">Перевести на</div>
+          <div className="font-medium text-sm">{t("Перевести на")}</div>
           <select
             value={targetLang}
             onChange={(e) => {
@@ -822,7 +821,7 @@ export function TranscribeTab({
             }}
             className="bg-[#0b0f19] border border-[#263147] rounded-lg px-3 py-1.5 text-sm mt-1"
           >
-            <option value="-">Оригинал (без перевода)</option>
+            <option value="-">{t("Оригинал (без перевода)")}</option>
             {LANG_OPTIONS.map((l) => (
               <option key={l.code} value={l.code}>{l.label}</option>
             ))}
@@ -838,7 +837,7 @@ export function TranscribeTab({
       disabled={!canRun}
       title={
         mode === "url" && !urlValid
-          ? "Вставьте корректную ссылку на видео"
+          ? t("Вставьте корректную ссылку на видео")
           : undefined
       }
       className="bg-gradient-primary text-white px-6 py-3 rounded-xl font-medium hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center gap-2 justify-center glow-primary"
@@ -846,13 +845,11 @@ export function TranscribeTab({
       {busy ? (
         <>
           <Loader2 className="w-4 h-4 animate-spin" />
-          Обработка…
-        </>
+          {t("Обработка…")} </>
       ) : (
         <>
           <Play className="w-4 h-4" />
-          Распознать речь
-        </>
+          {t("Распознать речь")} </>
       )}
     </button>
   );
@@ -867,9 +864,8 @@ export function TranscribeTab({
     const minB = Math.max(minA, Math.ceil(fileDuration / 60 / (f[1] * k)));
     return (
       <p className="text-xs text-muted-foreground">
-        Оценка времени: ≈ {minA}–{minB} мин{" "}
-        {engineServerOnline ? "на движке" : "в браузере (WASM — медленнее)"}. Зависит от процессора.
-      </p>
+        {t("Оценка времени: ≈")} {minA}–{minB}  {t("мин")}{" "}
+        {engineServerOnline ? t("на движке") : t("в браузере (WASM — медленнее)")}{t(". Зависит от процессора.")} </p>
     );
   })();
 
@@ -889,8 +885,7 @@ export function TranscribeTab({
       {progressLog.length > 0 && (
         <details className="mt-3 text-xs">
           <summary className="text-muted-foreground cursor-pointer hover:text-foreground">
-            Лог ({progressLog.length} строк)
-          </summary>
+            {t("Лог (")}{progressLog.length}  {t("строк)")} </summary>
           <div className="max-h-32 overflow-y-auto mt-2 font-mono text-[10px] text-muted-foreground bg-[#0b0f19] p-2 rounded-lg">
             {progressLog.map((l, i) => (
               <div key={i} className="truncate">{l}</div>
@@ -904,29 +899,27 @@ export function TranscribeTab({
             <Server className="w-3.5 h-3.5 flex-shrink-0" />
             {supportsJobs
               ? supportsQueue
-                ? "Задача идёт на движке: можно переключать вкладки и запускать задачи в других разделах — они пойдут параллельно или встанут в очередь, ничего не пропадёт."
-                : "Задача выполняется на движке: можно переключать вкладки или закрыть браузер — результат дождётся вас здесь."
-              : "Задача идёт в этой вкладке — не закрывайте её. Обновите движок, чтобы задачи выполнялись в фоне."}
+                ? t("Задача идёт на движке: можно переключать вкладки и запускать задачи в других разделах — они пойдут параллельно или встанут в очередь, ничего не пропадёт.")
+                : t("Задача выполняется на движке: можно переключать вкладки или закрыть браузер — результат дождётся вас здесь.")
+              : t("Задача идёт в этой вкладке — не закрывайте её. Обновите движок, чтобы задачи выполнялись в фоне.")}
           </span>
           <button
             onClick={cancelRun}
             className="px-3 py-1.5 rounded-lg bg-[#1b2334] hover:bg-[#263147] text-xs font-medium inline-flex items-center gap-1.5 transition-colors flex-shrink-0"
           >
             <Square className="w-3 h-3" />
-            Отменить
-          </button>
+            {t("Отменить")} </button>
         </div>
       ) : (
         <p className="mt-3 text-xs text-amber-300/80">
-          Браузерный Whisper работает, только пока открыта вкладка — не переключайтесь надолго и не закрывайте её до завершения.
-        </p>
+          {t("Браузерный Whisper работает, только пока открыта вкладка — не переключайтесь надолго и не закрывайте её до завершения.")} </p>
       )}
     </div>
   ) : null;
 
   const errorBlock = error ? (
     <div className="glass-card rounded-2xl p-4 border-red-500/40">
-      <div className="text-sm text-red-400">Ошибка: {error}</div>
+      <div className="text-sm text-red-400">{t("Ошибка:")} {error}</div>
     </div>
   ) : null;
 
@@ -940,21 +933,21 @@ export function TranscribeTab({
 
       {sourceLabel && (
         <div className="glass-card rounded-2xl p-3 px-4 text-xs text-muted-foreground">
-          Источник: <span className="text-foreground font-medium">{sourceLabel}</span>
+          {t("Источник:")} <span className="text-foreground font-medium">{sourceLabel}</span>
           {translatedText && (
             <>
               <span className="mx-2">·</span>
-              переведено на: <span className="text-emerald-400 font-medium">{langLabel(targetLang)}</span>
+              {t("переведено на:")} <span className="text-emerald-400 font-medium">{langLabel(targetLang)}</span>
             </>
           )}
         </div>
       )}
       <div className="glass-card rounded-2xl p-4 flex flex-wrap gap-3 items-center justify-between">
         <div className="text-sm">
-          Найдено сегментов: <span className="font-mono font-bold text-[#7c5bf5]">{segments.length || "—"}</span>
+          {t("Найдено сегментов:")} <span className="font-mono font-bold text-[#7c5bf5]">{segments.length || "—"}</span>
           {totalDuration > 0 && (
             <span className="text-muted-foreground ml-3">
-              длительность ≈ {formatDuration(totalDuration)}
+              {t("длительность ≈")} {formatDuration(totalDuration)}
             </span>
           )}
         </div>
@@ -994,9 +987,7 @@ export function TranscribeTab({
           <div className="text-sm text-amber-300 flex items-start gap-2">
             <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
             <span>
-              Перевод не удался ({translError}). Транскрипция не потеряна — оригинал можно
-              скопировать или скачать ниже.
-            </span>
+              {t("Перевод не удался (")}{translError}{t("). Транскрипция не потеряна — оригинал можно скопировать или скачать ниже.")} </span>
           </div>
         </div>
       )}
@@ -1005,19 +996,19 @@ export function TranscribeTab({
         <div className="glass-card rounded-2xl p-5">
           <div className="flex items-center justify-between gap-2 mb-3">
             <h3 className="font-semibold text-sm">
-              {translatedText ? "Полный текст (оригинал)" : "Полный текст"}
+              {translatedText ? t("Полный текст (оригинал)") : t("Полный текст")}
             </h3>
             <CopyModesBtn
               modes={[
-                { id: "plain", label: "Обычный текст", get: () => text },
+                { id: "plain", label: t("Обычный текст"), get: () => text },
                 {
                   id: "stamps",
-                  label: "С таймкодами",
+                  label: t("С таймкодами"),
                   get: () => (segments.length ? segmentsWithStamps(segments) : text),
                 },
                 {
                   id: "quotes",
-                  label: "Цитатами (для конспекта)",
+                  label: t("Цитатами (для конспекта)"),
                   get: () => (segments.length ? segmentsAsQuotes(segments) : text),
                 },
               ]}
@@ -1032,20 +1023,20 @@ export function TranscribeTab({
           <div className="flex items-center justify-between gap-2 mb-3">
             <h3 className="font-semibold text-sm inline-flex items-center gap-2">
               <Languages className="w-4 h-4 text-emerald-400" />
-              Перевод — {langLabel(targetLang)}
+              {t("Перевод —")} {langLabel(targetLang)}
             </h3>
             <CopyModesBtn
               modes={[
-                { id: "plain", label: "Обычный текст", get: () => translatedText },
+                { id: "plain", label: t("Обычный текст"), get: () => translatedText },
                 {
                   id: "stamps",
-                  label: "С таймкодами",
+                  label: t("С таймкодами"),
                   get: () =>
                     translatedSegments.length ? segmentsWithStamps(translatedSegments) : translatedText,
                 },
                 {
                   id: "quotes",
-                  label: "Цитатами (для конспекта)",
+                  label: t("Цитатами (для конспекта)"),
                   get: () =>
                     translatedSegments.length ? segmentsAsQuotes(translatedSegments) : translatedText,
                 },
@@ -1071,8 +1062,7 @@ export function TranscribeTab({
                         : "text-muted-foreground hover:text-foreground"
                     }`}
                   >
-                    Перевод
-                  </button>
+                    {t("Перевод")} </button>
                   <button
                     onClick={() => setSegView("original")}
                     className={`px-2.5 py-1 rounded-md font-medium transition-colors ${
@@ -1081,15 +1071,14 @@ export function TranscribeTab({
                         : "text-muted-foreground hover:text-foreground"
                     }`}
                   >
-                    Оригинал
-                  </button>
+                    {t("Оригинал")} </button>
                 </div>
               )}
               <CopyModesBtn
                 modes={[
-                  { id: "plain", label: "Обычный текст", get: () => segmentsToPlainText(viewSegments) },
-                  { id: "stamps", label: "С таймкодами", get: () => segmentsWithStamps(viewSegments) },
-                  { id: "quotes", label: "Цитатами (для конспекта)", get: () => segmentsAsQuotes(viewSegments) },
+                  { id: "plain", label: t("Обычный текст"), get: () => segmentsToPlainText(viewSegments) },
+                  { id: "stamps", label: t("С таймкодами"), get: () => segmentsWithStamps(viewSegments) },
+                  { id: "quotes", label: t("Цитатами (для конспекта)"), get: () => segmentsAsQuotes(viewSegments) },
                 ]}
               />
             </div>
@@ -1103,14 +1092,14 @@ export function TranscribeTab({
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Поиск по тексту…"
+                placeholder={t("Поиск по тексту…")}
                 className="w-full bg-[#0b0f19] border border-[#263147] rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:border-[#7c5bf5]/50"
               />
             </div>
             {searchQuery.trim() && (
               <>
                 <span className="text-xs text-muted-foreground whitespace-nowrap">
-                  {matchCount > 0 ? `Совпадений: ${matchCount}` : "Ничего не найдено"}
+                  {matchCount > 0 ? `Совпадений: ${matchCount}` : t("Ничего не найдено")}
                 </span>
                 <label className="text-xs text-muted-foreground inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap">
                   <input
@@ -1119,15 +1108,14 @@ export function TranscribeTab({
                     onChange={(e) => setOnlyMatches(e.target.checked)}
                     className="accent-[#7c5bf5]"
                   />
-                  Только совпадения
-                </label>
+                  {t("Только совпадения")} </label>
               </>
             )}
           </div>
 
           <div className="space-y-1 max-h-96 overflow-y-auto pr-2">
             {visibleSegments.length === 0 ? (
-              <p className="text-xs text-muted-foreground p-2">Сегментов с таким текстом нет — снимите фильтр или измените запрос.</p>
+              <p className="text-xs text-muted-foreground p-2">{t("Сегментов с таким текстом нет — снимите фильтр или измените запрос.")}</p>
             ) : (
               visibleSegments.map(({ seg, idx }) => (
                 <div
@@ -1140,7 +1128,7 @@ export function TranscribeTab({
                 >
                   <button
                     onClick={() => onTimestampClick(seg.timestamp[0], idx)}
-                    title="Перемотать плеер на этот момент (или скопировать ссылку с таймкодом)"
+                    title={t("Перемотать плеер на этот момент (или скопировать ссылку с таймкодом)")}
                     className="font-mono text-xs text-[#7c5bf5] mt-0.5 flex-shrink-0 tabular-nums hover:underline"
                   >
                     {formatDuration(seg.timestamp[0])}
@@ -1153,8 +1141,7 @@ export function TranscribeTab({
             )}
           </div>
           <p className="text-[11px] text-muted-foreground mt-2">
-            Клик по таймкоду — перемотка плеера. Для YouTube-результатов копируется ссылка с меткой момента.
-          </p>
+            {t("Клик по таймкоду — перемотка плеера. Для YouTube-результатов копируется ссылка с меткой момента.")} </p>
         </div>
       )}
     </motion.div>
@@ -1166,12 +1153,11 @@ export function TranscribeTab({
         <div>
           <h1 className="text-2xl font-bold mb-1">{t("Транскрипция аудио и видео")}</h1>
           <p className="text-sm text-muted-foreground">
-            Whisper превратит голос в текст с таймкодами. URL-задачи (YouTube и др.) — через локальный движок со стратегией «сначала субтитры».
-          </p>
+            {t("Whisper превратит голос в текст с таймкодами. URL-задачи (YouTube и др.) — через локальный движок со стратегией «сначала субтитры».")} </p>
         </div>
         <div className="flex items-center gap-2">
           <Settings2 className="w-4 h-4 text-muted-foreground" />
-          <span className="text-xs text-muted-foreground">Модель:</span>
+          <span className="text-xs text-muted-foreground">{t("Модель:")}</span>
           <select
             value={engineServerOnline ? (selectedModel ?? "base") : browserSafeModel(selectedModel)}
             onChange={(e) => setSelectedModel(e.target.value as WhisperModelId)}
@@ -1183,7 +1169,7 @@ export function TranscribeTab({
             ).map((id) => {
               const mi = MODEL_INFO[id];
               const size = engineServerOnline ? mi.engineSizeMB : mi.sizeMB;
-              const sizeLabel = size >= 1000 ? `${(size / 1000).toFixed(1)} ГБ` : `${size} МБ`;
+              const sizeLabel = size >= 1000 ? t("{n} ГБ", { n: (size / 1000).toFixed(1) }) : t("{n} МБ", { n: size });
               return (
                 <option key={id} value={id}>
                   {mi.name.replace("Whisper ", "")} — {sizeLabel}
@@ -1206,15 +1192,13 @@ export function TranscribeTab({
           <>
             <Server className="w-4 h-4 flex-shrink-0" />
             <span>
-              <strong>Локальный движок online.</strong> URL-задачи доступны со стратегией «сначала субтитры» — сначала ищем субтитры на выбранном языке (или ru/en/uk как fallback), и только если их нет — скачиваем аудио и распознаём через Whisper. Это быстрее и обходит блокировки YouTube.
-            </span>
+              <strong>{t("Локальный движок online.")}</strong>  {t("URL-задачи доступны со стратегией «сначала субтитры» — сначала ищем субтитры на выбранном языке (или ru/en/uk как fallback), и только если их нет — скачиваем аудио и распознаём через Whisper. Это быстрее и обходит блокировки YouTube.")} </span>
           </>
         ) : (
           <>
             <ServerOff className="w-4 h-4 flex-shrink-0" />
             <span>
-              <strong>Локальный движок не найден.</strong> Доступна только транскрипция локальных файлов через браузерный Whisper. Для URL (YouTube, TikTok) запустите <code className="px-1.5 py-0.5 rounded bg-amber-500/20 font-mono text-xs">python engine_server.py</code> из репозитория и обновите страницу.
-            </span>
+              <strong>{t("Локальный движок не найден.")}</strong>  {t("Доступна только транскрипция локальных файлов через браузерный Whisper. Для URL (YouTube, TikTok) запустите")} <code className="px-1.5 py-0.5 rounded bg-amber-500/20 font-mono text-xs">python engine_server.py</code>  {t("из репозитория и обновите страницу.")} </span>
           </>
         )}
       </div>
@@ -1227,23 +1211,15 @@ export function TranscribeTab({
           <button
             onClick={() => setJobNote(null)}
             className="p-1 rounded-md hover:bg-white/10 flex-shrink-0"
-            title="Скрыть"
+            title={t("Скрыть")}
           >
             <X className="w-3.5 h-3.5" />
           </button>
         </div>
       )}
 
-      {/* Старый движок без Job API / без очереди — инструкция обновления раскрывается на месте */}
-      {engineServerOnline && engineServerHealth && !supportsJobs && (
-        <EngineUpdateGuide reason="no-jobs" health={engineServerHealth} />
-      )}
-      {engineServerOnline && engineServerHealth && supportsJobs && !supportsQueue && (
-        <EngineUpdateGuide reason="no-queue" health={engineServerHealth} />
-      )}
-      {engineServerOnline && engineServerHealth && supportsJobs && supportsQueue && isEngineOutdated(engineServerHealth) && (
-        <EngineUpdateGuide reason="outdated" health={engineServerHealth} />
-      )}
+      {/* Баннер обновления движка перенесён в Настройки — вкладки не засоряем сообщениями:
+          индикатор в шапке зелёный = всё работает, а обновление доступно в Настройках. */}
 
       {/* Пакетная обработка: несколько ссылок/файлов в очередь движка */}
       <BatchPanel
@@ -1273,7 +1249,7 @@ export function TranscribeTab({
           animate={{ opacity: 1, y: 0 }}
           className="glass-card rounded-2xl p-6 mb-5"
         >
-          <label className="text-xs text-muted-foreground mb-2 block">Ссылка на видео (YouTube, TikTok, Instagram, Vimeo и др.)</label>
+          <label className="text-xs text-muted-foreground mb-2 block">{t("Ссылка на видео (YouTube, TikTok, Instagram, Vimeo и др.)")}</label>
           <div className="flex gap-2">
             <div className="flex-1 relative">
               <Link2 className="w-4 h-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
@@ -1281,7 +1257,7 @@ export function TranscribeTab({
                 type="url"
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
-                placeholder="https://youtube.com/watch?v=… или https://youtu.be/…"
+                placeholder={t("https://youtube.com/watch?v=… или https://youtu.be/…")}
                 className="w-full bg-[#0b0f19] border border-[#263147] rounded-xl pl-10 pr-3 py-3 text-sm focus:outline-none focus:border-[#7c5bf5]/50"
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && canRun) run();
@@ -1293,9 +1269,9 @@ export function TranscribeTab({
           {urlValid && (
             <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
               <Zap className="w-3.5 h-3.5 text-[#7c5bf5]" />
-              <span>Источник: <span className="text-foreground font-medium">{detectSource(urlValue).icon} {detectSource(urlValue).label}</span></span>
+              <span>{t("Источник:")} <span className="text-foreground font-medium">{detectSource(urlValue).icon} {detectSource(urlValue).label}</span></span>
               <span>·</span>
-              <span>Стратегия: сначала субтитры → fallback на Whisper</span>
+              <span>{t("Стратегия: сначала субтитры → fallback на Whisper")}</span>
             </div>
           )}
 
@@ -1309,20 +1285,16 @@ export function TranscribeTab({
               <div className="flex items-start gap-3">
                 <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
                 <div className="flex-1">
-                  <p className="text-sm text-amber-200 font-medium mb-1">Для ссылок нужен локальный движок</p>
+                  <p className="text-sm text-amber-200 font-medium mb-1">{t("Для ссылок нужен локальный движок")}</p>
                   <p className="text-xs text-amber-200/80 leading-relaxed mb-3">
-                    Распознавание по ссылке работает через движок на вашем компьютере
-                    (yt-dlp + Whisper): браузер технически не может скачать видео с YouTube напрямую —
-                    это блокируют CORS и защита от ботов. Установка — одна команда, без архивов.
-                  </p>
+                    {t("Распознавание по ссылке работает через движок на вашем компьютере (yt-dlp + Whisper): браузер технически не может скачать видео с YouTube напрямую — это блокируют CORS и защита от ботов. Установка — одна команда, без архивов.")} </p>
                   {onInstallEngine && (
                     <button
                       onClick={onInstallEngine}
                       className="bg-gradient-primary text-white px-4 py-2 rounded-lg text-xs font-medium hover:opacity-90 inline-flex items-center gap-1.5"
                     >
                       <Zap className="w-3.5 h-3.5" />
-                      Установить движок за 1 команду
-                    </button>
+                      {t("Установить движок за 1 команду")} </button>
                   )}
                 </div>
               </div>
@@ -1331,8 +1303,7 @@ export function TranscribeTab({
 
           {engineServerOnline && (
             <div className="mt-4 rounded-xl p-4 border border-emerald-500/20 bg-emerald-500/5 text-xs text-emerald-200/80">
-              Фоновые задачи: можно спокойно переключиться на другую вкладку — движок продолжит работу, а результат появится здесь.
-            </div>
+              {t("Фоновые задачи: можно спокойно переключиться на другую вкладку — движок продолжит работу, а результат появится здесь.")} </div>
           )}
         </motion.div>
       )}
@@ -1370,8 +1341,7 @@ export function TranscribeTab({
           </motion.div>
           <h3 className="font-semibold mb-1">{t("Перетащите аудио или видео сюда")}</h3>
           <p className="text-sm text-muted-foreground mb-3">
-            MP3, WAV, M4A, MP4, WebM, MOV — до 500 МБ (через движок) или 200 МБ (браузер)
-          </p>
+            {t("MP3, WAV, M4A, MP4, WebM, MOV — до 500 МБ (через движок) или 200 МБ (браузер)")} </p>
           <button className="text-[#7c5bf5] text-sm font-medium hover:underline">
             {t("или нажмите, чтобы выбрать файл")}
           </button>
@@ -1397,8 +1367,7 @@ export function TranscribeTab({
             <div className="flex-1 min-w-0">
               <div className="font-medium truncate">{fileName}</div>
               <div className="text-xs text-muted-foreground">
-                {(fileSize / 1024 / 1024).toFixed(2)} МБ
-              </div>
+                {(fileSize / 1024 / 1024).toFixed(2)}  {t("МБ")} </div>
             </div>
             {file.type.startsWith("audio/") && audioUrl && (
               <audio controls src={audioUrl} className="max-w-xs h-10 hidden md:block" />
@@ -1406,7 +1375,7 @@ export function TranscribeTab({
             <button
               onClick={reset}
               className="p-2 rounded-lg text-muted-foreground hover:text-red-400 hover:bg-red-500/10"
-              title="Убрать файл"
+              title={t("Убрать файл")}
             >
               <Trash2 className="w-4 h-4" />
             </button>
@@ -1418,14 +1387,9 @@ export function TranscribeTab({
               <div className="flex items-start gap-3">
                 <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
                 <div className="text-sm text-amber-200">
-                  <p className="font-medium mb-1">Большой файл для браузерного режима</p>
+                  <p className="font-medium mb-1">{t("Большой файл для браузерного режима")}</p>
                   <p className="text-xs text-amber-200/80 leading-relaxed">
-                    Браузерный Whisper (WASM) работает медленно для файлов длиннее 10-15 минут и
-                    может зависать на очень длинных аудио (более 30 минут). Для длинных файлов
-                    рекомендуется установить локальный движок — он работает в 5-10 раз быстрее
-                    и не блокирует браузер. Нажмите на индикатор «Только браузер» в шапке
-                    справа для перехода к установке.
-                  </p>
+                    {t("Браузерный Whisper (WASM) работает медленно для файлов длиннее 10-15 минут и может зависать на очень длинных аудио (более 30 минут). Для длинных файлов рекомендуется установить локальный движок — он работает в 5-10 раз быстрее и не блокирует браузер. Нажмите на индикатор «Только браузер» в шапке справа для перехода к установке.")} </p>
                 </div>
               </div>
             </div>
@@ -1502,6 +1466,7 @@ function CopyModesBtn({
 }) {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+  const { t } = useI18n();
 
   async function copy(m: { id: string; get: () => string }) {
     const ok = await copyTextToClipboard(m.get());
@@ -1516,11 +1481,11 @@ function CopyModesBtn({
     <div className="relative flex-shrink-0">
       <button
         onClick={() => setOpen((v) => !v)}
-        title="Выбрать, как скопировать: обычный текст, с таймкодами или цитатами"
+        title={t("Выбрать, как скопировать: обычный текст, с таймкодами или цитатами")}
         className="px-3 py-1.5 rounded-lg bg-[#1b2334] hover:bg-[#263147] text-xs font-medium inline-flex items-center gap-1.5 transition-colors"
       >
         {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-        {copied ? "Скопировано" : "Копировать"}
+        {copied ? t("Скопировано") : t("Копировать")}
         <ChevronDown className={`w-3 h-3 transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
       {open && (

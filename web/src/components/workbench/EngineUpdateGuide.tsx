@@ -195,20 +195,20 @@ export function EngineUpdateGuide({ reason, health, embedded = false }: EngineUp
 
   const steps: { title: string; detail: string }[] = [
     {
-      title: "Скопируйте команду",
-      detail: `Команда для ${os.label} — та же, что ставила движок в первый раз. Кнопка «Копировать» справа.`,
+      title: t("Скопируйте команду"),
+      detail: t("Команда для {os} — та же, что ставила движок в первый раз. Кнопка «Копировать» справа.", { os: os.label }),
     },
     {
-      title: `Откройте ${os.terminal}`,
-      detail: os.openHint,
+      title: t("Откройте {term}", { term: t(os.terminal) }),
+      detail: t(os.openHint),
     },
     {
-      title: "Вставьте команду и нажмите Enter",
-      detail: "Установка обновит движок поверх старого и займёт 1–3 минуты: зависимости и модели уже на компьютере, скачивать почти ничего не придётся.",
+      title: t("Вставьте команду и нажмите Enter"),
+      detail: t("Установка обновит движок поверх старого и займёт 1–3 минуты: зависимости и модели уже на компьютере, скачивать почти ничего не придётся."),
     },
     {
-      title: "Вернитесь на сайт",
-      detail: "Баннер исчезнет сам в течение минуты — сайт проверяет движок автоматически. Если нет, обновите страницу (Cmd+Shift+R или Ctrl+F5).",
+      title: t("Вернитесь на сайт"),
+      detail: t("Индикатор в шапке позеленеет сам в течение минуты — сайт проверяет движок автоматически. Если нет, обновите страницу (Cmd+Shift+R или Ctrl+F5)."),
     },
   ];
 
@@ -217,9 +217,9 @@ export function EngineUpdateGuide({ reason, health, embedded = false }: EngineUp
     <div className="mt-3 rounded-xl border border-[#263147]/60 bg-[#0b0f19]/80 p-4">
       {/* Версия: текущая → целевая */}
       <div className="flex flex-wrap items-center gap-2 mb-3 text-xs">
-        <span className="text-muted-foreground">Обновление:</span>
+        <span className="text-muted-foreground">{t("Обновление:")}</span>
         <code className="px-2 py-0.5 rounded-md bg-[#1b2334] font-mono text-amber-300">
-          движок {health?.version || "1.0.x"}
+          {t("движок")} {health?.version || "1.0.x"}
         </code>
         <span className="text-muted-foreground">→</span>
         <code className="px-2 py-0.5 rounded-md bg-emerald-500/10 font-mono text-emerald-300">
@@ -248,7 +248,7 @@ export function EngineUpdateGuide({ reason, health, embedded = false }: EngineUp
           <span className="text-xs text-muted-foreground inline-flex items-center gap-1.5 min-w-0">
             <Terminal className="w-3.5 h-3.5 flex-shrink-0" />
             <span className="truncate">
-              Команда для {os.label} — выполните в {os.terminal}
+              {t("Команда для {os} — выполните в {term}", { os: os.label, term: t(os.terminal) })}
             </span>
           </span>
           <button
@@ -256,7 +256,7 @@ export function EngineUpdateGuide({ reason, health, embedded = false }: EngineUp
             className="px-2.5 py-1 rounded-lg bg-[#1b2334] hover:bg-[#263147] text-xs font-medium inline-flex items-center gap-1.5 transition-colors flex-shrink-0"
           >
             {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-            {copied ? "Скопировано" : "Копировать"}
+            {copied ? t("Скопировано") : t("Копировать")}
           </button>
         </div>
         <code className="block text-[11px] font-mono text-emerald-300/90 break-all leading-relaxed select-all">
@@ -268,12 +268,10 @@ export function EngineUpdateGuide({ reason, health, embedded = false }: EngineUp
       <div className="mt-3 space-y-1.5 text-[11px] text-muted-foreground leading-relaxed">
         <p className="flex items-start gap-1.5">
           <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0 mt-0.5" />
-          Модели Whisper, настройки, история результатов и очередь задач сохраняются — удалять старый движок не нужно.
-        </p>
+          {t("Модели Whisper, настройки, история результатов и очередь задач сохраняются — удалять старый движок не нужно.")} </p>
         <p className="flex items-start gap-1.5">
           <Wrench className="w-3.5 h-3.5 text-amber-400 flex-shrink-0 mt-0.5" />
-          Запускайте обновление, когда активные задачи завершены — установщик перезапускает движок. Пока идёт обновление, индикатор движка погаснет — это нормально, он позеленеет сам после перезапуска.
-        </p>
+          {t("Запускайте обновление, когда активные задачи завершены — установщик перезапускает движок. Пока идёт обновление, индикатор движка погаснет — это нормально, он позеленеет сам после перезапуска.")} </p>
       </div>
     </div>
   );

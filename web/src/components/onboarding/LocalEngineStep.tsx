@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState, useRef } from "react";
 import { useOnboarding } from "@/lib/onboarding-store";
+import { useI18n } from "@/lib/i18n";
 import { checkEngineHealth, type EngineHealth } from "@/lib/engine-bridge";
 
 type LocalPhase = "idle" | "waiting" | "online" | "error";
@@ -169,6 +170,7 @@ export function LocalEngineStep({
   /** hero — движок является главным шагом (режим локального движка) */
   hero?: boolean;
 }) {
+  const { t } = useI18n();
   const { engineServerOnline, setEngineServerOnline, setEngineServerHealth } = useOnboarding();
   const [phase, setPhase] = useState<LocalPhase>(engineServerOnline ? "online" : "idle");
   const [platform] = useState<Platform>(() =>
@@ -299,25 +301,20 @@ export function LocalEngineStep({
         <div className="flex-1">
           <h3 className={`font-semibold mb-1 ${hero ? "text-xl" : "text-base"}`}>
             {phase === "online"
-              ? "Локальный движок запущен и готов!"
+              ? t("Локальный движок запущен и готов!")
               : hero
-              ? "Установить движок — одна команда"
-              : "Установка локального движка"}
+              ? t("Установить движок — одна команда")
+              : t("Установка локального движка")}
           </h3>
           <p className="text-xs text-muted-foreground leading-relaxed">
             {phase === "online" ? (
               <>
-                Движок online на{" "}
-                <code className="font-mono">127.0.0.1:8765</code>. URL-задачи и
-                скачивание с YouTube/TikTok доступны.
-              </>
+                {t("Движок online на")}{" "}
+                <code className="font-mono">127.0.0.1:8765</code>{t(". URL-задачи и скачивание с YouTube/TikTok доступны.")} </>
             ) : (
               <>
-                Никаких файлов скачивать не нужно — вы копируете{" "}
-                <strong className="text-foreground">одну команду</strong> и
-                вставляете её в {info.terminalName}. Скрипт сам скачает и установит
-                всё необходимое.
-              </>
+                {t("Никаких файлов скачивать не нужно — вы копируете")}{" "}
+                <strong className="text-foreground">{t("одну команду")}</strong>  {t("и вставляете её в")} {info.terminalName}{t(". Скрипт сам скачает и установит всё необходимое.")} </>
             )}
           </p>
         </div>
@@ -334,7 +331,7 @@ export function LocalEngineStep({
           >
             {/* Платформа */}
             <div className="flex items-center gap-2 text-sm">
-              <span className="text-muted-foreground">Ваша платформа:</span>
+              <span className="text-muted-foreground">{t("Ваша платформа:")}</span>
               <span className="px-2 py-0.5 rounded-md bg-[#7c5bf5]/15 text-[#7c5bf5] text-xs font-medium">
                 {info.label}
               </span>
@@ -345,7 +342,7 @@ export function LocalEngineStep({
               <div className="flex items-center justify-between px-3 py-2 bg-[#1b2334] border-b border-[#263147]">
                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
                   <Terminal className="w-3.5 h-3.5" />
-                  <span>{info.terminalName}</span>
+                  <span>{t(info.terminalName)}</span>
                 </div>
                 <button
                   onClick={copyCommand}
@@ -358,13 +355,11 @@ export function LocalEngineStep({
                   {copied ? (
                     <>
                       <ClipboardCheck className="w-3 h-3" />
-                      Скопировано ✓
-                    </>
+                      {t("Скопировано ✓")} </>
                   ) : (
                     <>
                       <Clipboard className="w-3 h-3" />
-                      Скопировать команду
-                    </>
+                      {t("Скопировать команду")} </>
                   )}
                 </button>
               </div>
@@ -377,7 +372,7 @@ export function LocalEngineStep({
             <div className="bg-[#0b0f19]/40 rounded-xl p-4 border border-[#263147]">
               <div className="flex items-center gap-2 mb-3">
                 <Info className="w-4 h-4 text-[#7c5bf5]" />
-                <h4 className="font-medium text-sm">Пошаговая инструкция</h4>
+                <h4 className="font-medium text-sm">{t("Пошаговая инструкция")}</h4>
               </div>
               <div className="space-y-3">
                 {info.steps.map((s, i) => (
@@ -386,9 +381,9 @@ export function LocalEngineStep({
                       {i + 1}
                     </span>
                     <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium">{s.step}</div>
+                      <div className="text-sm font-medium">{t(s.step)}</div>
                       <div className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
-                        {s.detail}
+                        {t(s.detail)}
                       </div>
                     </div>
                   </div>
@@ -400,8 +395,8 @@ export function LocalEngineStep({
             <div className="text-xs text-muted-foreground bg-amber-500/5 border border-amber-500/20 rounded-lg p-3 flex items-start gap-2">
               <Terminal className="w-3.5 h-3.5 text-amber-400 flex-shrink-0 mt-0.5" />
               <div>
-                <span className="text-foreground font-medium">Как открыть {info.terminalName}:</span>{" "}
-                {info.openTerminalHint}
+                <span className="text-foreground font-medium">{t("Как открыть")} {info.terminalName}:</span>{" "}
+                {t(info.openTerminalHint)}
               </div>
             </div>
 
@@ -410,11 +405,10 @@ export function LocalEngineStep({
               <div className="flex items-center justify-between p-3 rounded-lg bg-[#0b0f19]/60 border border-[#263147]">
                 <div className="flex items-center gap-2 text-sm">
                   <Loader2 className="w-4 h-4 animate-spin text-amber-400" />
-                  <span>Ожидаем запуска движка…</span>
+                  <span>{t("Ожидаем запуска движка…")}</span>
                 </div>
                 <span className="text-xs font-mono text-muted-foreground">
-                  {waitTime}с
-                </span>
+                  {waitTime}{t("с")} </span>
               </div>
             )}
 
@@ -422,20 +416,19 @@ export function LocalEngineStep({
             <details className="text-xs text-muted-foreground">
               <summary className="cursor-pointer hover:text-foreground inline-flex items-center gap-1.5">
                 <Info className="w-3 h-3" />
-                Что будет делать скрипт
-              </summary>
+                {t("Что будет делать скрипт")} </summary>
               <ol className="list-decimal list-inside mt-2 space-y-1 ml-2">
-                <li>Проверит Python 3.10+ и ffmpeg</li>
-                <li>Создаст изолированное окружение в{" "}
+                <li>{t("Проверит Python 3.10+ и ffmpeg")}</li>
+                <li>{t("Создаст изолированное окружение в")}{" "}
                   <code className="font-mono text-[11px]">~/.transcrypt-engine/</code>
                 </li>
-                <li>Скачает <code className="font-mono text-[11px]">engine_server.py</code> из GitHub</li>
-                <li>Установит Whisper + yt-dlp (~800 МБ, ~5 минут при первом запуске)</li>
-                <li>Запустит движок на{" "}
+                <li>{t("Скачает")} <code className="font-mono text-[11px]">engine_server.py</code>  {t("из GitHub")}</li>
+                <li>{t("Установит Whisper + yt-dlp (~800 МБ, ~5 минут при первом запуске)")}</li>
+                <li>{t("Запустит движок на")}{" "}
                   <code className="font-mono text-[11px]">127.0.0.1:8765</code>
                 </li>
-                <li>Настроит автозапуск с системой (LaunchAgent/systemd/Registry)</li>
-                <li>Откроет этот сайт в браузере — индикатор станет зелёным</li>
+                <li>{t("Настроит автозапуск с системой (LaunchAgent/systemd/Registry)")}</li>
+                <li>{t("Откроет этот сайт в браузере — индикатор станет зелёным")}</li>
               </ol>
             </details>
 
@@ -446,8 +439,7 @@ export function LocalEngineStep({
                   className="text-xs bg-[#1b2334] hover:bg-[#263147] text-muted-foreground hover:text-foreground px-3 py-1.5 rounded-lg inline-flex items-center gap-1.5"
                 >
                   <RefreshCw className="w-3 h-3" />
-                  Я уже вставил — проверить
-                </button>
+                  {t("Я уже вставил — проверить")} </button>
               )}
               {phase === "waiting" && (
                 <button
@@ -455,15 +447,13 @@ export function LocalEngineStep({
                   className="text-xs bg-[#1b2334] hover:bg-[#263147] text-muted-foreground hover:text-foreground px-3 py-1.5 rounded-lg inline-flex items-center gap-1.5"
                 >
                   <RefreshCw className="w-3 h-3" />
-                  Проверить снова
-                </button>
+                  {t("Проверить снова")} </button>
               )}
               <button
                 onClick={skip}
                 className="text-xs text-muted-foreground hover:text-foreground px-3 py-1.5"
               >
-                Пропустить
-              </button>
+                {t("Пропустить")} </button>
             </div>
           </motion.div>
         )}
@@ -478,22 +468,22 @@ export function LocalEngineStep({
           >
             <div className="flex items-center gap-2 text-sm text-emerald-400">
               <CheckCircle2 className="w-4 h-4" />
-              <span>Локальный движок запущен и отвечает на /api/health</span>
+              <span>{t("Локальный движок запущен и отвечает на /api/health")}</span>
             </div>
             <div className="text-xs text-muted-foreground bg-emerald-500/5 border border-emerald-500/20 rounded-lg p-3">
               <div className="flex flex-wrap gap-x-4 gap-y-1">
                 {health?.system_name && (
-                  <span>Платформа:{" "}
+                  <span>{t("Платформа:")}{" "}
                     <span className="text-foreground font-medium">{health.system_name}</span>
                   </span>
                 )}
                 {health?.device && (
-                  <span>Устройство:{" "}
+                  <span>{t("Устройство:")}{" "}
                     <span className="text-foreground font-medium">{health.device}</span>
                   </span>
                 )}
                 {health?.recommended_threads != null && (
-                  <span>Потоки Whisper:{" "}
+                  <span>{t("Потоки Whisper:")}{" "}
                     <span className="text-foreground font-medium">{health.recommended_threads}</span>
                   </span>
                 )}
@@ -510,20 +500,16 @@ export function LocalEngineStep({
             <details className="text-xs">
               <summary className="cursor-pointer text-red-400 hover:text-red-300 inline-flex items-center gap-1.5">
                 <XCircle className="w-3 h-3" />
-                Удалить движок (полное удаление)
-              </summary>
+                {t("Удалить движок (полное удаление)")} </summary>
               <div className="mt-3 space-y-3">
                 <p className="text-muted-foreground leading-relaxed">
-                  Это полностью удалит локальный движок с компьютера:
-                  ~800 МБ Whisper, venv, <code className="font-mono text-[11px] px-1 py-0.5 rounded bg-[#1b2334]">engine_server.py</code>,
-                  <code className="font-mono text-[11px] px-1 py-0.5 rounded bg-[#1b2334] mx-1">src/</code>,
-                  автозапуск с системой. Браузерный Whisper останется работать для локальных файлов.
-                </p>
+                  {t("Это полностью удалит локальный движок с компьютера: ~800 МБ Whisper, venv,")} <code className="font-mono text-[11px] px-1 py-0.5 rounded bg-[#1b2334]">engine_server.py</code>,
+                  <code className="font-mono text-[11px] px-1 py-0.5 rounded bg-[#1b2334] mx-1">src/</code>{t(", автозапуск с системой. Браузерный Whisper останется работать для локальных файлов.")} </p>
                 <div className="bg-[#0b0f19] border border-red-500/30 rounded-xl overflow-hidden">
                   <div className="flex items-center justify-between px-3 py-2 bg-red-500/10 border-b border-red-500/20">
                     <div className="flex items-center gap-2 text-xs text-red-300">
                       <Terminal className="w-3.5 h-3.5" />
-                      <span>Команда удаления для {info.terminalName}</span>
+                      <span>{t("Команда удаления для")} {info.terminalName}</span>
                     </div>
                     <button
                       onClick={async () => {
@@ -543,17 +529,14 @@ export function LocalEngineStep({
                       className="text-xs px-2.5 py-1 rounded-md bg-red-500/15 text-red-300 hover:bg-red-500/25 inline-flex items-center gap-1.5"
                     >
                       <Clipboard className="w-3 h-3" />
-                      Скопировать команду удаления
-                    </button>
+                      {t("Скопировать команду удаления")} </button>
                   </div>
                   <pre className="p-3 text-xs font-mono text-foreground overflow-x-auto whitespace-pre-wrap break-all">
                     {info.uninstallCommand}
                   </pre>
                 </div>
                 <p className="text-xs text-muted-foreground leading-relaxed">
-                  Скрипт спросит подтверждение (yes/no) перед удалением. После удаления
-                  индикатор в шапке этого сайта позеленеет → снова станет оранжевым.
-                </p>
+                  {t("Скрипт спросит подтверждение (yes/no) перед удалением. После удаления индикатор в шапке этого сайта позеленеет → снова станет оранжевым.")} </p>
               </div>
             </details>
           </motion.div>

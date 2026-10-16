@@ -114,11 +114,13 @@ export function SettingsTab({ onInstallEngine }: { onInstallEngine: () => void }
    *  Cache API (модели браузерного Whisper transformers.js), IndexedDB. */
   async function clearBrowserData() {
     const ok = confirm(
-      "Удалить все данные VoxPaperAi из этого браузера?\n\n" +
-      "· Кеш моделей браузерного Whisper\n" +
-      "· Настройки и онбординг (пройдёте гайд заново)\n" +
-      "· Историю результатов и активные задачи\n\n" +
-      "Данные на компьютере (движок) не трогаются — для них есть команда Шага 1."
+      t(
+        "Удалить все данные VoxPaperAi из этого браузера?\n\n" +
+        "· Кеш моделей браузерного Whisper\n" +
+        "· Настройки и онбординг (пройдёте гайд заново)\n" +
+        "· Историю результатов и активные задачи\n\n" +
+        "Данные на компьютере (движок) не трогаются — для них есть команда Шага 1."
+      )
     );
     if (!ok) return;
     try {
@@ -203,37 +205,34 @@ export function SettingsTab({ onInstallEngine }: { onInstallEngine: () => void }
           <Wrench className="w-5 h-5 text-[#7c5bf5]" />
         </div>
         <div>
-          <h2 className="text-xl font-bold">Настройки</h2>
+          <h2 className="text-xl font-bold">{t("Настройки")}</h2>
           <p className="text-sm text-muted-foreground">
-            Железо, движок, модели и переводчик — всё под вашим контролем.
-          </p>
+            {t("Железо, движок, модели и переводчик — всё под вашим контролем.")} </p>
         </div>
       </div>
 
       {/* ─── Железо браузера ─── */}
       <section className="rounded-2xl border border-[#263147]/60 bg-[#111827]/40 p-5">
         <h3 className="font-semibold text-sm mb-4 flex items-center gap-2">
-          <Cpu className="w-4 h-4 text-[#7c5bf5]" /> Железо вашего компьютера
-        </h3>
+          <Cpu className="w-4 h-4 text-[#7c5bf5]" />  {t("Железо вашего компьютера")} </h3>
         {!hardware ? (
           <div className="text-sm text-muted-foreground flex items-center gap-2">
-            <Loader2 className="w-4 h-4 animate-spin" /> Определяем…
-          </div>
+            <Loader2 className="w-4 h-4 animate-spin" />  {t("Определяем…")} </div>
         ) : (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <div className="rounded-xl bg-[#0b0f19] border border-[#263147]/60 p-3">
-              <div className="text-xs text-muted-foreground mb-1">CPU-ядра</div>
+              <div className="text-xs text-muted-foreground mb-1">{t("CPU-ядра")}</div>
               <div className="text-lg font-bold">{hardware.cpuCores}</div>
             </div>
             <div className="rounded-xl bg-[#0b0f19] border border-[#263147]/60 p-3">
-              <div className="text-xs text-muted-foreground mb-1">Потоки Whisper</div>
+              <div className="text-xs text-muted-foreground mb-1">{t("Потоки Whisper")}</div>
               <div className="text-lg font-bold">{threads ?? "—"}</div>
-              <div className="text-[10px] text-muted-foreground">резерв 25% под систему</div>
+              <div className="text-[10px] text-muted-foreground">{t("резерв 25% под систему")}</div>
             </div>
             <div className="rounded-xl bg-[#0b0f19] border border-[#263147]/60 p-3">
-              <div className="text-xs text-muted-foreground mb-1">RAM (доступно браузеру)</div>
+              <div className="text-xs text-muted-foreground mb-1">{t("RAM (доступно браузеру)")}</div>
               <div className="text-lg font-bold">
-                {hardware.deviceMemory ? `≤ ${hardware.deviceMemory} ГБ` : "не сообщается"}
+                {hardware.deviceMemory ? `≤ ${hardware.deviceMemory} ГБ` : t("не сообщается")}
               </div>
             </div>
             <div className="rounded-xl bg-[#0b0f19] border border-[#263147]/60 p-3">
@@ -241,12 +240,10 @@ export function SettingsTab({ onInstallEngine }: { onInstallEngine: () => void }
               <div className="text-lg font-bold flex items-center gap-1.5">
                 {hardware.webgpu ? (
                   <>
-                    <CheckCircle2 className="w-4 h-4 text-emerald-400" /> доступен
-                  </>
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400" />  {t("доступен")} </>
                 ) : (
                   <>
-                    <XCircle className="w-4 h-4 text-amber-400" /> нет — WASM
-                  </>
+                    <XCircle className="w-4 h-4 text-amber-400" />  {t("нет — WASM")} </>
                 )}
               </div>
             </div>
@@ -254,16 +251,14 @@ export function SettingsTab({ onInstallEngine }: { onInstallEngine: () => void }
         )}
         <p className="text-xs text-muted-foreground mt-3 flex items-center gap-1.5">
           <Monitor className="w-3 h-3" />
-          Платформа: {hardware?.platform || "—"} · Вся обработка идёт локально, данные не покидают компьютер
-        </p>
+          {t("Платформа:")} {hardware?.platform || "—"}  {t("· Вся обработка идёт локально, данные не покидают компьютер")} </p>
       </section>
 
       {/* ─── Локальный движок ─── */}
       <section className="rounded-2xl border border-[#263147]/60 bg-[#111827]/40 p-5">
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-semibold text-sm flex items-center gap-2">
-            <Server className="w-4 h-4 text-[#7c5bf5]" /> Локальный движок
-          </h3>
+            <Server className="w-4 h-4 text-[#7c5bf5]" />  {t("Локальный движок")} </h3>
           <span
             className={`text-xs px-2.5 py-1 rounded-lg font-medium ${
               engineServerOnline
@@ -271,34 +266,34 @@ export function SettingsTab({ onInstallEngine }: { onInstallEngine: () => void }
                 : "bg-amber-500/10 text-amber-400"
             }`}
           >
-            {engineServerOnline ? "Online · 127.0.0.1:8765" : "Не запущен"}
+            {engineServerOnline ? "Online · 127.0.0.1:8765" : t("Не запущен")}
           </span>
         </div>
 
         {engineServerOnline && health ? (
           <>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-              <DiagItem label="Версия" value={health.version || "1.0.0"} />
-              <DiagItem label="Платформа" value={health.system_name || health.platform || "—"} />
-              <DiagItem label="Устройство Whisper" value={health.device || "Auto"} />
-              <DiagItem label="CPU-потоки" value={String(health.recommended_threads ?? "—")} />
-              <DiagItem label="FFmpeg" value={health.ffmpeg ? "найден" : "не найден"} ok={health.ffmpeg} />
-              <DiagItem label="FFprobe" value={health.ffprobe ? "найден" : "не найден"} ok={health.ffprobe} />
+              <DiagItem label={t("Версия")} value={health.version || "1.0.0"} />
+              <DiagItem label={t("Платформа")} value={health.system_name || health.platform || "—"} />
+              <DiagItem label={t("Устройство Whisper")} value={health.device || "Auto"} />
+              <DiagItem label={t("CPU-потоки")} value={String(health.recommended_threads ?? "—")} />
+              <DiagItem label="FFmpeg" value={health.ffmpeg ? t("найден") : t("не найден")} ok={health.ffmpeg} />
+              <DiagItem label="FFprobe" value={health.ffprobe ? t("найден") : t("не найден")} ok={health.ffprobe} />
             <DiagItem
               label="LibreOffice"
-              value={health.libreoffice ? "найден" : "не нужен (PDF работает в браузере)"}
+              value={health.libreoffice ? t("найден") : t("не нужен (PDF работает в браузере)")}
               ok={health.libreoffice}
             />
             <DiagItem
-              label="Модели движка"
-              value={(health.whisper_models ?? []).length ? `${(health.whisper_models ?? []).length} уровней` : "—"}
+              label={t("Модели движка")}
+              value={(health.whisper_models ?? []).length ? t("{n} уровней", { n: (health.whisper_models ?? []).length }) : "—"}
             />
             </div>
 
             {/* Движок отстаёт от сайта — постоянное место инструкции обновления */}
             {(!health.jobs || !health.queue || health.docs === false || isEngineOutdated(health)) && (
               <div className="mt-4 rounded-xl border border-sky-500/20 bg-sky-500/5 p-4">
-                <p className="text-xs font-semibold text-sky-200 mb-2">Доступно обновление движка</p>
+                <p className="text-xs font-semibold text-sky-200 mb-2">{t("Доступно обновление движка")}</p>
                 <EngineUpdateGuide
                   embedded
                   reason={
@@ -318,26 +313,21 @@ export function SettingsTab({ onInstallEngine }: { onInstallEngine: () => void }
         ) : (
           <div className="text-sm text-muted-foreground space-y-3">
             <p>
-              Локальный движок открывает URL-задачи (YouTube/TikTok), нативный Whisper и
-              ffmpeg-операции. Браузер сам находит его при каждом открытии страницы —
-              достаточно один раз установить.
-            </p>
+              {t("Локальный движок открывает URL-задачи (YouTube/TikTok), нативный Whisper и ffmpeg-операции. Браузер сам находит его при каждом открытии страницы — достаточно один раз установить.")} </p>
             <div className="flex flex-wrap gap-2">
               <button
                 onClick={onInstallEngine}
                 className="bg-gradient-primary text-white px-4 py-2 rounded-xl text-xs font-semibold hover:opacity-90 inline-flex items-center gap-2"
               >
                 <Download className="w-3.5 h-3.5" />
-                Установить движок (1 команда)
-              </button>
+                {t("Установить движок (1 команда)")} </button>
               {engineServerOnline && (
                 <button
                   onClick={() => setStep("engine")}
                   className="text-red-400/80 hover:text-red-400 text-xs px-3 py-2 rounded-xl border border-red-500/20 hover:border-red-500/40 inline-flex items-center gap-2"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
-                  Удалить движок
-                </button>
+                  {t("Удалить движок")} </button>
               )}
             </div>
           </div>
@@ -347,12 +337,9 @@ export function SettingsTab({ onInstallEngine }: { onInstallEngine: () => void }
       {/* ─── Модели Whisper ─── */}
       <section className="rounded-2xl border border-[#263147]/60 bg-[#111827]/40 p-5">
         <h3 className="font-semibold text-sm mb-1 flex items-center gap-2">
-          <BookOpen className="w-4 h-4 text-[#7c5bf5]" /> Модели Whisper
-        </h3>
+          <BookOpen className="w-4 h-4 text-[#7c5bf5]" />  {t("Модели Whisper")} </h3>
         <p className="text-xs text-muted-foreground mb-4">
-          Активная модель: <b className="text-foreground">{MODEL_INFO[selectedModel ?? "base"].name}</b>.
-          Браузерный кеш — модель скачивается один раз и мгновенно подхватывается при следующих открытиях.
-        </p>
+          {t("Активная модель:")} <b className="text-foreground">{MODEL_INFO[selectedModel ?? "base"].name}</b>{t(". Браузерный кеш — модель скачивается один раз и мгновенно подхватывается при следующих открытиях.")} </p>
         <div className="space-y-2">
           {ALL_MODELS.map((m) => {
             const info = MODEL_INFO[m];
@@ -373,31 +360,28 @@ export function SettingsTab({ onInstallEngine }: { onInstallEngine: () => void }
                     <span className="text-sm font-medium">{info.name}</span>
                     {active && (
                       <span className="text-[10px] bg-[#7c5bf5] text-white px-1.5 py-0.5 rounded-md font-semibold">
-                        АКТИВНА
-                      </span>
+                        {t("АКТИВНА")} </span>
                     )}
                   </div>
                   <div className="text-xs text-muted-foreground mt-0.5">
                     {browserCapable
-                      ? `Браузер: ~${info.sizeMB} МБ · Движок: ~${info.engineSizeMB} МБ · RAM: ${info.ramGB} ГБ`
-                      : `Только движок: ~${info.engineSizeMB} МБ · RAM: ${info.ramGB} ГБ`}
+                      ? t("Браузер: ~{a} МБ · Движок: ~{b} МБ · RAM: {c} ГБ", { a: info.sizeMB, b: info.engineSizeMB, c: info.ramGB })
+                      : t("Только движок: ~{b} МБ · RAM: {c} ГБ", { b: info.engineSizeMB, c: info.ramGB })}
                     {" · "}
                     {info.speed}
                   </div>
                 </div>
                 <div className="text-xs flex-shrink-0">
                   {!browserCapable ? (
-                    <span className="text-muted-foreground">кеш: движок</span>
+                    <span className="text-muted-foreground">{t("кеш: движок")}</span>
                   ) : cached === "checking" ? (
                     <span className="text-muted-foreground inline-flex items-center gap-1">
-                      <Loader2 className="w-3 h-3 animate-spin" /> проверка…
-                    </span>
+                      <Loader2 className="w-3 h-3 animate-spin" />  {t("проверка…")} </span>
                   ) : cached ? (
                     <span className="text-emerald-400 inline-flex items-center gap-1">
-                      <CheckCircle2 className="w-3 h-3" /> в кеше браузера
-                    </span>
+                      <CheckCircle2 className="w-3 h-3" />  {t("в кеше браузера")} </span>
                   ) : (
-                    <span className="text-muted-foreground">не кеширована</span>
+                    <span className="text-muted-foreground">{t("не кеширована")}</span>
                   )}
                 </div>
                 <button
@@ -409,7 +393,7 @@ export function SettingsTab({ onInstallEngine }: { onInstallEngine: () => void }
                       : "bg-[#1b2334] hover:bg-[#232c40] border border-[#263147]"
                   }`}
                 >
-                  {active ? "Выбрана" : "Выбрать"}
+                  {active ? t("Выбрана") : t("Выбрать")}
                 </button>
               </div>
             );
@@ -420,37 +404,35 @@ export function SettingsTab({ onInstallEngine }: { onInstallEngine: () => void }
       {/* ─── Перевод ─── */}
       <section className="rounded-2xl border border-[#263147]/60 bg-[#111827]/40 p-5">
         <h3 className="font-semibold text-sm mb-4 flex items-center gap-2">
-          <Languages className="w-4 h-4 text-[#7c5bf5]" /> Перевод
-        </h3>
+          <Languages className="w-4 h-4 text-[#7c5bf5]" />  {t("Перевод")} </h3>
         <div className="space-y-4">
           <div className="flex flex-wrap items-center gap-3">
-            <label className="text-sm text-muted-foreground w-40">Провайдер:</label>
+            <label className="text-sm text-muted-foreground w-40">{t("Провайдер:")}</label>
             <select
               value={provider}
               onChange={(e) => setProvider(e.target.value as "google" | "deepl")}
               className="bg-[#1b2334] border border-[#263147] rounded-lg px-3 py-2 text-sm"
             >
-              <option value="google">Google (бесплатно, без ключа)</option>
-              <option value="deepl">DeepL (нужен API-ключ)</option>
+              <option value="google">{t("Google (бесплатно, без ключа)")}</option>
+              <option value="deepl">{t("DeepL (нужен API-ключ)")}</option>
             </select>
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            <label className="text-sm text-muted-foreground w-40">PDF режим:</label>
+            <label className="text-sm text-muted-foreground w-40">{t("PDF режим:")}</label>
             <select
               value={pdfMode}
               onChange={(e) => setPdfMode(e.target.value as "LAYOUT" | "FAST")}
               className="bg-[#1b2334] border border-[#263147] rounded-lg px-3 py-2 text-sm"
             >
-              <option value="LAYOUT">LAYOUT — сохраняет картинки и разметку</option>
-              <option value="FAST">FAST — только текст</option>
+              <option value="LAYOUT">{t("LAYOUT — сохраняет картинки и разметку")}</option>
+              <option value="FAST">{t("FAST — только текст")}</option>
             </select>
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
             <label className="text-sm text-muted-foreground w-40 inline-flex items-center gap-1.5">
-              <KeyRound className="w-3.5 h-3.5" /> DeepL API-ключ:
-            </label>
+              <KeyRound className="w-3.5 h-3.5" />  {t("DeepL API-ключ:")} </label>
             <div className="relative flex-1 min-w-[220px]">
               <input
                 type={showKey ? "text" : "password"}
@@ -463,14 +445,13 @@ export function SettingsTab({ onInstallEngine }: { onInstallEngine: () => void }
                 onClick={() => setShowKey((v) => !v)}
                 className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-muted-foreground hover:text-foreground"
                 type="button"
-                title={showKey ? "Скрыть ключ" : "Показать ключ"}
+                title={showKey ? t("Скрыть ключ") : t("Показать ключ")}
               >
                 {showKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
             </div>
             <span className="text-xs text-muted-foreground">
-              хранится только в вашем браузере (localStorage)
-            </span>
+              {t("хранится только в вашем браузере (localStorage)")} </span>
           </div>
         </div>
       </section>
@@ -478,33 +459,26 @@ export function SettingsTab({ onInstallEngine }: { onInstallEngine: () => void }
       {/* ─── Удаление VoxPaperAi с компьютера ─── */}
       <section className="rounded-2xl border border-red-500/20 bg-red-500/5 p-5">
         <h3 className="font-semibold text-sm mb-3 flex items-center gap-2 text-red-300/90">
-          <ShieldAlert className="w-4 h-4" /> Удаление VoxPaperAi
-        </h3>
+          <ShieldAlert className="w-4 h-4" />  {t("Удаление VoxPaperAi")} </h3>
         <div className="space-y-3">
           <div className="text-xs text-muted-foreground leading-relaxed">
             <p className="mb-2">
-              <strong className="text-foreground">Шаг 1 — команда на компьютере</strong> удаляет всё, что
-              создавала программа: папку движка <code className="px-1 rounded bg-[#1b2334] font-mono">~/.transcrypt-engine</code> (venv, код, логи),
-              автозапуск, модели Whisper, скачанный ffmpeg и результаты задач. Освободившееся место покажет сам скрипт.
-            </p>
+              <strong className="text-foreground">{t("Шаг 1 — команда на компьютере")}</strong>  {t("удаляет всё, что создавала программа: папку движка")} <code className="px-1 rounded bg-[#1b2334] font-mono">~/.transcrypt-engine</code>  {t("(venv, код, логи), автозапуск, модели Whisper, скачанный ffmpeg и результаты задач. Освободившееся место покажет сам скрипт.")} </p>
             <p>
-              <strong className="text-foreground">Шаг 2 — кнопка ниже</strong> чистит данные в этом браузере:
-              кеш моделей браузерного Whisper, настройки онбординга, историю результатов.
-            </p>
+              <strong className="text-foreground">{t("Шаг 2 — кнопка ниже")}</strong>  {t("чистит данные в этом браузере: кеш моделей браузерного Whisper, настройки онбординга, историю результатов.")} </p>
           </div>
 
           <div className="rounded-xl bg-[#0b0f19] border border-[#263147]/60 p-3">
             <div className="flex items-center justify-between gap-2 mb-2">
               <span className="text-xs text-muted-foreground inline-flex items-center gap-1.5">
                 <Globe className="w-3.5 h-3.5" />
-                Команда полного удаления ({detectedOS.label}) — выполните в Терминале
-              </span>
+                {t("Команда полного удаления (")}{detectedOS.label}{t(") — выполните в Терминале")} </span>
               <button
                 onClick={() => copyUninstallCommand()}
                 className="px-2.5 py-1 rounded-lg bg-[#1b2334] hover:bg-[#263147] text-xs font-medium inline-flex items-center gap-1.5 transition-colors flex-shrink-0"
               >
                 {copiedCmd ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                {copiedCmd ? "Скопировано" : "Копировать"}
+                {copiedCmd ? t("Скопировано") : t("Копировать")}
               </button>
             </div>
             <code className="block text-[11px] font-mono text-emerald-300/90 break-all leading-relaxed select-all">
@@ -517,8 +491,7 @@ export function SettingsTab({ onInstallEngine }: { onInstallEngine: () => void }
             className="text-xs px-4 py-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-300 inline-flex items-center gap-2 transition-colors"
           >
             <Trash2 className="w-3.5 h-3.5" />
-            Шаг 2 · Очистить данные в браузере
-          </button>
+            {t("Шаг 2 · Очистить данные в браузере")} </button>
         </div>
       </section>
 
@@ -528,18 +501,17 @@ export function SettingsTab({ onInstallEngine }: { onInstallEngine: () => void }
         <div className="flex flex-wrap gap-2">
           <button
             onClick={() => {
-              if (confirm("Пройти онбординг заново? Выбранная модель и настройки переводчика сохранятся.")) {
+              if (confirm(t("Пройти онбординг заново? Выбранная модель и настройки переводчика сохранятся."))) {
                 reset();
               }
             }}
             className="text-xs px-4 py-2 rounded-xl bg-[#1b2334] hover:bg-[#232c40] border border-[#263147] inline-flex items-center gap-2"
           >
             <RefreshCw className="w-3.5 h-3.5" />
-            Онбординг заново
-          </button>
+            {t("Онбординг заново")} </button>
           <button
             onClick={() => {
-              if (confirm("Сбросить настройки переводчика (провайдер, ключ DeepL, PDF режим)?")) {
+              if (confirm(t("Сбросить настройки переводчика (провайдер, ключ DeepL, PDF режим)?"))) {
                 useSettings.setState({
                   provider: "google",
                   deeplKey: "",
@@ -551,8 +523,7 @@ export function SettingsTab({ onInstallEngine }: { onInstallEngine: () => void }
             className="text-xs px-4 py-2 rounded-xl bg-[#1b2334] hover:bg-[#232c40] border border-[#263147] inline-flex items-center gap-2"
           >
             <Trash2 className="w-3.5 h-3.5" />
-            Сбросить настройки переводчика
-          </button>
+            {t("Сбросить настройки переводчика")} </button>
         </div>
       </section>
     </div>

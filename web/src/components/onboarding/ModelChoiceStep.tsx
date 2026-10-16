@@ -48,21 +48,15 @@ export function ModelChoiceStep({ onNext }: { onNext: () => void }) {
       <div className="text-center mb-8">
         <h2 className="text-3xl font-bold mb-3">{t("Выберите уровень Whisper")}</h2>
         <p className="text-muted-foreground max-w-2xl mx-auto">
-          Модель — это «мозг» распознавателя. Чем выше уровень, тем точнее
-          результат, но дольше обработка и больше расход ОЗУ. Уровень можно
-          сменить в любой момент — выберите сейчас подходящий стартовый.
-          {isEngine && (
+          {t("Модель — это «мозг» распознавателя. Чем выше уровень, тем точнее результат, но дольше обработка и больше расход ОЗУ. Уровень можно сменить в любой момент — выберите сейчас подходящий стартовый.")} {isEngine && (
             <>
-              {" "}Модель будет загружена <span className="text-foreground font-medium">локальным движком автоматически</span> при
-              первой транскрибации — вручную ничего скачивать не нужно.
-            </>
+              {" "}{t("Модель будет загружена")} <span className="text-foreground font-medium">{t("локальным движком автоматически")}</span>  {t("при первой транскрибации — вручную ничего скачивать не нужно.")} </>
           )}
         </p>
         {isEngine && (
           <div className="inline-flex items-center gap-2 mt-4 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-300">
             <Server className="w-3.5 h-3.5" />
-            Режим локального движка — доступны все 5 уровней, включая Large-v3
-          </div>
+            {t("Режим локального движка — доступны все 5 уровней, включая Large-v3")} </div>
         )}
       </div>
 
@@ -71,7 +65,7 @@ export function ModelChoiceStep({ onNext }: { onNext: () => void }) {
           const info = MODEL_INFO[m.id];
           const isSelected = selectedModel === m.id;
           const sizeMB = isEngine ? info.engineSizeMB : info.sizeMB;
-          const sizeLabel = sizeMB >= 1000 ? `${(sizeMB / 1000).toFixed(1)} ГБ` : `${sizeMB} МБ`;
+          const sizeLabel = sizeMB >= 1000 ? t("{n} ГБ", { n: (sizeMB / 1000).toFixed(1) }) : t("{n} МБ", { n: sizeMB });
           return (
             <motion.button
               key={m.id}
@@ -96,14 +90,14 @@ export function ModelChoiceStep({ onNext }: { onNext: () => void }) {
                       : "bg-[#7c5bf5]/20 text-[#7c5bf5]"
                   }`}
                 >
-                  {m.badge}
+                  {t(m.badge)}
                 </span>
               </div>
 
               <div className="space-y-2 mb-4">
-                <SpecLine icon={HardDrive} label="Размер" value={sizeLabel} />
-                <SpecLine icon={Gauge} label="ОЗУ" value={`~${info.ramGB} ГБ`} />
-                <SpecLine icon={Zap} label="Скорость" value={info.speed} />
+                <SpecLine icon={HardDrive} label={t("Размер")} value={sizeLabel} />
+                <SpecLine icon={Gauge} label={t("ОЗУ")} value={t("~{n} ГБ", { n: info.ramGB })} />
+                <SpecLine icon={Zap} label={t("Скорость")} value={t(info.speed)} />
               </div>
 
               <div className="text-xs text-muted-foreground leading-snug mb-4 min-h-[2.5rem]">
@@ -117,7 +111,7 @@ export function ModelChoiceStep({ onNext }: { onNext: () => void }) {
                     : "bg-[#1b2334] text-muted-foreground hover:bg-[#263147] hover:text-foreground"
                 }`}
               >
-                {isSelected ? (modelStatus === "downloaded" ? "В кеше ✓ — выбрано" : "Выбрано ✓") : "Выбрать →"}
+                {isSelected ? (modelStatus === "downloaded" ? t("В кеше ✓ — выбрано") : t("Выбрано ✓")) : t("Выбрать →")}
               </div>
             </motion.button>
           );
@@ -127,17 +121,11 @@ export function ModelChoiceStep({ onNext }: { onNext: () => void }) {
       {!isEngine && (
         <div className="text-center text-xs text-muted-foreground max-w-2xl mx-auto">
           <Lock className="w-3.5 h-3.5 inline mr-1 -mt-0.5" />
-          Уровни Medium и Large-v3 работают только с локальным движком — вы сможете
-          включить их в любой момент, установив движок на странице «Медиа».
-          Начните с <span className="text-foreground font-medium">Base</span> — она точна
-          и почти не нагружает ПК.
-        </div>
+          {t("Уровни Medium и Large-v3 работают только с локальным движком — вы сможете включить их в любой момент, установив движок на странице «Медиа». Начните с")} <span className="text-foreground font-medium">Base</span>  {t("— она точна и почти не нагружает ПК.")} </div>
       )}
       {isEngine && (
         <div className="text-center text-xs text-muted-foreground">
-          Боитесь за ресурсы ПК? Начните с <span className="text-foreground font-medium">Small</span> —
-          лучший баланс точности и скорости для русского языка.
-        </div>
+          {t("Боитесь за ресурсы ПК? Начните с")} <span className="text-foreground font-medium">Small</span>  {t("— лучший баланс точности и скорости для русского языка.")} </div>
       )}
     </motion.div>
   );

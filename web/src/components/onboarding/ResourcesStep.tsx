@@ -13,7 +13,7 @@ import {
 import { useEffect, useState } from "react";
 import { detectHardware, detectWebGPU } from "@/lib/whisper";
 import { recommendedThreads, type HardwareInfo } from "@/lib/onboarding-store";
-import { useI18n } from "@/lib/i18n";
+import { translate, useI18n } from "@/lib/i18n";
 
 export function ResourcesStep({ onNext }: { onNext: () => void }) {
   const { t } = useI18n();
@@ -55,70 +55,65 @@ export function ResourcesStep({ onNext }: { onNext: () => void }) {
         </div>
         <h2 className="text-3xl font-bold mb-3">{t("Ресурсы вашего компьютера")}</h2>
         <p className="text-muted-foreground max-w-xl mx-auto">
-          VoxPaperAi работает локально — все вычисления идут на вашем CPU и GPU.
-          Распознавание речи нагружает процессор, поэтому важно понимать, что вы
-          готовы запустить.
-        </p>
+          {t("VoxPaperAi работает локально — все вычисления идут на вашем CPU и GPU. Распознавание речи нагружает процессор, поэтому важно понимать, что вы готовы запустить.")} </p>
       </div>
 
       {hw ? (
         <div className="glass-card rounded-2xl p-6 mb-8">
           <h3 className="font-semibold mb-5 flex items-center gap-2">
             <Cpu className="w-5 h-5 text-[#7c5bf5]" />
-            Обнаруженное железо
-          </h3>
+            {t("Обнаруженное железо")} </h3>
           <div className="grid grid-cols-2 gap-4">
             <SpecRow
               icon={Cpu}
-              label="Процессор (ядра)"
-              value={`${hw.cpuCores} ядер`}
+              label={t("Процессор (ядра)")}
+              value={t("{n} ядер", { n: hw.cpuCores })}
               ok={meetsMinimum}
             />
             <SpecRow
               icon={MemoryStick}
-              label="Оперативная память"
-              value={hw.deviceMemory ? `${hw.deviceMemory} ГБ` : "Недоступно для проверки"}
+              label={t("Оперативная память")}
+              value={hw.deviceMemory ? `${hw.deviceMemory} ГБ` : t("Недоступно для проверки")}
               ok={ramOk}
             />
             <SpecRow
               icon={Gauge}
-              label="Потоки для Whisper"
-              value={`${hw.threads} (рекомендация)`}
+              label={t("Потоки для Whisper")}
+              value={t("{n} (рекомендация)", { n: hw.threads })}
               ok
             />
             <SpecRow
               icon={Zap}
-              label="WebGPU ускорение"
-              value={webgpu ? "Доступно" : "WASM (CPU)"}
+              label={t("WebGPU ускорение")}
+              value={webgpu ? t("Доступно") : "WASM (CPU)"}
               ok={!!webgpu}
               warn={!webgpu}
             />
           </div>
           <div className="mt-5 pt-5 border-t border-[#263147] text-xs text-muted-foreground">
             <p className="mb-1">
-              <span className="text-foreground font-medium">Платформа:</span> {hw.platform || "неизвестно"}
+              <span className="text-foreground font-medium">{t("Платформа:")}</span> {hw.platform || t("неизвестно")}
             </p>
             <p>
-              Браузер: {parseBrowser(hw.userAgent)}
+              {t("Браузер:")} {parseBrowser(hw.userAgent)}
             </p>
           </div>
         </div>
       ) : (
         <div className="glass-card rounded-2xl p-6 mb-8 text-center text-muted-foreground">
-          Анализируем ваше железо…
-        </div>
+          {t("Анализируем ваше железо…")} </div>
       )}
 
       <div className="glass-card rounded-2xl p-5 mb-8 border-amber-500/30">
         <div className="flex gap-3">
           <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
           <div className="text-sm text-muted-foreground">
-            <p className="text-foreground font-medium mb-1">Что будет происходить:</p>
+            <p className="text-foreground font-medium mb-1">{t("Что будет происходить:")}</p>
             <ul className="space-y-1.5 list-disc list-inside">
-              <li>CPU будет загружен на ~70-90% во время распознавания</li>
-              <li>При наличии WebGPU часть работы возьмёт на себя видеокарта</li>
-              <li>Whisper займёт до 1.5 ГБ оперативной памяти</li>
-              <li>Все файлы остаются на вашем устройстве — ничего не уходит в интернет</li>
+              <li>{t("CPU будет загружен на ~70-90% во время распознавания")}</li>
+              <li>{t("При наличии WebGPU часть работы возьмёт на себя видеокарта")}</li>
+              <li>{t("Whisper займёт до 1.5 ГБ оперативной памяти")}</li>
+              <li>{t("Все файлы остаются на вашем устройстве — ничего не уходит в интернет")}</li>
             </ul>
           </div>
         </div>
@@ -130,8 +125,7 @@ export function ResourcesStep({ onNext }: { onNext: () => void }) {
           disabled={!hw}
           className="bg-gradient-primary text-white px-8 py-3.5 rounded-xl font-medium hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed glow-primary"
         >
-          Понятно, продолжить →
-        </button>
+          {t("Понятно, продолжить →")} </button>
       </div>
     </motion.div>
   );
@@ -176,5 +170,5 @@ function parseBrowser(ua: string): string {
   if (/safari/i.test(ua) && !/chrome/i.test(ua)) return "Safari";
   if (/firefox/i.test(ua)) return "Firefox";
   if (/opera|opr/i.test(ua)) return "Opera";
-  return "Неизвестный браузер";
+  return translate("Неизвестный браузер");
 }
