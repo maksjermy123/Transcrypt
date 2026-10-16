@@ -39,29 +39,47 @@ export function Workbench({ onExit }: { onExit: () => void }) {
   // только после 3 неудачных опросов ПОДРЯД. Один медленный/пропавший ответ
   // (антивирус, холодный старт, нагрузка) больше не мигает индикатором.
   const failStreakRef = useRef(0);
+  const inFlightRef = useRef(false);
   useEffect(() => {
     let cancelled = false;
     async function check() {
+      // Одна проверка за раз: интервал + возврат на вкладку не должны
+      // запускать параллельные опросы (двойное setChecking мигает спиннером)
+      if (inFlightRef.current) return;
+      inFlightRef.current = true;
       setChecking(true);
-      const health = await checkEngineHealth();
-      if (cancelled) return;
-      const online = !!health && health.status === "ok";
-      if (online) failStreakRef.current = 0;
-      else failStreakRef.current += 1;
-      const wasOnline = useOnboarding.getState().engineServerOnline;
-      const showOnline = online || (wasOnline && failStreakRef.current < 3);
-      setEngineServerOnline(showOnline);
-      setEngineServerHealth(showOnline ? health : null);
-      setChecking(false);
-      // Если движок появился — скрываем баннер
-      if (online) setShowBanner(false);
+      try {
+        const health = await checkEngineHealth();
+        if (cancelled) return;
+        const online = !!health && health.status === "ok";
+        if (online) failStreakRef.current = 0;
+        else failStreakRef.current += 1;
+        const wasOnline = useOnboarding.getState().engineServerOnline;
+        const showOnline = online || (wasOnline && failStreakRef.current < 3);
+        setEngineServerOnline(showOnline);
+        setEngineServerHealth(showOnline ? health : null);
+        // Если движок появился — скрываем баннер
+        if (online) setShowBanner(false);
+      } finally {
+        inFlightRef.current = false;
+        if (!cancelled) setChecking(false);
+      }
     }
     void check();
     // Пингуем каждые 30 сек — чтобы поймать момент, когда пользователь запустит движок
     const interval = setInterval(check, 30000);
+    // Возврат на вкладку — мгновенная проверка. После установки/обновления движка
+    // установщик НЕ открывает новое окно: пользователь просто переключается на
+    // уже открытую вкладку, и она сразу подхватывает движок. В фоновой вкладке
+    // браузер замедляет таймеры, поэтому одного интервала мало.
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void check();
+    };
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
       cancelled = true;
       clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, [setEngineServerOnline, setEngineServerHealth]);
 

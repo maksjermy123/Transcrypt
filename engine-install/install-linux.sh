@@ -27,6 +27,11 @@ SRC_DIR="$INSTALL_DIR/src"
 PID_FILE="$INSTALL_DIR/engine.pid"
 LOG_FILE="$INSTALL_DIR/engine.log"
 
+# Режим обновления: venv существовал ещё ДО запуска установщика —
+# значит это повторный запуск (обновление), а не первая установка.
+IS_UPDATE=false
+if [ -d "$VENV_DIR" ]; then IS_UPDATE=true; fi
+
 # Цветной вывод
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -250,15 +255,24 @@ else
     echo "    Лог: tail -f $LOG_FILE"
 fi
 
-# ─── 10. Открытие браузера ────────────────────────────────────────
-print_step "Открываем веб-интерфейс в браузере..."
-sleep 1
-if command -v xdg-open &> /dev/null; then
-    xdg-open "https://maksjermy123.github.io/Transcrypt/" &> /dev/null &
-elif command -v sensible-browser &> /dev/null; then
-    sensible-browser "https://maksjermy123.github.io/Transcrypt/" &> /dev/null &
+# ─── 10. Открытие браузера ────────────────────────────────────────────
+# При ОБНОВЛЕНИИ новое окно НЕ открываем: вкладка VoxPaperAi уже открыта,
+# а повторный запуск браузера плодит дубли вкладок. Открытая вкладка сама
+# обнаружит движок: мгновенно при возврате на неё или в течение ~30 секунд.
+if [ "$IS_UPDATE" = true ]; then
+    print_step "Новое окно не открываем — используйте уже открытую вкладку"
+    echo "    Просто вернитесь в уже открытую вкладку VoxPaperAi: индикатор"
+    echo "    «Движок online» загорится сам в течение ~30 секунд (или F5)."
 else
-    print_warn "Не удалось открыть браузер автоматически. Откройте вручную: https://maksjermy123.github.io/Transcrypt/"
+    print_step "Открываем веб-интерфейс в браузере..."
+    sleep 1
+    if command -v xdg-open &> /dev/null; then
+        xdg-open "https://maksjermy123.github.io/Transcrypt/" &> /dev/null &
+    elif command -v sensible-browser &> /dev/null; then
+        sensible-browser "https://maksjermy123.github.io/Transcrypt/" &> /dev/null &
+    else
+        print_warn "Не удалось открыть браузер автоматически. Откройте вручную: https://maksjermy123.github.io/Transcrypt/"
+    fi
 fi
 
 # ─── 10.5. Автозапуск с системой (systemd user unit) ─────────────
@@ -294,7 +308,11 @@ print_ok "systemd unit создан и включён — движок буде�
 # ─── 11. Финальное сообщение ───────────────────────────────────────
 echo ""
 echo "Локальный движок запущен на http://127.0.0.1:8765"
-echo "Веб-интерфейс открыт в браузере."
+if [ "$IS_UPDATE" = true ]; then
+    echo "Вернитесь в уже открытую вкладку VoxPaperAi — движок подхватится сам."
+else
+    echo "Веб-интерфейс открыт в браузере."
+fi
 echo ""
 echo "На веб-странице:"
 echo "  1. Пройдите онбординг (если ещё не пройден)"
