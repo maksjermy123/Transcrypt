@@ -199,6 +199,8 @@ class Downloader:
         cut = s.find(" Use --")
         if cut > 0:
             s = s[:cut]
+        # И ссылки на issues («See https://github.com/yt-dlp/... for more info»)
+        s = re.sub(r"\s*See https?://\S+.*$", "", s)
         if len(s) > 300:
             s = s[:300].rstrip() + "…"
         return s.strip()
@@ -241,6 +243,33 @@ class Downloader:
         )
         if hint:
             text += f"\n{hint}"
+        return text
+
+    @classmethod
+    def _all_noise_failure_text(cls, attempts_total: int, cookie_failed: bool) -> str:
+        """Ни одна попытка не выдала причины от YouTube (только шум перебора:
+        cookies не читаются/не расшифровываются, прочее). Показываем честное
+        резюме вместо сырой последней ошибки вида «Failed to decrypt with DPAPI»,
+        которая только сбивает с толку (см. yt-dlp issue 10927)."""
+        text = (
+            f"Не удалось скачать видео с YouTube: испробованы все способы "
+            f"({attempts_total} попыток), но YouTube не назвал конкретную причину.\n"
+        )
+        if cookie_failed:
+            text += (
+                "Cookies из установленных браузеров прочитать не удалось: Chrome и Edge "
+                "с версии 127 шифруют cookie-базу, и yt-dlp не может их расшифровать "
+                "(известное ограничение: github.com/yt-dlp/yt-dlp/issues/10927).\n"
+            )
+        text += (
+            "Что помогает:\n"
+            "• подождать несколько часов — YouTube часто снимает проверку сам;\n"
+            "• включить/выключить VPN, чтобы сменить IP-адрес сети;\n"
+            "• один раз открыть youtube.com в браузере этого компьютера, посмотреть "
+            "любое видео и повторить попытку;\n"
+            "• обновить движок той же командой установки — свежий yt-dlp чаще "
+            "проходит проверку (сайт подскажет её в настройках)."
+        )
         return text
 
     @staticmethod
@@ -402,6 +431,7 @@ class Downloader:
         # Первопричина от YouTube (bot-check/429/…) важнее шума перебора:
         # последней ошибкой обычно будет «нет cookies у N-го браузера».
         primary_error: BaseException | None = None
+        kinds_seen: list[str] = []
 
         for idx, extra in enumerate(attempts):
             label = extra.get("_label", f"метод {idx + 1}")
@@ -447,6 +477,7 @@ class Downloader:
                     break
                 except yt_dlp.utils.DownloadError as e:
                     kind = self._classify_download_error(e)
+                    kinds_seen.append(kind)
                     last_error = e
                     if kind not in ("no_cookies", "other") and primary_error is None:
                         primary_error = e
@@ -473,8 +504,16 @@ class Downloader:
 
         if last_error is not None:
             self.logger.error(f"Download failed after {attempts_total} attempts: {last_error}")
-            reason_error = primary_error or last_error
-            raise RuntimeError(self._friendly_download_error(reason_error, attempts_total))
+            if primary_error is not None:
+                raise RuntimeError(self._friendly_download_error(primary_error, attempts_total))
+            # Все попытки дали только «шум перебора» (cookies не читаются и пр.),
+            # ясной причины от YouTube нет — честное резюме вместо DPAPI-сырца.
+            raise RuntimeError(
+                self._all_noise_failure_text(
+                    attempts_total,
+                    cookie_failed="no_cookies" in kinds_seen,
+                )
+            )
 
         if info is None:
             raise RuntimeError("Скачивание не удалось: yt-dlp не вернул результат")

@@ -61,12 +61,40 @@ class TestErrorClassification(unittest.TestCase):
         self.assertNotIn("cookies-from-browser", cleaned)
         self.assertIn("not a bot", cleaned)
 
+    def test_dpapi_error_is_cookie_noise(self):
+        """Chrome/Edge 127+ шифруют cookie-базу (yt-dlp #10927): «Failed to
+        decrypt with DPAPI» — это шум перебора, а не причина от YouTube."""
+        e = Exception(
+            "ERROR: Failed to decrypt with DPAPI. "
+            "See https://github.com/yt-dlp/yt-dlp/issues/10927 for more info"
+        )
+        self.assertEqual(Downloader._classify_download_error(e), "no_cookies")
+
+    def test_clean_error_strips_issue_link(self):
+        e = Exception(
+            "ERROR: Failed to decrypt with DPAPI. "
+            "See https://github.com/yt-dlp/yt-dlp/issues/10927 for more info"
+        )
+        cleaned = Downloader._clean_ytdlp_error(e)
+        self.assertNotIn("https://", cleaned)
+        self.assertIn("DPAPI", cleaned)
+
     def test_friendly_message_contains_reason_and_attempts(self):
         e = Exception("ERROR: [youtube] x: Sign in to confirm you’re not a bot")
         msg = Downloader._friendly_download_error(e, 9)
         self.assertIn("9 попыток", msg)
         self.assertIn("bot", msg.lower())
         self.assertIn("yt-dlp", msg)
+
+    def test_all_noise_failure_text(self):
+        """Только cookie-шум → честное резюме, а не сырой DPAPI-сырец."""
+        msg = Downloader._all_noise_failure_text(9, cookie_failed=True)
+        self.assertIn("9 попыток", msg)
+        self.assertIn("10927", msg)
+        self.assertIn("Что помогает", msg)
+        self.assertNotIn("ERROR:", msg)
+        without_cookies = Downloader._all_noise_failure_text(9, cookie_failed=False)
+        self.assertNotIn("10927", without_cookies)
 
     def test_attempt_configs_chain(self):
         dl = Downloader(output_dir="/tmp/voxpaperai-test-attempts")
@@ -105,6 +133,30 @@ class TestErrorClassification(unittest.TestCase):
         self.assertNotIn("возможна блокировка или 429", text)  # старый общий текст исчез
         # Проверяем, что перебор действительно шёл: несколько YoutubeDL-конструкций
         self.assertGreaterEqual(mock_ydl.call_count, 4)
+
+    def test_download_all_noise_shows_honest_summary(self):
+        """Все попытки падают с DPAPI (cookie-шум) → сообщение без сырца."""
+        import yt_dlp
+
+        dl = Downloader(output_dir="/tmp/voxpaperai-test-noise")
+        err = yt_dlp.utils.DownloadError(
+            "ERROR: Failed to decrypt with DPAPI. "
+            "See https://github.com/yt-dlp/yt-dlp/issues/10927 for more info"
+        )
+
+        with patch("yt_dlp.YoutubeDL") as mock_ydl:
+            instance = mock_ydl.return_value.__enter__.return_value
+            instance.extract_info.side_effect = err
+
+            with self.assertRaises(RuntimeError) as ctx:
+                dl.download("https://www.youtube.com/watch?v=abc", extract_audio=True)
+
+        text = str(ctx.exception)
+        self.assertIn("не назвал конкретную причину", text)  # честное резюме
+        self.assertIn("10927", text)                          # объяснение ABE
+        self.assertIn("Что помогает", text)                   # подсказки
+        self.assertNotIn("Failed to decrypt", text)           # сырец убран
+        self.assertNotIn("ERROR:", text)
 
     def test_429_retry_then_success(self):
         """HTTP 429 → пауза и повтор тем же способом → успех."""

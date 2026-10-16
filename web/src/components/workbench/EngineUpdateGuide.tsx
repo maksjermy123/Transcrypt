@@ -25,7 +25,7 @@ import type { EngineHealth } from "@/lib/engine-bridge";
 import { useI18n, type Lang } from "@/lib/i18n";
 
 /** Последняя версия движка, которую поддерживает сайт. */
-export const LATEST_ENGINE_VERSION = "1.3.4";
+export const LATEST_ENGINE_VERSION = "1.3.5";
 
 export type EngineUpdateReason = "no-jobs" | "no-queue" | "no-docs" | "outdated";
 
@@ -118,7 +118,7 @@ const REASONS: Record<
   },
   outdated: {
     title: (v) => `Движок ${v || "1.2.0"} — доступно обновление до ${LATEST_ENGINE_VERSION}`,
-    why: `В ${LATEST_ENGINE_VERSION}: больше никаких чёрных консольных окон на Windows и «мигания» индикатора движка (медленные проверки ffmpeg убраны из опроса статуса), обновление движка стало заметно быстрее — установщик больше не перекачивает ffmpeg (~80 МБ) при каждом запуске. Обновите движок той же командой установки — займёт 1–3 минуты.`,
+    why: `В ${LATEST_ENGINE_VERSION}: понятное сообщение об ошибке, когда YouTube отклоняет скачивание и cookies браузера нечитаемы (Chrome/Edge с версии 127 шифруют cookie-базу — вместо технического «Failed to decrypt with DPAPI» теперь честное объяснение и подсказки, что помогает). Обновите движок той же командой установки — займёт 1–3 минуты.`,
     tone: "sky",
   },
 };
@@ -139,7 +139,7 @@ const WHY_EN: Record<EngineUpdateReason, string> = {
     "Jobs from different tabs fight each other. After the update, extra jobs queue up, and on a powerful machine heavy ones run in parallel — no result is lost.",
   "no-docs":
     "Word ↔ PDF ↔ TXT conversion and encoding fixes (no more mojibake) arrived in engine 1.3.0 — the old environment lacks the required libraries, so the Converter → Documents tab fails. Update the engine with the same install command — takes 1–3 minutes, Whisper models are kept.",
-  outdated: `Engine ${LATEST_ENGINE_VERSION}: no more black console windows on Windows and no more engine-indicator flicker (slow ffmpeg probes removed from the status poll); the update itself is now much faster — the installer no longer re-downloads ffmpeg (~80 MB) on every run. Update with the same install command — takes 1–3 minutes.`,
+  outdated: `Engine ${LATEST_ENGINE_VERSION}: a clear error message for the case when YouTube rejects the download and browser cookies can't be read (Chrome/Edge 127+ encrypt the cookie database — instead of the technical "Failed to decrypt with DPAPI" you now get an honest explanation and hints on what helps). Update with the same install command — takes 1–3 minutes.`,
 };
 
 function bannerTitle(reason: EngineUpdateReason, version: string, lang: Lang): string {
