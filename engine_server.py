@@ -15,6 +15,8 @@ Features:
 import sys
 import os
 import json
+import re
+import subprocess
 import time
 import uuid
 import threading
@@ -68,6 +70,7 @@ from src.core.translator import Translator
 from src.utils.fs import find_ffmpeg_executable, find_ffprobe_executable, find_soffice_executable
 from src.utils.runtime import resolve_whisper_device, recommended_cpu_threads
 from src.utils.app_paths import app_support_dir
+from src.utils.pip_tools import parse_pip_upgrade_output
 
 try:
     OUTPUT_DIR = os.path.join(app_support_dir(), "web_output")
@@ -760,7 +763,7 @@ class EngineHTTPRequestHandler(BaseHTTPRequestHandler):
 
         self.send_json({
             "status": "ok",
-            "version": "1.3.5",
+            "version": "1.3.6",
             "jobs": True,  # Job API: фоновые задачи, переживающие закрытие вкладки
             "queue": True,  # очереди задач + видимый статус «В очереди»
             "parallel_heavy": HEAVY_PARALLEL,  # сколько тяжёлых задач идёт одновременно
@@ -827,12 +830,60 @@ class EngineHTTPRequestHandler(BaseHTTPRequestHandler):
                 self.handle_job_cancel(path[len("/api/jobs/"):-len("/cancel")])
             elif path == "/api/stop":
                 self.handle_stop()
+            elif path == "/api/engine/update-ytdlp":
+                self.handle_update_ytdlp()
             else:
                 self.send_error_json(f"Unknown POST endpoint: {path}", 404)
         except Exception as e:
             import traceback
             traceback.print_exc()
             self.send_error_json(str(e), 500)
+
+    def handle_update_ytdlp(self):
+        """Принудительное обновление yt-dlp в venv движка (кнопка в Настройках).
+        Обновляет пакет через pip в собственном окружении — пользователю не нужно
+        открывать PowerShell/терминал. При успехе движок перезапускает сам себя,
+        чтобы новая версия yt-dlp подхватилась (hot-reload в Python ненадёжен).
+        Ответ уходит ДО перезапуска — клиент успевает его получить."""
+        old_version = yt_dlp.version.__version__
+        try:
+            kwargs = {}
+            if os.name == "nt":
+                kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+            proc = subprocess.run(
+                [sys.executable, "-m", "pip", "install", "--upgrade", "--no-cache-dir", "yt-dlp"],
+                capture_output=True, text=True, timeout=300, **kwargs,
+            )
+        except subprocess.TimeoutExpired:
+            self.send_error_json(
+                "Обновление yt-dlp не уложилось в 5 минут — проверьте интернет и попробуйте ещё раз.",
+                504,
+            )
+            return
+        except Exception as e:
+            self.send_error_json(f"Не удалось запустить pip: {e}", 500)
+            return
+
+        output = (proc.stdout or "") + "\n" + (proc.stderr or "")
+        if proc.returncode != 0:
+            tail = "\n".join(output.strip().splitlines()[-4:])
+            self.send_error_json(f"pip сообщил об ошибке:\n{tail}", 500)
+            return
+
+        upgraded, new_version = parse_pip_upgrade_output(output)
+        if not upgraded:
+            new_version = old_version
+        else:
+            # Перезапуск отложен: сначала уходит HTTP-ответ, через 1.5 c — рестарт
+            threading.Timer(1.5, _restart_engine_process).start()
+
+        self.send_json({
+            "status": "ok",
+            "upgraded": upgraded,
+            "old_version": old_version,
+            "new_version": new_version,
+            "restarting": upgraded,
+        })
 
     def handle_stop(self):
         # Отмена активной фоновой задачи (если есть) + глобальный флаг для legacy-пути
@@ -1069,6 +1120,36 @@ class EngineHTTPRequestHandler(BaseHTTPRequestHandler):
                 return
 
         self.send_error_json("No file part found in upload")
+
+
+# ═══════════════════════════════════════════════════════════════
+#  Обновление yt-dlp из веб-интерфейса (движок ≥ 1.3.6)
+# ═══════════════════════════════════════════════════════════════
+
+def _restart_engine_process():
+    """Запускает новый процесс движка (тот же python, тот же скрипт) и
+    завершает текущий. Нужен после обновления yt-dlp: пакет импортирован
+    в работающем процессе, надёжного hot-reload в Python нет.
+    Новый процесс стартует тяжёлые импорты несколько секунд — за это время
+    текущий уже завершится и порт 8765 освободится."""
+    try:
+        print("🔄 yt-dlp обновлён — перезапуск движка...")
+        script = os.path.abspath(sys.argv[0])
+        kwargs = {}
+        if os.name == "nt":
+            # То же правило, что и для всех subprocess движка: никаких чёрных окон
+            kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        subprocess.Popen(
+            [sys.executable, script] + list(sys.argv[1:]),
+            cwd=os.path.dirname(script) or None,
+            **kwargs,
+        )
+    except Exception as e:
+        print(f"⚠ Не удалось перезапустить движок автоматически: {e} — новая версия yt-dlp вступит в силу при следующем запуске движка")
+        return
+    # Даём новому процессу уйти в свой интерпретатор, затем жёстко завершаем текущий
+    time.sleep(0.5)
+    os._exit(0)
 
 
 def run_server(port=8765):

@@ -728,3 +728,91 @@ export async function cancelJobById(jobId: string): Promise<void> {
     /* движок недоступен — статус обновится при следующем опросе */
   }
 }
+
+/* ─── Обновление yt-dlp из интерфейса (движок ≥ 1.3.6) ─────────────────── */
+
+export type YtDlpUpdateResult = {
+  ok: boolean;
+  upgraded: boolean; // pip установил новую версию
+  oldVersion: string;
+  newVersion: string;
+  restarting: boolean; // движок перезапускается сам — новый yt-dlp подхватится
+  message: string; // текст ошибки, если ok === false
+};
+
+/**
+ * Принудительное обновление yt-dlp в окружении движка (кнопка в Настройках).
+ * pip может качать пакет до минуты — таймаут 5 минут (движок рвёт pip на 300 c).
+ */
+export async function updateEngineYtDlp(): Promise<YtDlpUpdateResult> {
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 300_000);
+    const resp = await fetch(`${ENGINE_URL}/api/engine/update-ytdlp`, {
+      method: "POST",
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    const data = (await resp.json()) as Record<string, unknown>;
+    if (!resp.ok || data.status !== "ok") {
+      return {
+        ok: false,
+        upgraded: false,
+        oldVersion: "",
+        newVersion: "",
+        restarting: false,
+        message: String(data.message || `HTTP ${resp.status}`),
+      };
+    }
+    return {
+      ok: true,
+      upgraded: !!data.upgraded,
+      oldVersion: String(data.old_version || ""),
+      newVersion: String(data.new_version || ""),
+      restarting: !!data.restarting,
+      message: "",
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      upgraded: false,
+      oldVersion: "",
+      newVersion: "",
+      restarting: false,
+      message: e instanceof Error && e.name === "AbortError"
+        ? "Обновление не уложилось в 5 минут — проверьте интернет и попробуйте ещё раз."
+        : "Движок недоступен — обновление невозможно.",
+    };
+  }
+}
+
+/** Последняя версия yt-dlp на PyPI (для бейджа «доступно обновление»).
+ *  PyPI JSON API отдаёт CORS-заголовок, запрос идёт прямо из браузера.
+ *  Возвращает null при любой ошибке — кнопка обновления работает и без этого. */
+export async function fetchLatestYtDlpVersion(): Promise<string | null> {
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 6000);
+    const resp = await fetch("https://pypi.org/pypi/yt-dlp/json", {
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    if (!resp.ok) return null;
+    const data = (await resp.json()) as { info?: { version?: string } };
+    const v = data.info?.version?.trim();
+    return v || null;
+  } catch {
+    return null;
+  }
+}
+
+/** Сравнение версий yt-dlp формата YYYY.MM.DD[.N]: -1/0/1. */
+export function compareYtDlpVersions(a: string, b: string): number {
+  const pa = (a || "").split(/[.-]/).map((x) => parseInt(x, 10) || 0);
+  const pb = (b || "").split(/[.-]/).map((x) => parseInt(x, 10) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pa[i] || 0) - (pb[i] || 0);
+    if (d !== 0) return d < 0 ? -1 : 1;
+  }
+  return 0;
+}

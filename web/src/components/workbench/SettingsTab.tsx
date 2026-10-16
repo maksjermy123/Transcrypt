@@ -38,7 +38,7 @@ import {
 } from "lucide-react";
 import { useOnboarding, MODEL_INFO, isBrowserModel, type WhisperModelId } from "@/lib/onboarding-store";
 import { useSettings } from "@/lib/settings-store";
-import { checkEngineHealth, type EngineHealth } from "@/lib/engine-bridge";
+import { checkEngineHealth, updateEngineYtDlp, fetchLatestYtDlpVersion, compareYtDlpVersions, type EngineHealth } from "@/lib/engine-bridge";
 import { EngineUpdateGuide, isEngineOutdated } from "@/components/workbench/EngineUpdateGuide";
 import { detectHardware, detectWebGPU, isModelCached } from "@/lib/whisper";
 import { recommendedThreads } from "@/lib/onboarding-store";
@@ -66,6 +66,31 @@ export function SettingsTab({ onInstallEngine }: { onInstallEngine: () => void }
   const [health, setHealth] = useState<EngineHealth | null>(null);
   const [cacheStatus, setCacheStatus] = useState<Record<string, boolean | "checking">>({});
   const [showKey, setShowKey] = useState(false);
+
+  // ─── Обновление yt-dlp одной кнопкой (движок ≥ 1.3.6) ───
+  const [ytdlpLatest, setYtdlpLatest] = useState<string | null>(null);
+  const [ytdlpState, setYtdlpState] = useState<"idle" | "updating" | "done" | "error">("idle");
+  const [ytdlpResult, setYtdlpResult] = useState<{ upgraded: boolean; oldVersion: string; newVersion: string; message: string } | null>(null);
+
+  async function handleUpdateYtDlp() {
+    setYtdlpState("updating");
+    setYtdlpResult(null);
+    const res = await updateEngineYtDlp();
+    if (!res.ok) {
+      setYtdlpResult({ upgraded: false, oldVersion: "", newVersion: "", message: res.message });
+      setYtdlpState("error");
+      return;
+    }
+    setYtdlpResult({ upgraded: res.upgraded, oldVersion: res.oldVersion, newVersion: res.newVersion, message: "" });
+    setYtdlpState("done");
+    if (res.upgraded && res.restarting) {
+      // Движок перезапускается сам — через несколько секунд диагностика покажет новую версию
+      setTimeout(async () => {
+        const h = await checkEngineHealth();
+        if (h) setHealth(h);
+      }, 6000);
+    }
+  }
 
   // ─── Удаление VoxPaperAi: команда под ОС + очистка браузера ───
   const REPO_RAW = "https://raw.githubusercontent.com/maksjermy123/Transcrypt/main/engine-install";
@@ -167,6 +192,11 @@ export function SettingsTab({ onInstallEngine }: { onInstallEngine: () => void }
     let cancelled = false;
     checkEngineHealth().then((h) => {
       if (!cancelled) setHealth(h);
+    });
+    // Последняя версия yt-dlp на PyPI — для бейджа «доступна обновление».
+    // При ошибке (нет сети/блокировка) — просто без бейджа, кнопка работает и так.
+    fetchLatestYtDlpVersion().then((v) => {
+      if (!cancelled && v) setYtdlpLatest(v);
     });
     return () => {
       cancelled = true;
@@ -288,7 +318,57 @@ export function SettingsTab({ onInstallEngine }: { onInstallEngine: () => void }
               label={t("Модели движка")}
               value={(health.whisper_models ?? []).length ? t("{n} уровней", { n: (health.whisper_models ?? []).length }) : "—"}
             />
+            <DiagItem
+              label="yt-dlp"
+              value={health.ytdlp || "—"}
+              ok={ytdlpLatest ? compareYtDlpVersions(ytdlpLatest, health.ytdlp || "") <= 0 : undefined}
+            />
             </div>
+
+            {/* Обновление yt-dlp одной кнопкой — без PowerShell/терминала (движок ≥ 1.3.6) */}
+            {health.ytdlp && (
+              <div className="mt-4 rounded-xl border border-[#263147]/60 bg-[#0b0f19]/40 p-4">
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                  <div className="text-xs min-w-0">
+                    <p className="font-semibold mb-0.5">{t("yt-dlp — загрузчик видео (YouTube и др.)")}</p>
+                    {ytdlpState === "done" && ytdlpResult?.upgraded ? (
+                      <p className="text-emerald-400">
+                        {t("Обновлено: {a} → {b}. Движок перезапускается — через несколько секунд снова online.", { a: ytdlpResult.oldVersion, b: ytdlpResult.newVersion })}
+                      </p>
+                    ) : (
+                      <p className="text-muted-foreground">
+                        {t("Установлена версия")} {health.ytdlp}
+                        {ytdlpLatest && compareYtDlpVersions(ytdlpLatest, health.ytdlp) > 0
+                          ? ` · ${t("доступна")} ${ytdlpLatest}`
+                          : ytdlpLatest
+                            ? ` · ${t("актуальная")}`
+                            : ""}
+                      </p>
+                    )}
+                    {ytdlpState === "error" && ytdlpResult?.message && (
+                      <p className="mt-2 text-red-400 whitespace-pre-line">{ytdlpResult.message}</p>
+                    )}
+                  </div>
+                  <button
+                    onClick={handleUpdateYtDlp}
+                    disabled={ytdlpState === "updating"}
+                    className="flex-shrink-0 text-xs px-4 py-2 rounded-xl font-medium inline-flex items-center gap-2 border border-[#7c5bf5]/40 text-[#cfc2ff] hover:bg-[#7c5bf5]/10 disabled:opacity-60 disabled:cursor-wait transition-colors"
+                  >
+                    {ytdlpState === "updating" ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        {t("Обновляем… до минуты")}
+                      </>
+                    ) : (
+                      <>
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        {t("Обновить yt-dlp")}
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* Движок отстаёт от сайта — постоянное место инструкции обновления */}
             {(!health.jobs || !health.queue || health.docs === false || isEngineOutdated(health)) && (
