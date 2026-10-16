@@ -1180,28 +1180,16 @@ export function TranscribeTab({
         </div>
       </div>
 
-      {/* Статус движка */}
-      <div
-        className={`mb-5 p-3 rounded-xl flex items-center gap-3 text-sm ${
-          engineServerOnline
-            ? "bg-emerald-500/10 border border-emerald-500/20 text-emerald-300"
-            : "bg-amber-500/10 border border-amber-500/20 text-amber-300"
-        }`}
-      >
-        {engineServerOnline ? (
-          <>
-            <Server className="w-4 h-4 flex-shrink-0" />
-            <span>
-              <strong>{t("Локальный движок online.")}</strong>  {t("URL-задачи доступны со стратегией «сначала субтитры» — сначала ищем субтитры на выбранном языке (или ru/en/uk как fallback), и только если их нет — скачиваем аудио и распознаём через Whisper. Это быстрее и обходит блокировки YouTube.")} </span>
-          </>
-        ) : (
-          <>
-            <ServerOff className="w-4 h-4 flex-shrink-0" />
-            <span>
-              <strong>{t("Локальный движок не найден.")}</strong>  {t("Доступна только транскрипция локальных файлов через браузерный Whisper. Для URL (YouTube, TikTok) запустите")} <code className="px-1.5 py-0.5 rounded bg-amber-500/20 font-mono text-xs">python engine_server.py</code>  {t("из репозитория и обновите страницу.")} </span>
-          </>
-        )}
-      </div>
+      {/* Статус движка: подсказка показывается ТОЛЬКО когда движок не найден.
+          Когда движок online — ничего не выводим: зелёный индикатор в шапке
+          уже сообщает о работе движка, а постоянный баннер только мешает. */}
+      {!engineServerOnline && (
+        <div className="mb-5 p-3 rounded-xl flex items-center gap-3 text-sm bg-amber-500/10 border border-amber-500/20 text-amber-300">
+          <ServerOff className="w-4 h-4 flex-shrink-0" />
+          <span>
+            <strong>{t("Локальный движок не найден.")}</strong>  {t("Доступна только транскрипция локальных файлов через браузерный Whisper. Для URL (YouTube, TikTok) запустите")} <code className="px-1.5 py-0.5 rounded bg-amber-500/20 font-mono text-xs">python engine_server.py</code>  {t("из репозитория и обновите страницу.")} </span>
+        </div>
+      )}
 
       {/* Баннер восстановления фоновой задачи / последнего результата */}
       {jobNote && (
