@@ -19,7 +19,11 @@ class Downloader:
     _FATAL_MARKERS = (
         "video unavailable", "removed by the uploader", "private video",
         "available in your country", "has been removed", "does not exist",
+        "members-only", "members on level", "join this channel", "drm protected",
     )
+    # HTTP 403: YouTube отклоняет запрос с этого IP/сети (часто лечится VPN
+    # или свежим yt-dlp) — отдельный вид, чтобы показать свою подсказку.
+    _FORBIDDEN_MARKERS = ("http error 403", "forbidden")
     _NETWORK_MARKERS = (
         "unable to download webpage", "getaddrinfo", "name or service not known",
         "temporary failure", "connection", "timed out", "network is unreachable",
@@ -27,7 +31,7 @@ class Downloader:
     )
     _EXTRACT_MARKERS = (
         "unable to extract", "player response", "did not get a valid",
-        "nsig", "signature extraction",
+        "nsig", "signature extraction", "requested format is not available",
     )
     # Сбои чтения cookies (браузер не установлен / расшифровка не удалась /
     # база заблокирована запущенным браузером) — это шум перебора, а не
@@ -184,11 +188,29 @@ class Downloader:
             return "no_cookies"
         if any(m in s for m in cls._FATAL_MARKERS):
             return "fatal_video"
+        if any(m in s for m in cls._FORBIDDEN_MARKERS):
+            return "forbidden"
         if any(m in s for m in cls._NETWORK_MARKERS):
             return "network"
         if any(m in s for m in cls._EXTRACT_MARKERS):
             return "extract_fail"
         return "other"
+
+    @staticmethod
+    def _ytdlp_version() -> str:
+        try:
+            return str(yt_dlp.version.__version__)
+        except Exception:
+            return ""
+
+    @classmethod
+    def _ytdlp_note(cls) -> str:
+        """Версия yt-dlp + путь обновления — добавляется в конец сообщений
+        об ошибке: сразу видно, отстаёт ли пакет, и есть готовое действие."""
+        v = cls._ytdlp_version()
+        if not v:
+            return ""
+        return f"Версия yt-dlp: {v}. Обновить: Настройки сайта → «Обновить yt-dlp»."
 
     @staticmethod
     def _clean_ytdlp_error(err: BaseException) -> str:
@@ -233,7 +255,12 @@ class Downloader:
             ),
             "extract_fail": (
                 "YouTube изменил структуру страницы — устарел yt-dlp. "
-                "Обновите движок той же командой установки: сайт подскажет её в настройках."
+                "Обновите его кнопкой «Обновить yt-dlp» в Настройках сайта "
+                "либо переустановите движок той же командой установки."
+            ),
+            "forbidden": (
+                "YouTube отклонил запрос (HTTP 403): чаще всего помогает "
+                "смена IP-адреса (включить/выключить VPN) и свежий yt-dlp."
             ),
         }
         hint = hints.get(kind, "")
@@ -244,6 +271,9 @@ class Downloader:
         )
         if hint:
             text += f"\n{hint}"
+        note = cls._ytdlp_note()
+        if note:
+            text += f"\n{note}"
         return text
 
     @classmethod
@@ -269,9 +299,13 @@ class Downloader:
             "• включить/выключить VPN, чтобы сменить IP-адрес сети;\n"
             "• один раз открыть youtube.com в браузере этого компьютера, посмотреть "
             "любое видео и повторить попытку;\n"
-            "• обновить движок той же командой установки — свежий yt-dlp чаще "
-            "проходит проверку (сайт подскажет её в настройках)."
+            "• обновить yt-dlp или движок — свежие версии чаще проходят "
+            "проверку: кнопка «Обновить yt-dlp» в Настройках сайта либо "
+            "переустановка движка той же командой."
         )
+        note = cls._ytdlp_note()
+        if note:
+            text += f"\n{note}"
         return text
 
     @staticmethod

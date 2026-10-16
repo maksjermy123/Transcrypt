@@ -82,6 +82,41 @@ class TestErrorClassification(unittest.TestCase):
         self.assertNotIn("https://", cleaned)
         self.assertIn("cookie database", cleaned.lower())
 
+    def test_http_403_is_forbidden_with_hint(self):
+        """HTTP 403 — YouTube отклонил запрос с этого IP: отдельный вид
+        с подсказкой про VPN/свежий yt-dlp."""
+        e = Exception(
+            "ERROR: unable to download video data: HTTP Error 403: Forbidden"
+        )
+        self.assertEqual(Downloader._classify_download_error(e), "forbidden")
+        msg = Downloader._friendly_download_error(e, 9)
+        self.assertIn("403", msg)
+        self.assertIn("VPN", msg)
+
+    def test_members_only_and_drm_are_fatal(self):
+        for msg in (
+            "ERROR: [youtube] x: This video is available to this channel's members on level 1",
+            "ERROR: [youtube] x: Join this channel to get access to members-only content",
+            "ERROR: [youtube] x: This video is DRM protected",
+        ):
+            self.assertEqual(Downloader._classify_download_error(Exception(msg)), "fatal_video")
+
+    def test_requested_format_is_extract_fail(self):
+        e = Exception("ERROR: [youtube] x: Requested format is not available")
+        self.assertEqual(Downloader._classify_download_error(e), "extract_fail")
+
+    def test_ytdlp_version_note_appended_to_messages(self):
+        """Оба текста об ошибке заканчиваются версией yt-dlp и путём обновления."""
+        note = Downloader._ytdlp_note()
+        self.assertIn("Версия yt-dlp:", note)
+        self.assertIn("Обновить yt-dlp", note)
+        friendly = Downloader._friendly_download_error(
+            Exception("ERROR: [youtube] x: Video unavailable"), 9
+        )
+        self.assertIn(note, friendly)
+        noise = Downloader._all_noise_failure_text(9, cookie_failed=True)
+        self.assertIn(note, noise)
+
     def test_clean_error_strips_issue_link(self):
         e = Exception(
             "ERROR: Failed to decrypt with DPAPI. "
