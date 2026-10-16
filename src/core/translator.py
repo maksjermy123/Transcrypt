@@ -7,6 +7,7 @@ import subprocess
 from deep_translator import GoogleTranslator
 from src.utils.fs import find_soffice_executable, unique_path
 from src.utils.app_paths import cyrillic_font_candidates
+from src.utils.winproc import no_window_kwargs
 
 class Translator:
     def __init__(self):
@@ -29,6 +30,7 @@ class Translator:
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                     text=True,
+                    **no_window_kwargs(),
                 )
                 converted = os.path.join(tmpdir, os.path.splitext(os.path.basename(path))[0] + ".txt")
                 if os.path.exists(converted):
@@ -44,6 +46,7 @@ class Translator:
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                     text=True,
+                    **no_window_kwargs(),
                 )
                 if os.path.exists(converted):
                     return self._read_plain_text_file(converted)
@@ -417,6 +420,7 @@ class Translator:
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                     text=True,
+                    **no_window_kwargs(),
                 )
                 expected = os.path.join(out_dir, os.path.splitext(os.path.basename(input_docx))[0] + ".pdf")
                 if os.path.exists(expected) and expected != output_pdf:

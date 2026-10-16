@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Mic, FileAudio, FileArchive, Home, Server, ServerOff, Zap, X, Languages, Wrench, Info, ShieldCheck } from "lucide-react";
 import { useOnboarding } from "@/lib/onboarding-store";
@@ -35,6 +35,10 @@ export function Workbench({ onExit }: { onExit: () => void }) {
   const [showBanner, setShowBanner] = useState(true);
 
   // Авто-пинг локального движка при загрузке
+  // Гистерезис: «движок online» ставится сразу при первом успехе, а «движка нет» —
+  // только после 3 неудачных опросов ПОДРЯД. Один медленный/пропавший ответ
+  // (антивирус, холодный старт, нагрузка) больше не мигает индикатором.
+  const failStreakRef = useRef(0);
   useEffect(() => {
     let cancelled = false;
     async function check() {
@@ -42,8 +46,12 @@ export function Workbench({ onExit }: { onExit: () => void }) {
       const health = await checkEngineHealth();
       if (cancelled) return;
       const online = !!health && health.status === "ok";
-      setEngineServerOnline(online);
-      setEngineServerHealth(online ? health : null);
+      if (online) failStreakRef.current = 0;
+      else failStreakRef.current += 1;
+      const wasOnline = useOnboarding.getState().engineServerOnline;
+      const showOnline = online || (wasOnline && failStreakRef.current < 3);
+      setEngineServerOnline(showOnline);
+      setEngineServerHealth(showOnline ? health : null);
       setChecking(false);
       // Если движок появился — скрываем баннер
       if (online) setShowBanner(false);

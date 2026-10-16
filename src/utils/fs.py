@@ -9,6 +9,33 @@ from src.utils.app_paths import (
     is_windows,
     runtime_bin_dir,
 )
+from src.utils.winproc import no_window_kwargs
+
+# ─── Кэш найденных исполняемых файлов ─────────────────────────────
+# /api/health вызывается сайтом каждые ~30 секунд, и раньше каждый вызов
+# заново запускал «ffmpeg -version» как дочерний процесс: на Windows это
+# (а) мигало чёрными консольными окнами (движок работает под pythonw),
+# (б) занимало 0.5-2 сек — health-опрос не успевал за таймаут сайта, и
+# индикатор «Движок online» мигал. Теперь положительный результат кэшируется
+# (с дешёвой проверкой os.path.exists), а повторные пробы не запускаются.
+# Отрицательный результат НЕ кэшируется: если пользователь поставит ffmpeg
+# позже, движок должен найти его без перезапуска.
+_exe_cache: dict[str, str] = {}
+
+
+def _cached_executable(key: str, finder):
+    """Кэш-обёртка вокруг find_*_executable: положительный результат запоминается."""
+    cached = _exe_cache.get(key)
+    if cached:
+        try:
+            if os.path.exists(cached):
+                return cached
+        except Exception:
+            pass
+    found = finder()
+    if found:
+        _exe_cache[key] = found
+    return found
 
 def safe_filename(name):
     """Sanitizes a filename."""
@@ -92,7 +119,11 @@ def unique_path(path: str) -> str:
     return candidate
 
 def find_soffice_executable() -> str | None:
-    """Finds LibreOffice soffice on common system locations."""
+    """Finds LibreOffice soffice on common system locations (с кэшем)."""
+    return _cached_executable("soffice", _find_soffice_uncached)
+
+
+def _find_soffice_uncached() -> str | None:
     import shutil
 
     candidates = [
@@ -111,7 +142,11 @@ def find_soffice_executable() -> str | None:
     return None
 
 def find_ffmpeg_executable() -> str | None:
-    """Finds ffmpeg binary in common install/runtime locations."""
+    """Finds ffmpeg binary in common install/runtime locations (с кэшем)."""
+    return _cached_executable("ffmpeg", _find_ffmpeg_uncached)
+
+
+def _find_ffmpeg_uncached() -> str | None:
     import shutil
 
     def _is_usable(path: str) -> bool:
@@ -124,6 +159,7 @@ def find_ffmpeg_executable() -> str | None:
                 stderr=subprocess.PIPE,
                 text=True,
                 timeout=5,
+                **no_window_kwargs(),  # без этого — чёрное окно при каждой пробе
             )
             return result.returncode == 0
         except Exception:
@@ -145,7 +181,11 @@ def find_ffmpeg_executable() -> str | None:
     return None
 
 def find_ffprobe_executable() -> str | None:
-    """Finds ffprobe binary in common install/runtime locations."""
+    """Finds ffprobe binary in common install/runtime locations (с кэшем)."""
+    return _cached_executable("ffprobe", _find_ffprobe_uncached)
+
+
+def _find_ffprobe_uncached() -> str | None:
     import shutil
 
     ffmpeg = find_ffmpeg_executable()
@@ -170,6 +210,7 @@ def find_ffprobe_executable() -> str | None:
                     stderr=subprocess.PIPE,
                     text=True,
                     timeout=5,
+                    **no_window_kwargs(),  # без этого — чёрное окно при каждой пробе
                 )
                 if result.returncode == 0:
                     return path
@@ -200,6 +241,7 @@ def get_audio_duration(file_path: str) -> float | None:
             stderr=subprocess.PIPE,
             text=True,
             timeout=30,
+            **no_window_kwargs(),
         )
         if result.returncode != 0:
             return None

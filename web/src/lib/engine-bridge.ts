@@ -105,12 +105,14 @@ export type TaskResult = {
 
 /**
  * Проверяет, запущен ли локальный движок.
- * Таймаут — 1.5 секунды (это локальный сервер, должен отвечать мгновенно).
+ * Таймаут — 3 секунды: на Windows движок отвечает мгновенно, но под нагрузкой
+ * (антивирус, холодный старт, параллельная задача) ответ может задержаться —
+ * раньше таймаут 1.5 с приводил к «миганию» индикатора «Движок online».
  */
 export async function checkEngineHealth(): Promise<EngineHealth | null> {
   try {
     const controller = new AbortController();
-    const t = setTimeout(() => controller.abort(), 1500);
+    const t = setTimeout(() => controller.abort(), 3000);
     const resp = await fetch(`${ENGINE_URL}/api/health`, {
       signal: controller.signal,
     });

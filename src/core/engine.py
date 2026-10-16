@@ -5,6 +5,7 @@ import os
 from src.utils.fs import find_ffmpeg_executable
 from src.utils.runtime import apply_runtime_thread_limits, parse_thread_setting
 from src.utils.app_paths import models_dir, runtime_bin_dir
+from src.utils.winproc import no_window_kwargs
 
 # NOTE: torch.load monkeypatch (weights_only fix) is applied in src/main.py
 # and src/core/whisper_runner.py — no need to duplicate it here.
@@ -260,6 +261,7 @@ class WhisperEngine:
             env=env,
             bufsize=1,
             universal_newlines=True,
+            **no_window_kwargs(),  # без окна: иначе на Windows чёрная консоль на всю транскрипцию
         )
 
         if worker_obj is not None:

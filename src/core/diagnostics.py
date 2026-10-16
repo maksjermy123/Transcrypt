@@ -11,6 +11,8 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional
 import importlib.util
 
+from src.utils.winproc import no_window_kwargs
+
 from src.utils.logger import get_logger
 from src.utils.app_paths import logs_dir as app_logs_dir
 
@@ -84,7 +86,7 @@ class SystemDiagnostics:
                 try:
                     output = subprocess.check_output(['ffmpeg', '-version'], 
                                                    stderr=subprocess.STDOUT, 
-                                                   text=True, timeout=5)
+                                                   text=True, timeout=5, **no_window_kwargs())
                     version_line = output.split('\n')[0]
                     result['available'] = True
                     result['version'] = version_line

@@ -9,6 +9,7 @@ import zipfile
 
 from src.utils.app_paths import ffmpeg_binary_name, ffprobe_binary_name, is_macos, runtime_bin_dir
 from src.utils.fs import find_ffmpeg_executable, find_ffprobe_executable
+from src.utils.winproc import no_window_kwargs
 
 APP_NAME = "VoxPaperAi"
 INTEL_FFMPEG_URL = "https://evermeet.cx/ffmpeg/getrelease/zip"
@@ -59,6 +60,7 @@ def _is_usable_binary(path: str) -> bool:
             stderr=subprocess.PIPE,
             text=True,
             timeout=5,
+            **no_window_kwargs(),
         )
         return result.returncode == 0
     except Exception:
@@ -101,8 +103,8 @@ def _install_binary(binary_name: str, url: str, runtime_bin: str, status_callbac
 
         # Apple Silicon may require ad-hoc signing for downloaded binaries.
         try:
-            subprocess.run(["xattr", "-cr", final_path], check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            subprocess.run(["codesign", "-s", "-", final_path], check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            subprocess.run(["xattr", "-cr", final_path], check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE, **no_window_kwargs())
+            subprocess.run(["codesign", "-s", "-", final_path], check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE, **no_window_kwargs())
         except Exception:
             pass
 

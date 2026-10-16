@@ -5,6 +5,7 @@ import shutil
 import tempfile
 from src.utils.fs import ensure_dir, find_soffice_executable
 from src.utils.app_paths import cyrillic_font_candidates
+from src.utils.winproc import no_window_kwargs
 
 class Converter:
     # Популярные кодировки текстовых файлов (UTF-8 первый — строгий, сразу отсеивает
@@ -159,6 +160,7 @@ class Converter:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
+                **no_window_kwargs(),
             )
             expected = os.path.join(tmpdir, os.path.splitext(os.path.basename(input_path))[0] + output_ext)
             if not os.path.exists(expected):
@@ -189,6 +191,7 @@ class Converter:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
+                **no_window_kwargs(),
             )
             expected = os.path.join(out_dir, os.path.splitext(os.path.basename(input_docx))[0] + ".pdf")
             if os.path.exists(expected) and expected != output_pdf:
@@ -261,7 +264,7 @@ class Converter:
         if progress_callback:
             try:
                 probe_cmd = [self._ffprobe(), "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", input_path]
-                res = subprocess.run(probe_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                res = subprocess.run(probe_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, **no_window_kwargs())
                 duration = float(res.stdout.strip())
             except Exception:
                 duration = None
@@ -273,7 +276,7 @@ class Converter:
                 
                 # Use subprocess.Popen to read stderr dynamically
                 # ffmpeg prints to stderr, not stdout typically
-                process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, universal_newlines=True)
+                process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, universal_newlines=True, **no_window_kwargs())
                 if worker_obj:
                     worker_obj.active_process = process
                 start_time = time.time()
@@ -315,7 +318,7 @@ class Converter:
                 if process.returncode != 0 and (not worker_obj or not worker_obj.is_stop_requested()):
                     raise subprocess.CalledProcessError(process.returncode, cmd)
             else:
-                process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, **no_window_kwargs())
                 if worker_obj:
                     worker_obj.active_process = process
                 process.wait()
@@ -467,7 +470,7 @@ class Converter:
                     temp_output = output_path.replace('.pdf', '.docx')
 
                 cmd = ["textutil", "-convert", intermediate_ext, input_path, "-output", temp_output]
-                subprocess.run(cmd, check=True)
+                subprocess.run(cmd, check=True, **no_window_kwargs())
 
                 if output_format == 'txt':
                     self.normalize_txt_utf8(temp_output)  # textutil может дать не-UTF-8
@@ -602,14 +605,14 @@ class Converter:
         if progress_callback:
             try:
                 probe_cmd = [self._ffprobe(), "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", input_path]
-                res = subprocess.run(probe_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                res = subprocess.run(probe_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, **no_window_kwargs())
                 duration = float(res.stdout.strip())
             except Exception:
                 duration = None
         
         try:
             if progress_callback and duration:
-                process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, universal_newlines=True)
+                process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, universal_newlines=True, **no_window_kwargs())
                 if worker_obj: worker_obj.active_process = process
                 start_time = time.time()
                 
@@ -646,7 +649,7 @@ class Converter:
                 if process.returncode != 0 and (not worker_obj or not worker_obj.is_stop_requested()):
                     raise subprocess.CalledProcessError(process.returncode, cmd)
             else:
-                process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, **no_window_kwargs())
                 if worker_obj: worker_obj.active_process = process
                 process.wait()
                 if worker_obj: worker_obj.active_process = None
@@ -692,7 +695,7 @@ class Converter:
                 "-of", "default=noprint_wrappers=1:nokey=1",
                 video_path,
             ]
-            res = subprocess.run(probe_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=10)
+            res = subprocess.run(probe_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=10, **no_window_kwargs())
             h = int(float(res.stdout.strip()))
             return h if h > 0 else None
         except Exception:
@@ -756,14 +759,14 @@ class Converter:
         if progress_callback:
             try:
                 probe_cmd = [self._ffprobe(), "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", video_path]
-                res = subprocess.run(probe_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                res = subprocess.run(probe_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, **no_window_kwargs())
                 duration = float(res.stdout.strip())
             except Exception:
                 duration = None
         
         try:
             if progress_callback and duration:
-                process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, universal_newlines=True)
+                process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, universal_newlines=True, **no_window_kwargs())
                 if worker_obj: worker_obj.active_process = process
                 start_time = time.time()
                 
@@ -800,7 +803,7 @@ class Converter:
                 if process.returncode != 0 and (not worker_obj or not worker_obj.is_stop_requested()):
                     raise subprocess.CalledProcessError(process.returncode, cmd)
             else:
-                process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, **no_window_kwargs())
                 if worker_obj: worker_obj.active_process = process
                 process.wait()
                 if worker_obj: worker_obj.active_process = None

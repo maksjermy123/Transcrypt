@@ -67,6 +67,17 @@ Write-Host "   VoxPaperAi Web Engine - установка для Windows"
 Write-Host "======================================================"
 Write-Host ""
 
+# ─── 0.1 Режим обновления? ─────────────────────────────────
+# venv уже создан прошлой установкой — это повторный запуск (обновление движка).
+# В этом режиме НЕ перекачиваем то, что уже на диске: ffmpeg, pip, setuptools.
+$IsUpdate = (Test-Path $VenvDir)
+if ($IsUpdate) {
+    Write-Host "   Режим ОБНОВЛЕНИЯ: модели Whisper и зависимости сохраняются." -ForegroundColor Cyan
+    Write-Host "   Обычно занимает 1-3 минуты. Пока идёт обновление, индикатор движка" -ForegroundColor DarkGray
+    Write-Host "   на сайте погаснет — это нормально, он позеленеет сам после перезапуска." -ForegroundColor DarkGray
+    Write-Host ""
+}
+
 # ─── 1. Поиск Python 3.10+ (или его установка) ─────────────────────
 # ВАЖНО: на чистой Windows `python` — это ЗАГЛУШКА Microsoft Store
 # (WindowsApps\python.exe): она не запускает Python, а открывает магазин.
@@ -168,19 +179,33 @@ Write-Ok "Python $($py.ver) найден: $($py.exe) $($py.arg)"
 # ─── 2. Проверка ffmpeg (опционально) ──────────────────────────────
 Write-Step "Проверка ffmpeg..."
 $ffmpegFound = $false
+$FfmpegBinDir = Join-Path $env:LOCALAPPDATA "VoxPaperAi\runtime\bin"
+$LocalFfmpegExe = Join-Path $FfmpegBinDir "ffmpeg.exe"
+# 1) ffmpeg в PATH
 try {
     $ffver = & ffmpeg -version 2>&1 | Select-Object -First 1
     if ("$ffver" -match "ffmpeg version") {
-        Write-Ok "ffmpeg найден"
+        Write-Ok "ffmpeg найден в PATH"
         $ffmpegFound = $true
     }
 } catch {}
+# 2) ffmpeg от прошлой установки — движок ищет его сам в runtime\bin.
+#    Раньше этот случай НЕ проверялся, и каждое обновление заново
+#    скачивало ~80 МБ, хотя ffmpeg уже лежал на диске.
+if (-not $ffmpegFound -and (Test-Path $LocalFfmpegExe)) {
+    try {
+        $ffver = & $LocalFfmpegExe -version 2>&1 | Select-Object -First 1
+        if ("$ffver" -match "ffmpeg version") {
+            Write-Ok "ffmpeg уже установлен: $LocalFfmpegExe (скачивание не нужно)"
+            $ffmpegFound = $true
+        }
+    } catch {}
+}
 if (-not $ffmpegFound) {
     # ffmpeg нужен для hardsub / конвертации / очистки аудио.
     # Скачиваем статическую сборку gyan.dev в %LOCALAPPDATA%\VoxPaperAi\runtime\bin —
     # движок сам находит её там (find_ffmpeg_executable), PATH менять не нужно.
     Write-Step "ffmpeg не найден — скачиваем статический ffmpeg (~80 МБ)..."
-    $FfmpegBinDir = Join-Path $env:LOCALAPPDATA "VoxPaperAi\runtime\bin"
     $TmpZip = Join-Path $env:TEMP "ffmpeg-release-essentials.zip"
     $FfOk = $false
     try {
@@ -216,6 +241,7 @@ if (-not (Test-Path $InstallDir)) {
 Write-Ok "Директория готова"
 
 # ─── 4. Остановка старого движка ──────────────────────────────────
+Write-Step "Останавливаем старый движок (если запущен)..."
 Get-Process pythonw -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 Get-Process python -ErrorAction SilentlyContinue | Where-Object { $_.Path -like "*transcrypt-engine*" } | Stop-Process -Force -ErrorAction SilentlyContinue
 
@@ -284,17 +310,28 @@ if (-not (Test-Path $VenvDir)) {
 }
 
 # ─── 7. Установка зависимостей ────────────────────────────────────
-Write-Step "Установка зависимостей (2-10 минут при первом запуске)..."
+if ($IsUpdate) {
+    Write-Step "Обновление зависимостей (быстро — скачивается только изменившееся)..."
+} else {
+    Write-Step "Установка зависимостей (2-10 минут при первом запуске)..."
+}
 Write-Host "    Окно может «молчать» несколько минут — качаются torch/whisper (~500 МБ)." -ForegroundColor DarkGray
 Write-Host "    Не закрывайте его: когда всё готово, появится [OK] Зависимости установлены." -ForegroundColor DarkGray
-# pip обновляем через «python -m pip»: из pip.exe на Windows pip не может
-# заменить сам себя (файл занят запущенным процессом) и печатает пугающую
-# «ERROR: To modify pip, please run the following command...». python.exe
-# сам не заменяется, поэтому обновление проходит тихо и без ошибок.
-& $venvPython -m pip install --upgrade pip --quiet
-# ВАЖНО: сначала отдельно setuptools<81, потом остальные пакеты.
-# openai-whisper требует pkg_resources (удалён в setuptools 81+).
-& $venvPython -m pip install "setuptools<81" --quiet
+if ($IsUpdate) {
+    # Обновление: pip и setuptools уже стоят — перекачивать их не нужно.
+    # pip без -U не трогает уже удовлетворённые требования, поэтому
+    # скачается только реально изменившееся (например, новый yt-dlp).
+    Write-Host "    Режим обновления: pip/setuptools не трогаем — экономим около минуты." -ForegroundColor DarkGray
+} else {
+    # pip обновляем через «python -m pip»: из pip.exe на Windows pip не может
+    # заменить сам себя (файл занят запущенным процессом) и печатает пугающую
+    # «ERROR: To modify pip, please run the following command...». python.exe
+    # сам не заменяется, поэтому обновление проходит тихо и без ошибок.
+    & $venvPython -m pip install --upgrade pip --quiet
+    # ВАЖНО: сначала отдельно setuptools<81, потом остальные пакеты.
+    # openai-whisper требует pkg_resources (удалён в setuptools 81+).
+    & $venvPython -m pip install "setuptools<81" --quiet
+}
 # БЕЗ --quiet: пусть виден прогресс скачивания — тишина выглядит как зависание.
 & $venvPython -m pip install -r $RequirementsFile --no-cache-dir
 if ($LASTEXITCODE -ne 0) {
