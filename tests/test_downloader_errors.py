@@ -70,6 +70,18 @@ class TestErrorClassification(unittest.TestCase):
         )
         self.assertEqual(Downloader._classify_download_error(e), "no_cookies")
 
+    def test_chrome_cookie_lock_is_cookie_noise(self):
+        """Chrome запущен → cookie-база заблокирована (yt-dlp #7271):
+        «Could not copy Chrome cookie database» — шум перебора."""
+        e = Exception(
+            "ERROR: Could not copy Chrome cookie database. "
+            "See https://github.com/yt-dlp/yt-dlp/issues/7271 for more info"
+        )
+        self.assertEqual(Downloader._classify_download_error(e), "no_cookies")
+        cleaned = Downloader._clean_ytdlp_error(e)
+        self.assertNotIn("https://", cleaned)
+        self.assertIn("cookie database", cleaned.lower())
+
     def test_clean_error_strips_issue_link(self):
         e = Exception(
             "ERROR: Failed to decrypt with DPAPI. "

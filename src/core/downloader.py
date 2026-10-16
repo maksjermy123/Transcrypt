@@ -29,11 +29,12 @@ class Downloader:
         "unable to extract", "player response", "did not get a valid",
         "nsig", "signature extraction",
     )
-    # Сбои чтения cookies (браузер не установлен / расшифровка не удалась) —
-    # это шум перебора, а не причина блокировки: не показываем пользователю.
+    # Сбои чтения cookies (браузер не установлен / расшифровка не удалась /
+    # база заблокирована запущенным браузером) — это шум перебора, а не
+    # причина блокировки: не показываем пользователю.
     _COOKIE_FAIL_MARKERS = (
         "cookies database", "failed to decrypt", "dpapi",
-        "could not find", "cookie loading",
+        "could not find", "could not copy", "cookie loading",
     )
 
     def __init__(self, output_dir=None):
@@ -257,8 +258,9 @@ class Downloader:
         )
         if cookie_failed:
             text += (
-                "Cookies из установленных браузеров прочитать не удалось: Chrome и Edge "
-                "с версии 127 шифруют cookie-базу, и yt-dlp не может их расшифровать "
+                "Cookies из установленных браузеров прочитать не удалось: Chrome/Edge "
+                "держат cookie-базу заблокированной, пока браузер запущен, а с версии 127 "
+                "ещё и шифруют её — yt-dlp не может их использовать "
                 "(известное ограничение: github.com/yt-dlp/yt-dlp/issues/10927).\n"
             )
         text += (
