@@ -5,7 +5,9 @@
  *
  * Одна область приёма, в которую можно:
  *  - перетащить несколько файлов (аудио/видео/документы — зависит от вкладки)
- *  - перетащить .txt/.md со списком ссылок (ссылки извлекаются автоматически)
+ *  - перетащить ЛЮБОЙ текстовый файл со ссылками (TXT, MD, CSV, HTML, JSON, LOG…
+ *    включая UTF-16 из Windows-блокнота) — ссылки извлекаются автоматически:
+ *    и с протоколом (где угодно в тексте), и без него на известных видеоплатформах
  *  - вставить ссылки копипастой (textarea + кнопка «Добавить ссылки»)
  *
  * Всё, что попало в область, выстраивается в СПИСОК ЗАПИСЕЙ и НЕ запускается
@@ -109,24 +111,128 @@ function nextId(): string {
   return `q${Date.now().toString(36)}-${localIdCounter}`;
 }
 
-function isLikelyUrl(s: string): boolean {
-  try {
-    const u = new URL(s);
-    return u.protocol === "http:" || u.protocol === "https:";
-  } catch {
-    return false;
+/**
+ * Извлечение ссылок из произвольного текста (файл любого формата или вставка).
+ *
+ * 1) Ссылки с протоколом http(s):// — ищутся ГЛОБАЛЬНОМ regex'ом в любом месте
+ *    текста: HTML-атрибуты, markdown, посреди предложения, с пунктуацией вокруг.
+ * 2) Ссылки БЕЗ протокола — только на известных видеоплатформах (youtube, vk,
+ *    rutube, tiktok…), чтобы не ловить случайные домены из обычного текста;
+ *    к ним добавляется https://.
+ * Хвостовая пунктуация и непарные скобки обрезаются, &amp; разворачивается.
+ */
+
+const TRAILING_URL_PUNCT = ".,;:!?\u00AB\u00BB\u201C\u201D\u201E\u2019'\"\u2026\u00B7";
+
+function tidyUrl(u: string): string {
+  u = u.replace(/&amp;/gi, "&");
+  for (;;) {
+    const last = u[u.length - 1];
+    if (!last) break;
+    if (")]}".includes(last)) {
+      const open = last === ")" ? "(" : last === "]" ? "[" : "{";
+      const opens = u.split(open).length - 1;
+      const closes = u.split(last).length - 1;
+      if (closes > opens) {
+        u = u.slice(0, -1);
+        continue;
+      }
+      break;
+    }
+    if (TRAILING_URL_PUNCT.includes(last)) {
+      u = u.slice(0, -1);
+      continue;
+    }
+    break;
   }
+  return u;
 }
+
+/** Видеоплатформы, чьи ссылки распознаются даже без http(s):// в тексте. */
+const VIDEO_HOSTS = [
+  "youtube.com", "youtu.be", "youtube-nocookie.com", "vimeo.com",
+  "vk.com", "vk.ru", "vkvideo.ru", "vkvideo.com", "rutube.ru", "dzen.ru",
+  "dailymotion.com", "dai.ly", "twitch.tv", "clips.twitch.tv", "tiktok.com", "vt.tiktok.com",
+  "ok.ru", "bilibili.com", "b23.tv", "rumble.com", "odysee.com", "bitchute.com",
+  "x.com", "twitter.com", "t.co", "facebook.com", "fb.watch", "instagram.com",
+  "threads.net", "soundcloud.com", "on.soundcloud.com", "loom.com", "streamable.com",
+  "reddit.com", "redd.it",
+];
+
+const BARE_HOST_RE = new RegExp(
+  "((?:[a-z0-9-]+\\.)*)(?:" +
+    VIDEO_HOSTS.map((h) => h.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|") +
+  ")(/[^\\s<>\"'`]+)?",
+  "i"
+);
 
 export function parseQueueUrls(text: string): string[] {
   const out: string[] = [];
-  for (const line of text.split(/\r?\n/)) {
-    for (const token of line.split(/\s+/)) {
-      const t = token.trim();
-      if (t && isLikelyUrl(t) && !out.includes(t)) out.push(t);
+  const seen = new Set<string>();
+  const push = (raw: string) => {
+    const u = tidyUrl(raw);
+    if (u.length > 4 && !seen.has(u)) {
+      seen.add(u);
+      out.push(u);
     }
+  };
+
+  // 1) Ссылки с протоколом — где угодно в тексте; найденное маскируем,
+  //    чтобы bare-проход не нашёл те же ссылки вторым куском.
+  const masked = text.replace(/https?:\/\/[^\s<>"'`]+/gi, (m0) => {
+    push(m0);
+    return " ";
+  });
+
+  // 2) Ссылки без протокола на известные видеоплатформы — по «словам» текста.
+  //    Совпадение должно доходить до конца слова, а перед ним не должно быть
+  //    буквы/точки/дефиса (иначе поймаем «notyoutube.com» вместо отдельного домена).
+  //    Обёртки вокруг слова («…», (…), "…") и хвостовая пунктуация (в т.ч. CSV-«…";»)
+  //    срезаются перед проверкой.
+  for (const raw of masked.split(/\s+/)) {
+    const token = raw
+      .replace(/^[("'\u00AB\u201E\u201C<\[{]+/, "")
+      .replace(/["'\u00BB)\]},.;:!?…]+$/, "");
+    if (!token) continue;
+    const m = BARE_HOST_RE.exec(token);
+    if (!m) continue;
+    const endsAtTokenEnd = m.index + m[0].length === token.length;
+    const prev = m.index > 0 ? token[m.index - 1] : "";
+    if (!endsAtTokenEnd || (prev && /[\w@.\-]/.test(prev))) continue;
+    push("https://" + m[0]);
   }
   return out;
+}
+
+/** Лимит на файл, из которого вытягиваем ссылки (больше — скорее всего не текстовый список). */
+const MAX_BATCH_TEXT_BYTES = 10 * 1024 * 1024;
+
+/** Читает файл как текст, понимая BOM и UTF-16 (Windows «Юникод»), иначе UTF-8. */
+async function readTextSmart(f: File): Promise<string> {
+  const buf = await f.arrayBuffer();
+  const b = new Uint8Array(buf);
+  if (b.length >= 2 && b[0] === 0xff && b[1] === 0xfe)
+    return new TextDecoder("utf-16le").decode(buf);
+  if (b.length >= 2 && b[0] === 0xfe && b[1] === 0xff)
+    return new TextDecoder("utf-16be").decode(buf);
+  // UTF-16 без BOM (Windows «Юникод» старых блокнотов): каждый второй байт — 0
+  let zeros = 0;
+  const n = Math.min(b.length, 8192);
+  for (let i = 1; i < n; i += 2) if (b[i] === 0) zeros++;
+  if (n > 64 && zeros > n / 4) return new TextDecoder("utf-16le").decode(buf);
+  return new TextDecoder("utf-8").decode(buf);
+}
+
+/** Похоже ли содержимое на бинарный файл (доля управляющих символов в начале). */
+function looksBinary(text: string): boolean {
+  const s = text.slice(0, 4096);
+  if (!s) return false;
+  let bad = 0;
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    if (c === 0 || c < 9 || (c > 13 && c < 32)) bad++;
+  }
+  return bad / s.length > 0.05;
 }
 
 /** Запись журнала с защитой от переполнения localStorage: сначала жертвуем результатами старых задач. */
@@ -168,11 +274,9 @@ export interface InboxQueueProps {
   fileFilter?: (f: File) => string | null;
   /** Что показывать в дроп-зоне (типы файлов) */
   dropHint: string;
-  /** Разрешить приём ссылок (textarea + извлечение из .txt) */
+  /** Разрешить приём ссылок (textarea + извлечение ссылок из ЛЮБОГО текстового файла) */
   allowUrls?: boolean;
   urlsPlaceholder?: string;
-  /** Расширения файлов-пакетов со ссылками (по умолчанию .txt/.md) */
-  batchTextExts?: string[];
   /** Спецификация выбора напротив каждой записи (не задана — селекта нет) */
   itemOption?: QueueOptionSpec;
   /** Режим выполнения */
@@ -215,7 +319,6 @@ export function InboxQueue({
   dropHint,
   allowUrls,
   urlsPlaceholder,
-  batchTextExts = [".txt", ".md"],
   itemOption,
   mode,
   engineOnline,
@@ -312,36 +415,38 @@ export function InboxQueue({
     [itemOption, persist, t]
   );
 
+  /**
+   * Приём файлов. Файл, принятый fileFilter, идёт в очередь как есть.
+   * Файл, ОТКЛОНЁННЫЙ фильтром, при allowUrls читается как текст — из него
+   * вытягиваются ссылки (любой текстовый файл: TXT/MD/CSV/HTML/JSON/LOG…,
+   * включая UTF-16 из Windows-блокнота; бинарные и >10 МБ — с внятной ошибкой).
+   */
   const addFiles = useCallback(
-    (files: File[]) => {
+    async (files: File[]) => {
       if (!files.length) return;
       const accepted: QueueItem[] = [];
       const rejected: string[] = [];
+      const extractJobs: File[] = [];
       for (const f of files) {
-        const lower = f.name.toLowerCase();
-        const isBatchText =
-          allowUrls && batchTextExts.some((ext) => lower.endsWith(ext));
-        if (isBatchText) {
-          // Файл-пакет: ссылки извлекаются ниже (addBatchTextFile)
-          continue;
-        }
         const reason = fileFilter ? fileFilter(f) : null;
-        if (reason) {
+        if (reason === null) {
+          accepted.push({
+            id: nextId(),
+            kind: "file",
+            label: f.name,
+            size: f.size,
+            file: f,
+            option: itemOption ? defaultForItem(itemOption, { name: f.name, kind: "file" }) : "",
+            status: "pending",
+            percent: 0,
+            stage: "",
+            addedAt: Date.now(),
+          });
+        } else if (allowUrls) {
+          extractJobs.push(f);
+        } else {
           rejected.push(`${f.name} — ${reason}`);
-          continue;
         }
-        accepted.push({
-          id: nextId(),
-          kind: "file",
-          label: f.name,
-          size: f.size,
-          file: f,
-          option: itemOption ? defaultForItem(itemOption, { name: f.name, kind: "file" }) : "",
-          status: "pending",
-          percent: 0,
-          stage: "",
-          addedAt: Date.now(),
-        });
       }
       if (accepted.length) {
         setItems((prev) => {
@@ -350,37 +455,41 @@ export function InboxQueue({
           return next;
         });
       }
+
+      const msgs: string[] = [];
+      for (const f of extractJobs) {
+        if (f.size > MAX_BATCH_TEXT_BYTES) {
+          msgs.push(t("Файл {name} слишком большой для чтения ссылок (максимум 10 МБ).", { name: f.name }));
+          continue;
+        }
+        try {
+          const text = await readTextSmart(f);
+          if (looksBinary(text)) {
+            msgs.push(t("Файл {name} не удалось прочитать как текст — похоже, это бинарный файл.", { name: f.name }));
+            continue;
+          }
+          const urls = parseQueueUrls(text);
+          if (!urls.length) {
+            msgs.push(t("В файле {name} ссылок не найдено.", { name: f.name }));
+            continue;
+          }
+          addUrlItems(urls);
+          msgs.push(t("Из файла {name} извлечено ссылок: {n}.", { name: f.name, n: urls.length }));
+        } catch {
+          msgs.push(t("В файле {name} ссылок не найдено.", { name: f.name }));
+        }
+      }
+
       if (rejected.length) {
-        setNotice(
+        msgs.push(
           t("Пропущены файлы неподдерживаемого формата: {list}", {
             list: rejected.slice(0, 3).join(", "),
           }) + (rejected.length > 3 ? t(" и ещё {n}", { n: rejected.length - 3 }) : "")
         );
       }
+      if (msgs.length) setNotice(msgs.join(" "));
     },
-    [allowUrls, batchTextExts, fileFilter, itemOption, persist, t]
-  );
-
-  /** Файл-пакет со ссылками: читаем текст, извлекаем URL, добавляем как записи-ссылки */
-  const addBatchTextFile = useCallback(
-    (f: File) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const urls = parseQueueUrls(String(reader.result || ""));
-        if (!urls.length) {
-          setNotice(
-            t("В файле {name} не найдено ни одной ссылки (нужны http(s):// ссылки, по одной в строке).", { name: f.name })
-          );
-          return;
-        }
-        const n = addUrlItems(urls);
-        if (n > 0) {
-          setNotice(t("Из файла {name} извлечено ссылок: {n}.", { name: f.name, n }));
-        }
-      };
-      reader.readAsText(f);
-    },
-    [addUrlItems, t]
+    [allowUrls, fileFilter, itemOption, persist, addUrlItems, t]
   );
 
   function onDrop(e: React.DragEvent) {
@@ -389,12 +498,7 @@ export function InboxQueue({
     setDragOver(false);
     const dropped = Array.from(e.dataTransfer.files ?? []);
     if (!dropped.length) return;
-    const batch = dropped.filter((f) =>
-      allowUrls && batchTextExts.some((ext) => f.name.toLowerCase().endsWith(ext))
-    );
-    const rest = dropped.filter((f) => !batch.includes(f));
-    addFiles(rest);
-    for (const f of batch) addBatchTextFile(f);
+    void addFiles(dropped);
   }
 
   function onDragEnter(e: React.DragEvent) {
@@ -637,7 +741,7 @@ export function InboxQueue({
   const kindIcon = (it: QueueItem) =>
     it.kind === "url" ? (
       <Link2 className="w-3.5 h-3.5 text-sky-400" />
-    ) : /\.(txt|md)$/i.test(it.label) ? (
+    ) : /\.(txt|md|markdown|csv|tsv|log|json|xml|html?|srt|vtt|ass|yml|yaml|list|url|rtf)$/i.test(it.label) ? (
       <FileText className="w-3.5 h-3.5 text-amber-300" />
     ) : (
       <FileAudio className="w-3.5 h-3.5 text-[#7c5bf5]" />
@@ -675,7 +779,7 @@ export function InboxQueue({
           multiple
           hidden
           onChange={(e) => {
-            addFiles(Array.from(e.target.files ?? []));
+            void addFiles(Array.from(e.target.files ?? []));
             e.target.value = "";
           }}
         />
@@ -685,7 +789,7 @@ export function InboxQueue({
         <p className="text-sm font-medium">{dropHint}</p>
         {allowUrls && (
           <p className="text-xs text-muted-foreground mt-1">
-            {t("…или перетащите .txt/.md со списком ссылок — ссылки извлекутся автоматически")}{" "}
+            {t("…или перетащите любой текстовый файл со ссылками — ссылки извлекутся автоматически")}{" "}
             · {t("нажмите, чтобы выбрать файлы")}
           </p>
         )}
