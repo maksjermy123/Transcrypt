@@ -46,7 +46,7 @@ class MainWindow(QMainWindow):
         # Tabs
         self.tabs = QTabWidget()
         self.tabs.setDocumentMode(True)
-        self.tabs.setExpanding(False)
+        self.tabs.tabBar().setExpanding(False)
         self.tabs.setElideMode(Qt.TextElideMode.ElideRight)
         self.tabs.setUsesScrollButtons(True)
         layout.addWidget(self.tabs)
