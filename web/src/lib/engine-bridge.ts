@@ -585,6 +585,25 @@ export async function resumeActiveJob(type: EngineTaskType): Promise<ResumeOutco
 }
 
 /**
+ * То же, что resumeActiveJob, но при «offline» делает несколько попыток
+ * с паузой: движок мог ещё проснуться (macOS sleep/wake, запуск после
+ * перезагрузки, Safari Local Network prompt). Слот НЕ чистится —
+ * при следующем возврате на вкладку попытка повторится.
+ */
+export async function resumeActiveJobWithRetry(
+  type: EngineTaskType,
+  retries: number = 3,
+  delayMs: number = 2500
+): Promise<ResumeOutcome> {
+  let out = await resumeActiveJob(type);
+  for (let i = 0; i < retries && out.state === "offline"; i++) {
+    await new Promise((r) => setTimeout(r, delayMs));
+    out = await resumeActiveJob(type);
+  }
+  return out;
+}
+
+/**
  * Следит за фоновой задачей до завершения (после resumeActiveJob('running')).
  */
 export async function watchJobToCompletion<T>(

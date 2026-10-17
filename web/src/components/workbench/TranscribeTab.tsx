@@ -34,7 +34,7 @@ import {
   transcribeViaEngine,
   downloadEngineFile,
   fetchEngineFile,
-  resumeActiveJob,
+  resumeActiveJobWithRetry,
   watchJobToCompletion,
   clearActiveJob,
   cancelActiveJob,
@@ -532,9 +532,9 @@ export function TranscribeTab({
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      let outcome: Awaited<ReturnType<typeof resumeActiveJob>> | null = null;
+      let outcome: Awaited<ReturnType<typeof resumeActiveJobWithRetry>> | null = null;
       try {
-        outcome = await resumeActiveJob("transcribe");
+        outcome = await resumeActiveJobWithRetry("transcribe");
       } catch {
         outcome = null;
       }
@@ -547,7 +547,16 @@ export function TranscribeTab({
       }
       if (!cancelled && pref !== "-") setTargetLang(pref);
       if (cancelled) return;
-      if (!outcome || outcome.state === "none" || outcome.state === "offline") {
+      if (!outcome || outcome.state === "none") {
+        restoreLastResult();
+        return;
+      }
+      if (outcome.state === "offline") {
+        // Движок не отвечает: слот НЕ чистим — при следующем возврате
+        // попытка восстановления повторится.
+        setJobNote(
+          t("Не удалось связаться с движком, чтобы проверить фоновую задачу. Запустите движок и обновите страницу — задача, если она была, продолжала выполняться на нём.")
+        );
         restoreLastResult();
         return;
       }
@@ -1187,7 +1196,18 @@ export function TranscribeTab({
         <div className="mb-5 p-3 rounded-xl flex items-center gap-3 text-sm bg-amber-500/10 border border-amber-500/20 text-amber-300">
           <ServerOff className="w-4 h-4 flex-shrink-0" />
           <span>
-            <strong>{t("Локальный движок не найден.")}</strong>  {t("Доступна только транскрипция локальных файлов через браузерный Whisper. Для URL (YouTube, TikTok) запустите")} <code className="px-1.5 py-0.5 rounded bg-amber-500/20 font-mono text-xs">python engine_server.py</code>  {t("из репозитория и обновите страницу.")} </span>
+            <strong>{t("Локальный движок не найден.")}</strong>  {t("Доступна только транскрипция локальных файлов через браузерный Whisper. Для URL (YouTube, TikTok) запустите")} <code className="px-1.5 py-0.5 rounded bg-amber-500/20 font-mono text-xs">python engine_server.py</code>  {t("из репозитория и обновите страницу.")} {t("В браузерном режиме обработка идёт только пока открыта вкладка — переключение вкладок может прервать задачу.")} </span>
+        </div>
+      )}
+
+      {/* Старый движок без Job API: задача пойдёт по синхронному пути и умрёт
+          при переключении вкладки — предупреждаем ДО запуска. */}
+      {engineServerOnline && engineServerHealth && !supportsJobs && (
+        <div className="mb-5 p-3 rounded-xl flex items-start gap-3 text-sm bg-amber-500/10 border border-amber-500/20 text-amber-300">
+          <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+          <span>
+            <strong>{t("Движок без фоновых задач.")}</strong> {t("Задача выполняется, только пока открыта вкладка: при переключении на другую вкладку она прервётся. Обновите движок (Настройки → «Доступно обновление движка») — и задачи будут идти в фоне даже после закрытия браузера.")}
+          </span>
         </div>
       )}
 

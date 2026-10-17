@@ -26,7 +26,7 @@ import {
   downloadEngineFile,
   engineFileUrl,
   uploadFileToEngine,
-  resumeActiveJob,
+  resumeActiveJobWithRetry,
   watchJobToCompletion,
   clearActiveJob,
   cancelActiveJob,
@@ -116,15 +116,21 @@ export function MediaTab() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      let outcome: Awaited<ReturnType<typeof resumeActiveJob>>;
+      let outcome: Awaited<ReturnType<typeof resumeActiveJobWithRetry>>;
       try {
-        outcome = await resumeActiveJob("media");
+        outcome = await resumeActiveJobWithRetry("media");
       } catch {
         restoreLastMedia();
         return;
       }
       if (cancelled) return;
-      if (outcome.state === "none" || outcome.state === "offline") {
+      if (outcome.state === "none") {
+        restoreLastMedia();
+        return;
+      }
+      if (outcome.state === "offline") {
+        // Слот НЕ чистим — при следующем возврате попытка повторится
+        setJobNote(t("Не удалось связаться с движком, чтобы проверить фоновую задачу. Запустите движок и обновите страницу — задача, если она была, продолжала выполняться на нём."));
         restoreLastMedia();
         return;
       }
@@ -445,6 +451,17 @@ export function MediaTab() {
 
       {/* Баннер обновления движка перенесён в Настройки — вкладки не засоряем сообщениями:
           индикатор в шапке зелёный = всё работает, а обновление доступно в Настройках. */}
+
+      {/* Старый движок без Job API: задача пойдёт по синхронному пути и умрёт
+          при переключении вкладки — предупреждаем ДО запуска. */}
+      {engineServerOnline && engineServerHealth && !(engineServerHealth as { jobs?: boolean }).jobs && (
+        <div className="mb-5 p-3 rounded-xl flex items-start gap-3 text-sm bg-amber-500/10 border border-amber-500/20 text-amber-300">
+          <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+          <span>
+            <strong>{t("Движок без фоновых задач.")}</strong> {t("Задача выполняется, только пока открыта вкладка: при переключении на другую вкладку она прервётся. Обновите движок (Настройки → «Доступно обновление движка») — и задачи будут идти в фоне даже после закрытия браузера.")}
+          </span>
+        </div>
+      )}
 
       {/* Баннер восстановления фоновой задачи / результата */}
       {jobNote && (

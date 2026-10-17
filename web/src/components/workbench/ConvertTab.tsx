@@ -25,7 +25,7 @@ import {
   uploadFileToEngine,
   downloadEngineFile,
   engineFileUrl,
-  resumeActiveJob,
+  resumeActiveJobWithRetry,
   watchJobToCompletion,
   clearActiveJob,
   cancelActiveJob,
@@ -155,9 +155,9 @@ function MediaConverter() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      let outcome: Awaited<ReturnType<typeof resumeActiveJob>>;
+      let outcome: Awaited<ReturnType<typeof resumeActiveJobWithRetry>>;
       try {
-        outcome = await resumeActiveJob("convert");
+        outcome = await resumeActiveJobWithRetry("convert");
       } catch {
         restoreLastConvert();
         return;
@@ -963,9 +963,9 @@ function DocConverter() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      let outcome: Awaited<ReturnType<typeof resumeActiveJob>>;
+      let outcome: Awaited<ReturnType<typeof resumeActiveJobWithRetry>>;
       try {
-        outcome = await resumeActiveJob("convert");
+        outcome = await resumeActiveJobWithRetry("convert");
       } catch {
         restoreLastDoc();
         return;
