@@ -37,29 +37,12 @@ class TranscriptionTab(QWidget):
         controls_layout.addWidget(self.combo_model)
         
         controls_layout.addSpacing(20) # Spacer
-        
-        # Language Source
-        controls_layout.addWidget(QLabel("Язык аудио:"))
-        self.combo_source_lang = QComboBox()
-        self.combo_source_lang.addItems(["auto", "ru", "en", "uk", "es", "de", "fr"])
-        self.combo_source_lang.setMinimumWidth(140)
-        self.combo_source_lang.setMinimumContentsLength(8)
-        self.combo_source_lang.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContentsOnFirstShow)
-        self.combo_source_lang.view().setMinimumWidth(220)
-        controls_layout.addWidget(self.combo_source_lang)
 
-        controls_layout.addSpacing(20) # Spacer
-
-        # Language Target (Translation)
-        controls_layout.addWidget(QLabel("Перевод на:"))
-        self.combo_target_lang = QComboBox()
-        self.combo_target_lang.addItems(["-", "ru", "en", "uk", "es", "de", "fr"])
-        self.combo_target_lang.setToolTip("Выберите язык для перевода текста (опционально)")
-        self.combo_target_lang.setMinimumWidth(160)
-        self.combo_target_lang.setMinimumContentsLength(8)
-        self.combo_target_lang.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContentsOnFirstShow)
-        self.combo_target_lang.view().setMinimumWidth(240)
-        controls_layout.addWidget(self.combo_target_lang)
+        # Исходный язык и язык перевода выбираются НАПРОТИВ каждой записи
+        # в таблице ниже (колонка «Язык: исх → перевод») — как в веб-версии.
+        hint_label = QLabel("Языки каждой записи —\nв таблице напротив файла")
+        hint_label.setStyleSheet("color: #8A93A6; font-size: 11px;")
+        controls_layout.addWidget(hint_label)
         
         controls_layout.addStretch() # Push everything to left
         
@@ -126,6 +109,8 @@ class TranscriptionTab(QWidget):
         self.file_list = FileListWidget()
         # Force transcription formats regardless of input file type
         self.file_list.set_override_formats(["txt", "docx", "srt", "json", "vtt", "md"])
+        # Пара языков «исходный → перевод» напротив каждой записи
+        self.file_list.set_dual_language_mode(True)
         self.file_list.files_dropped.connect(self.on_files_dropped)
         self.file_list.urls_rejected.connect(self.on_urls_rejected)
         # self.file_list.set_format_options(...) # Not needed if overriding
@@ -166,8 +151,6 @@ class TranscriptionTab(QWidget):
         self.load_settings()
         
         self.combo_model.currentTextChanged.connect(self.save_settings)
-        self.combo_source_lang.currentTextChanged.connect(self.save_settings)
-        self.combo_target_lang.currentTextChanged.connect(self.save_settings)
         self.chk_timecodes.toggled.connect(self.save_settings)
         self.chk_save_audio.toggled.connect(self.save_settings)
         self.chk_save_video.toggled.connect(self.save_settings)
@@ -307,8 +290,10 @@ class TranscriptionTab(QWidget):
         config = load_config()
         
         self.combo_model.setCurrentText(config.get("model", "base"))
-        self.combo_source_lang.setCurrentText(config.get("source_lang", "auto"))
-        self.combo_target_lang.setCurrentText(config.get("target_lang", "-"))
+        # Языки по умолчанию для новых строк таблицы (последние использованные)
+        self.file_list.set_language_defaults(
+            config.get("source_lang", "auto"), config.get("target_lang", "-")
+        )
         
         self.chk_timecodes.setChecked(config.get("chk_timecodes", True))
         self.chk_save_audio.setChecked(config.get("chk_save_audio", False))
@@ -322,8 +307,9 @@ class TranscriptionTab(QWidget):
         config = load_config()
         
         config["model"] = self.combo_model.currentText()
-        config["source_lang"] = self.combo_source_lang.currentText()
-        config["target_lang"] = self.combo_target_lang.currentText()
+        # Сохраняем последние выбранные языки (по умолчанию для новых строк)
+        config["source_lang"] = self.file_list.default_source_lang
+        config["target_lang"] = self.file_list.default_target_lang
         
         config["chk_timecodes"] = self.chk_timecodes.isChecked()
         config["chk_save_audio"] = self.chk_save_audio.isChecked()
@@ -424,7 +410,14 @@ class TranscriptionTab(QWidget):
             should_process = f['status'] != 'Готово' if retry_indexes is None else i in retry_indexes
             if should_process:
                 fmt = self.file_list.get_file_format(i)
-                files_data.append({'path': f['path'], 'format': fmt, 'row_index': i})
+                files_data.append({
+                    'path': f['path'],
+                    'format': fmt,
+                    'row_index': i,
+                    # Языки этой записи — из селектов напротив строки
+                    'language': self.file_list.get_file_language(i),
+                    'translate_to': self.file_list.get_file_target_language(i),
+                })
         
         if not files_data:
             self.log("Нет файлов для обработки.")
@@ -447,8 +440,9 @@ class TranscriptionTab(QWidget):
 
         config = {
             'model': self.combo_model.currentText(),
-            'language': self.combo_source_lang.currentText(),
-            'translate_to': self.combo_target_lang.currentText(),
+            # Глобальные языки теперь только запасные: у каждой записи свой выбор
+            'language': self.file_list.default_source_lang or 'auto',
+            'translate_to': self.file_list.default_target_lang or '-',
             'device': resolve_whisper_device(app_config.get("device", "Auto")),
             'cpu_threads': app_config.get("cpu_threads", "Auto"),
             'timecodes': self.chk_timecodes.isChecked(),
@@ -679,6 +673,9 @@ class TranscriptionTab(QWidget):
             row_index = file_data.get('row_index', i)
             file_path = file_data['path']
             fmt = file_data.get('format', 'txt')
+            # Языки ЭТОЙ записи (селекты напротив строки); глобальные — запасные
+            file_lang = file_data.get('language') or config.get('language') or 'auto'
+            file_translate_to = file_data.get('translate_to') or config.get('translate_to') or '-'
             artifact_base = os.path.splitext(display_name_for_input(file_path))[0]
             
             c_hex = ["#4DA6FF", "#FFB74D", "#9CCC65", "#BA68C8", "#FF8A65"][i % 5]
@@ -711,7 +708,7 @@ class TranscriptionTab(QWidget):
                     target_sub_lang = None
                     is_auto_sub = False
                     
-                    req_lang = config['language']
+                    req_lang = file_lang
                     fallback_langs = [lang for lang in ["en", "ru", "uk"] if lang != req_lang]
                     subtitle_choice = task_downloader.choose_subtitle_track(
                         subs_info,
@@ -835,7 +832,7 @@ class TranscriptionTab(QWidget):
                         
                         result = engine.transcribe(
                             file_path,
-                            language=config['language'],
+                            language=file_lang,
                             progress_callback=progress_callback,
                             log_callback=worker_obj.log.emit,
                             worker_obj=worker_obj,
@@ -859,7 +856,7 @@ class TranscriptionTab(QWidget):
                             worker_obj.status_update.emit(row_index, f"Обработка... ({eta_str})")
                     result = engine.transcribe(
                         file_path,
-                        language=config['language'],
+                        language=file_lang,
                         progress_callback=progress_callback,
                         log_callback=worker_obj.log.emit,
                         worker_obj=worker_obj,
@@ -874,16 +871,16 @@ class TranscriptionTab(QWidget):
                 # the target with the literal string "auto".
                 from src.core.transcription_policy import needs_translation
 
-                target_lang = config['translate_to']
+                target_lang = file_translate_to
                 detected_lang = result.get('language') if isinstance(result, dict) else None
                 need_translate = needs_translation(
                     target_lang,
-                    config['language'],
+                    file_lang,
                     detected_source_language=detected_lang,
                     subtitle_language=subs_actual_lang,
                 )
                 if target_lang != "-" and not need_translate:
-                    source_lang = subs_actual_lang or detected_lang or config['language']
+                    source_lang = subs_actual_lang or detected_lang or file_lang
                     worker_obj.log.emit(
                         f"ℹ️ Исходный язык '{source_lang}' совпадает с целевым '{target_lang}' — перевод не требуется."
                     )

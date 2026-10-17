@@ -4,7 +4,6 @@ import { motion } from "framer-motion";
 import {
   Loader2,
   Download,
-  Mic,
   Settings2,
   Globe,
   ServerOff,
@@ -101,13 +100,14 @@ export function TranscribeTab({
   const [text, setText] = useState("");
   const [segments, setSegments] = useState<Seg[]>([]);
   const [sourceLabel, setSourceLabel] = useState<string>("");
-  const [language, setLanguage] = useState("auto");
-  // Конечный язык: "-" — без перевода (выдаём оригинал)
+  // Конечный язык: "-" — без перевода (выдаём оригинал). Исходный язык — у КАЖДОЙ записи очереди (itemOption2).
   const [targetLang, setTargetLang] = useState("-");
   const [translatedText, setTranslatedText] = useState("");
   const [translatedSegments, setTranslatedSegments] = useState<Seg[]>([]);
   const [translError, setTranslError] = useState<string | null>(null);
-  const [segView, setSegView] = useState<"translation" | "original">("translation");
+  // Режим просмотра результата: перевод / оригинал / сегменты с таймкодами —
+  // всё в одной карточке, переключение одной кнопкой-группой
+  const [segView, setSegView] = useState<"translation" | "original" | "segments">("translation");
   const [error, setError] = useState<string | null>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   // Поиск по транскрипту + подсветка активного сегмента при прослушивании
@@ -156,13 +156,13 @@ export function TranscribeTab({
           url: urlParam,
           file_path: filePath,
           model: selectedModel ?? "base",
-          language,
+          language: item.option2 || "auto", // исходный язык выбран напротив каждой записи
           translate_to: "-", // перевод выполняется на клиенте после транскрипции
         },
         item.label
       );
     },
-    [selectedModel, language]
+    [selectedModel]
   );
 
   /** jobs-режим: запись завершена — если выбран конечный язык, переводим текст прямо здесь. */
@@ -206,7 +206,7 @@ export function TranscribeTab({
         });
         return;
       }
-      const outcome = await runTaskBrowser(it.file!, it.label, language, it.option);
+      const outcome = await runTaskBrowser(it.file!, it.label, it.option2 || "auto", it.option);
       update({
         status: "done",
         percent: 100,
@@ -223,7 +223,7 @@ export function TranscribeTab({
     },
     // runTaskBrowser объявлена ниже как function-декларация — в замыкание не попадает
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [language, t]
+    [t]
   );
 
   /**
@@ -336,7 +336,8 @@ export function TranscribeTab({
     setTranslError(null);
     setSegView("translation");
     if (lang === "-") return { tText: "", tSegs: [], err: null };
-    if (language !== "auto" && language === lang) return { tText: "", tSegs: [], err: null }; // совпадает с исходным — перевод не нужен
+    // Исходный язык каждой записи известен только очереди; после восстановления
+    // результата он неизвестен — сравнение «источник == цель» здесь не делаем.
     if (!origText.trim() && !origSegs.length) return { tText: "", tSegs: [], err: null };
 
     const label = langLabel(lang);
@@ -776,28 +777,53 @@ export function TranscribeTab({
     });
   }
 
-  /** Скачать текст готовой записи очереди (.txt). */
-  function downloadQueueItemTxt(it: QueueItem) {
+  /**
+   * Скачать результат готовой записи очереди в выбранном формате.
+   * SRT/VTT строятся из сегментов записи (или из SRT-файла движка, если
+   * сегменты не сохранились в журнале).
+   */
+  async function downloadQueueItemFormat(it: QueueItem, fmt: "txt" | "srt" | "vtt" | "md") {
     const r = it.result || {};
-    if (!r.text) return;
-    const base = it.label
-      .replace(/^https?:\/\//, "")
-      .replace(/[^\wа-яА-ЯёЁ.-]+/g, "_")
-      .slice(0, 60);
-    downloadFile(`${base || "task"}.txt`, r.translated || r.text, "text/plain");
-  }
-
-  async function downloadResultFile(kind: "txt" | "srt" | "vtt" | "json") {
-    if (engineServerOnline && phase === "done") {
-      // Если был движок — файлы лежат на нём, скачиваем оттуда
-      // (но мы не сохраняем URL ответа. Поэтому для простоты используем локальную генерацию из сегментов.)
-      if (kind === "txt") downloadTXT();
-      else if (kind === "srt") downloadSRT();
-      else if (kind === "vtt") downloadVTT();
+    const base =
+      it.label
+        .replace(/^https?:\/\//, "")
+        .replace(/[^\wа-яА-ЯёЁ.-]+/g, "_")
+        .slice(0, 60) || "task";
+    if (fmt === "txt") {
+      if (!r.text) return;
+      downloadFile(`${base}.txt`, r.translated || r.text, "text/plain");
+      return;
+    }
+    // Для SRT/VTT/MD нужны сегменты с таймкодами
+    let segs: Seg[] = Array.isArray(r.segments) ? r.segments : [];
+    if (!segs.length && r.files?.srt) {
+      try {
+        const blob = await fetchEngineFile(r.files.srt);
+        segs = parseSrt(await blob.text());
+      } catch {
+        /* сегменты недоступны */
+      }
+    }
+    if (!segs.length) {
+      setJobNote(t("Для этой записи нет сегментов — субтитры SRT/VTT недоступны. Скачайте текст (.txt)."));
+      return;
+    }
+    const bodyText = r.translated || r.text || segmentsToPlainText(segs);
+    if (fmt === "srt") {
+      downloadFile(`${base}.srt`, segmentsToSRT(segs), "text/plain");
+    } else if (fmt === "vtt") {
+      downloadFile(`${base}.vtt`, segmentsToVTT(segs), "text/plain");
     } else {
-      if (kind === "txt") downloadTXT();
-      else if (kind === "srt") downloadSRT();
-      else if (kind === "vtt") downloadVTT();
+      downloadFile(
+        `${base}.md`,
+        buildMarkdown({
+          title: r.source || it.label,
+          source: r.source || it.label,
+          segments: segs,
+          text: bodyText,
+        }),
+        "text/markdown"
+      );
     }
   }
 
@@ -808,23 +834,8 @@ export function TranscribeTab({
   // ═════════ Общие блоки ═════════
   const busy = phase === "loading-engine" || phase === "running";
 
-  /** Исходный язык — общий для всех записей очереди (модель — в шапке вкладки). */
-  const srcLangControl = (
-    <div className="flex flex-wrap items-center gap-2">
-      <Mic className="w-4 h-4 text-[#7c5bf5] flex-shrink-0" />
-      <span className="text-xs font-medium">{t("Исходный язык")}</span>
-      <select
-        value={language}
-        onChange={(e) => setLanguage(e.target.value)}
-        className="bg-[#1b2334] border border-[#263147] rounded-lg px-2.5 py-1.5 text-xs"
-      >
-        <option value="auto">{t("Автоопределение")}</option>
-        {LANG_OPTIONS.map((l) => (
-          <option key={l.code} value={l.code}>{l.label}</option>
-        ))}
-      </select>
-    </div>
-  );
+  // Исходный и конечный язык теперь выбираются НАПРОТИВ каждой записи очереди
+  // (itemOption2 → itemOption). Отдельная строка «Исходный язык» больше не нужна.
 
   const progressBlock = busy ? (
     <div className="glass-card rounded-2xl p-5">
@@ -906,11 +917,16 @@ export function TranscribeTab({
             </span>
           )}
         </div>
-        <div className="flex gap-2">
-          <ExportBtn onClick={() => downloadResultFile("srt")} label="SRT" />
-          <ExportBtn onClick={() => downloadResultFile("vtt")} label="VTT" />
-          <ExportBtn onClick={() => downloadResultFile("txt")} label="TXT" />
-          <ExportBtn onClick={downloadMD} label="MD" />
+        <div className="flex items-center gap-2">
+          <DownloadMenu
+            title={t("Скачать результат в выбранном формате")}
+            items={[
+              { id: "srt", label: t("SRT — субтитры"), on: () => downloadSRT() },
+              { id: "vtt", label: t("VTT — субтитры"), on: () => downloadVTT() },
+              { id: "txt", label: t("TXT — текст"), on: () => downloadTXT() },
+              { id: "md", label: t("MD — заметки"), on: () => downloadMD() },
+            ]}
+          />
         </div>
       </div>
 
@@ -947,20 +963,24 @@ export function TranscribeTab({
         </div>
       )}
 
-      {(text || translatedText) && (
+      {(text || translatedText || segments.length > 0) && (
         <div className={showingTranslation ? "glass-card rounded-2xl p-5 border-emerald-500/30" : "glass-card rounded-2xl p-5"}>
           <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
             <h3 className="font-semibold text-sm inline-flex items-center gap-2">
               {showingTranslation && <Languages className="w-4 h-4 text-emerald-400" />}
-              {showingTranslation
-                ? <>{t("Перевод —")} {langLabel(targetLang)}</>
-                : translatedText
-                  ? t("Полный текст (оригинал)")
-                  : t("Полный текст")}
+              {segView === "segments" && segments.length > 0
+                ? t("Сегменты с таймкодами")
+                : showingTranslation
+                  ? <>{t("Перевод —")} {langLabel(targetLang)}</>
+                  : translatedText
+                    ? t("Полный текст (оригинал)")
+                    : t("Полный текст")}
             </h3>
             <div className="flex items-center gap-2">
-              {translatedText && (
-                <div className="flex bg-[#1b2334] rounded-lg p-0.5 text-xs">
+              {/* Единый переключатель режимов: Перевод / Оригинал / Сегменты —
+                  сегменты больше не отдельная карточка, а режим той же карточки */}
+              <div className="flex bg-[#1b2334] rounded-lg p-0.5 text-xs">
+                {translatedText && (
                   <button
                     onClick={() => setSegView("translation")}
                     className={`px-2.5 py-1 rounded-md font-medium transition-colors ${
@@ -971,134 +991,120 @@ export function TranscribeTab({
                   >
                     {t("Перевод")}
                   </button>
-                  <button
-                    onClick={() => setSegView("original")}
-                    className={`px-2.5 py-1 rounded-md font-medium transition-colors ${
-                      segView === "original"
-                        ? "bg-gradient-primary text-white"
-                        : "text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    {t("Оригинал")}
-                  </button>
-                </div>
-              )}
-              <CopyModesBtn
-                modes={[
-                  { id: "plain", label: t("Обычный текст"), get: () => viewText },
-                  {
-                    id: "stamps",
-                    label: t("С таймкодами"),
-                    get: () => (viewSegments.length ? segmentsWithStamps(viewSegments) : viewText),
-                  },
-                  {
-                    id: "quotes",
-                    label: t("Цитатами (для конспекта)"),
-                    get: () => (viewSegments.length ? segmentsAsQuotes(viewSegments) : viewText),
-                  },
-                ]}
-              />
-            </div>
-          </div>
-          <p className="text-sm leading-relaxed whitespace-pre-wrap">{viewText}</p>
-        </div>
-      )}
-
-      {segments.length > 0 && (
-        <div className="glass-card rounded-2xl p-5">
-          <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-            <h3 className="font-semibold text-sm">{t("Сегменты с таймкодами")}</h3>
-            <div className="flex items-center gap-2">
-              {translatedSegments.length > 0 && (
-                <div className="flex bg-[#1b2334] rounded-lg p-0.5 text-xs">
-                  <button
-                    onClick={() => setSegView("translation")}
-                    className={`px-2.5 py-1 rounded-md font-medium transition-colors ${
-                      segView === "translation"
-                        ? "bg-gradient-primary text-white"
-                        : "text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    {t("Перевод")} </button>
-                  <button
-                    onClick={() => setSegView("original")}
-                    className={`px-2.5 py-1 rounded-md font-medium transition-colors ${
-                      segView === "original"
-                        ? "bg-gradient-primary text-white"
-                        : "text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    {t("Оригинал")} </button>
-                </div>
-              )}
-              <CopyModesBtn
-                modes={[
-                  { id: "plain", label: t("Обычный текст"), get: () => segmentsToPlainText(viewSegments) },
-                  { id: "stamps", label: t("С таймкодами"), get: () => segmentsWithStamps(viewSegments) },
-                  { id: "quotes", label: t("Цитатами (для конспекта)"), get: () => segmentsAsQuotes(viewSegments) },
-                ]}
-              />
-            </div>
-          </div>
-
-          {/* Поиск по транскрипту: подсветка совпадений + фильтр «только совпадения» */}
-          <div className="flex flex-wrap items-center gap-2 mb-3">
-            <div className="relative flex-1 min-w-[200px]">
-              <Search className="w-3.5 h-3.5 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder={t("Поиск по тексту…")}
-                className="w-full bg-[#0b0f19] border border-[#263147] rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:border-[#7c5bf5]/50"
-              />
-            </div>
-            {searchQuery.trim() && (
-              <>
-                <span className="text-xs text-muted-foreground whitespace-nowrap">
-                  {matchCount > 0 ? `Совпадений: ${matchCount}` : t("Ничего не найдено")}
-                </span>
-                <label className="text-xs text-muted-foreground inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap">
-                  <input
-                    type="checkbox"
-                    checked={onlyMatches}
-                    onChange={(e) => setOnlyMatches(e.target.checked)}
-                    className="accent-[#7c5bf5]"
-                  />
-                  {t("Только совпадения")} </label>
-              </>
-            )}
-          </div>
-
-          <div className="space-y-1 max-h-96 overflow-y-auto pr-2">
-            {visibleSegments.length === 0 ? (
-              <p className="text-xs text-muted-foreground p-2">{t("Сегментов с таким текстом нет — снимите фильтр или измените запрос.")}</p>
-            ) : (
-              visibleSegments.map(({ seg, idx }) => (
-                <div
-                  key={idx}
-                  className={`flex items-start gap-3 p-2 rounded-lg transition-colors ${
-                    activeSegIdx === idx
-                      ? "bg-[#7c5bf5]/15 ring-1 ring-[#7c5bf5]/40"
-                      : "hover:bg-[#1b2334]"
+                )}
+                <button
+                  onClick={() => setSegView("original")}
+                  className={`px-2.5 py-1 rounded-md font-medium transition-colors ${
+                    segView === "original"
+                      ? "bg-gradient-primary text-white"
+                      : "text-muted-foreground hover:text-foreground"
                   }`}
                 >
+                  {t("Оригинал")}
+                </button>
+                {segments.length > 0 && (
                   <button
-                    onClick={() => onTimestampClick(seg.timestamp[0], idx)}
-                    title={t("Перемотать плеер на этот момент (или скопировать ссылку с таймкодом)")}
-                    className="font-mono text-xs text-[#7c5bf5] mt-0.5 flex-shrink-0 tabular-nums hover:underline"
+                    onClick={() => setSegView("segments")}
+                    className={`px-2.5 py-1 rounded-md font-medium transition-colors ${
+                      segView === "segments"
+                        ? "bg-gradient-primary text-white"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
                   >
-                    {formatDuration(seg.timestamp[0])}
+                    {t("Сегменты")}
                   </button>
-                  <span className="text-sm text-foreground/90">
-                    <Highlight text={seg.text} query={searchQuery} />
-                  </span>
-                </div>
-              ))
-            )}
+                )}
+              </div>
+              <CopyModesBtn
+                modes={
+                  segView === "segments" && segments.length > 0
+                    ? [
+                        { id: "plain", label: t("Обычный текст"), get: () => segmentsToPlainText(viewSegments) },
+                        { id: "stamps", label: t("С таймкодами"), get: () => segmentsWithStamps(viewSegments) },
+                        { id: "quotes", label: t("Цитатами (для конспекта)"), get: () => segmentsAsQuotes(viewSegments) },
+                      ]
+                    : [
+                        { id: "plain", label: t("Обычный текст"), get: () => viewText },
+                        {
+                          id: "stamps",
+                          label: t("С таймкодами"),
+                          get: () => (viewSegments.length ? segmentsWithStamps(viewSegments) : viewText),
+                        },
+                        {
+                          id: "quotes",
+                          label: t("Цитатами (для конспекта)"),
+                          get: () => (viewSegments.length ? segmentsAsQuotes(viewSegments) : viewText),
+                        },
+                      ]
+                }
+              />
+            </div>
           </div>
-          <p className="text-[11px] text-muted-foreground mt-2">
-            {t("Клик по таймкоду — перемотка плеера. Для YouTube-результатов копируется ссылка с меткой момента.")} </p>
+
+          {segView === "segments" && segments.length > 0 ? (
+            <>
+              {/* Поиск по транскрипту: подсветка совпадений + фильтр «только совпадения» */}
+              <div className="flex flex-wrap items-center gap-2 mb-3">
+                <div className="relative flex-1 min-w-[200px]">
+                  <Search className="w-3.5 h-3.5 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder={t("Поиск по тексту…")}
+                    className="w-full bg-[#0b0f19] border border-[#263147] rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:border-[#7c5bf5]/50"
+                  />
+                </div>
+                {searchQuery.trim() && (
+                  <>
+                    <span className="text-xs text-muted-foreground whitespace-nowrap">
+                      {matchCount > 0 ? `Совпадений: ${matchCount}` : t("Ничего не найдено")}
+                    </span>
+                    <label className="text-xs text-muted-foreground inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap">
+                      <input
+                        type="checkbox"
+                        checked={onlyMatches}
+                        onChange={(e) => setOnlyMatches(e.target.checked)}
+                        className="accent-[#7c5bf5]"
+                      />
+                      {t("Только совпадения")} </label>
+                  </>
+                )}
+              </div>
+
+              <div className="space-y-1 max-h-96 overflow-y-auto pr-2">
+                {visibleSegments.length === 0 ? (
+                  <p className="text-xs text-muted-foreground p-2">{t("Сегментов с таким текстом нет — снимите фильтр или измените запрос.")}</p>
+                ) : (
+                  visibleSegments.map(({ seg, idx }) => (
+                    <div
+                      key={idx}
+                      className={`flex items-start gap-3 p-2 rounded-lg transition-colors ${
+                        activeSegIdx === idx
+                          ? "bg-[#7c5bf5]/15 ring-1 ring-[#7c5bf5]/40"
+                          : "hover:bg-[#1b2334]"
+                      }`}
+                    >
+                      <button
+                        onClick={() => onTimestampClick(seg.timestamp[0], idx)}
+                        title={t("Перемотать плеер на этот момент (или скопировать ссылку с таймкодом)")}
+                        className="font-mono text-xs text-[#7c5bf5] mt-0.5 flex-shrink-0 tabular-nums hover:underline"
+                      >
+                        {formatDuration(seg.timestamp[0])}
+                      </button>
+                      <span className="text-sm text-foreground/90">
+                        <Highlight text={seg.text} query={searchQuery} />
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
+              <p className="text-[11px] text-muted-foreground mt-2">
+                {t("Клик по таймкоду — перемотка плеера. Для YouTube-результатов копируется ссылка с меткой момента.")} </p>
+            </>
+          ) : (
+            <p className="text-sm leading-relaxed whitespace-pre-wrap">{viewText}</p>
+          )}
         </div>
       )}
     </motion.div>
@@ -1205,6 +1211,15 @@ export function TranscribeTab({
         dropHint={t("Перетащите аудио/видео файлы или текстовый файл со ссылками — можно несколько сразу")}
         allowUrls
         urlsPlaceholder={t("или вставьте скопированные ссылки сюда — по одной в строке (Enter добавит их в список)")}
+        itemOption2={{
+          label: t("Исходный язык"),
+          title: t("Исходный язык этой записи: на нём звучит речь (Автоопределение — если не уверены)"),
+          defaultValue: "auto",
+          options: [
+            { value: "auto", label: t("Автоопределение") },
+            ...LANG_OPTIONS.map((l) => ({ value: l.code, label: l.label })),
+          ],
+        }}
         itemOption={{
           label: t("Конечный язык"),
           title: t("Конечный язык этой записи: после распознавания текст будет переведён на него"),
@@ -1233,14 +1248,17 @@ export function TranscribeTab({
         openLabel={t("Открыть")}
         onOpenResult={(it) => void openQueueResult(it)}
         resultActions={(it) =>
-          it.result?.text ? (
-            <button
-              onClick={() => downloadQueueItemTxt(it)}
-              className="px-2.5 py-1.5 rounded-lg bg-[#1b2334] hover:bg-[#263147] text-xs font-medium inline-flex items-center gap-1"
-            >
-              <Download className="w-3 h-3" />
-              .txt
-            </button>
+          it.result?.text || it.result?.files?.srt ? (
+            <DownloadMenu
+              small
+              title={t("Скачать результат в выбранном формате")}
+              items={[
+                { id: "txt", label: t("TXT — текст"), on: () => downloadQueueItemFormat(it, "txt") },
+                { id: "srt", label: t("SRT — субтитры"), on: () => void downloadQueueItemFormat(it, "srt") },
+                { id: "vtt", label: t("VTT — субтитры"), on: () => void downloadQueueItemFormat(it, "vtt") },
+                { id: "md", label: t("MD — заметки"), on: () => void downloadQueueItemFormat(it, "md") },
+              ]}
+            />
           ) : null
         }
         footerNote={
@@ -1252,13 +1270,8 @@ export function TranscribeTab({
         }
       />
 
-      {/* Исходный язык — общий для всех записей (модель — в шапке) */}
-      <div className="glass-card rounded-2xl px-4 py-3 mb-5 flex flex-wrap items-center gap-3">
-        {srcLangControl}
-        <span className="text-xs text-muted-foreground ml-auto">
-          {t("Модель и исходный язык применяются ко всем записям при запуске")}
-        </span>
-      </div>
+      {/* Исходный и конечный язык — напротив каждой записи очереди (выше);
+          модель — в шапке вкладки. Отдельные строки больше не нужны. */}
 
       {/* Общие блоки прогресса/ошибки/результата — чтобы восстановленный
           результат фоновых задач был виден всегда */}
@@ -1269,15 +1282,55 @@ export function TranscribeTab({
   );
 }
 
-function ExportBtn({ onClick, label }: { onClick: () => void; label: string }) {
+/**
+ * Кнопка «Скачать» с выпадающим меню форматов (SRT / VTT / TXT / MD).
+ * Используется и в карточке результата, и напротив строки задачи очереди.
+ */
+function DownloadMenu({
+  items,
+  small,
+  title,
+}: {
+  items: { id: string; label: string; on: () => void | Promise<void> }[];
+  small?: boolean;
+  title?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const { t } = useI18n();
+
   return (
-    <button
-      onClick={onClick}
-      className="px-3 py-1.5 rounded-lg bg-[#1b2334] hover:bg-[#263147] text-sm font-medium inline-flex items-center gap-1.5 transition-colors"
-    >
-      <Download className="w-3.5 h-3.5" />
-      {label}
-    </button>
+    <div className="relative flex-shrink-0">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        title={title || t("Выбрать формат и скачать")}
+        className={`rounded-lg bg-[#1b2334] hover:bg-[#263147] font-medium inline-flex items-center gap-1.5 transition-colors ${
+          small ? "px-2.5 py-1.5 text-xs" : "px-3 py-1.5 text-sm"
+        }`}
+      >
+        <Download className={small ? "w-3 h-3" : "w-3.5 h-3.5"} />
+        {t("Скачать")}
+        <ChevronDown className={`w-3 h-3 transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-20" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 top-full mt-1 z-30 min-w-[180px] rounded-xl border border-[#263147] bg-[#151b28] shadow-2xl overflow-hidden">
+            {items.map((m) => (
+              <button
+                key={m.id}
+                onClick={() => {
+                  setOpen(false);
+                  void m.on();
+                }}
+                className="w-full text-left px-3 py-2 text-xs hover:bg-[#1b2334] transition-colors whitespace-nowrap"
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
   );
 }
 

@@ -60,6 +60,8 @@ export type QueueItem = {
   file?: File;
   /** Значение выбора «напротив записи» (язык / формат / действие) */
   option: string;
+  /** Значение ДОПОЛНИТЕЛЬНОГО выбора слева (например, исходный язык) — если вкладка его задала */
+  option2?: string;
   status: QueueItemStatus;
   percent: number;
   stage: string;
@@ -541,6 +543,8 @@ export interface InboxQueueProps {
   urlsPlaceholder?: string;
   /** Спецификация выбора напротив каждой записи (не задана — селекта нет) */
   itemOption?: QueueOptionSpec;
+  /** Дополнительный выбор ЛЕВЕЕ основного (например, исходный язык перед конечным) */
+  itemOption2?: QueueOptionSpec;
   /** Режим выполнения */
   mode: "jobs" | "sequential";
   engineOnline: boolean;
@@ -585,6 +589,7 @@ export function InboxQueue({
   allowUrls,
   urlsPlaceholder,
   itemOption,
+  itemOption2,
   mode,
   engineOnline,
   supportsJobs,
@@ -626,6 +631,7 @@ export function InboxQueue({
         ...it,
         id: it.id || it.jobId || `legacy-${Math.random().toString(36).slice(2)}`,
         option: it.option ?? "",
+        option2: it.option2 ?? "",
       }))
     );
   }, [storageKey]);
@@ -675,6 +681,7 @@ export function InboxQueue({
         kind: "url",
         label: u,
         option: itemOption ? defaultForItem(itemOption, { name: u, kind: "url" }) : "",
+        option2: itemOption2 ? defaultForItem(itemOption2, { name: u, kind: "url" }) : "",
         status: "pending",
         percent: 0,
         stage: "",
@@ -687,7 +694,7 @@ export function InboxQueue({
       });
       return { added: fresh.length, notVideo };
     },
-    [itemOption, persist, t]
+    [itemOption, itemOption2, persist, t]
   );
 
   /**
@@ -712,6 +719,7 @@ export function InboxQueue({
             size: f.size,
             file: f,
             option: itemOption ? defaultForItem(itemOption, { name: f.name, kind: "file" }) : "",
+            option2: itemOption2 ? defaultForItem(itemOption2, { name: f.name, kind: "file" }) : "",
             status: "pending",
             percent: 0,
             stage: "",
@@ -766,7 +774,7 @@ export function InboxQueue({
       }
       if (msgs.length) setNotice(msgs.join(" "));
     },
-    [allowUrls, fileFilter, itemOption, persist, addUrlItems, t]
+    [allowUrls, fileFilter, itemOption, itemOption2, persist, addUrlItems, t]
   );
 
   function onDrop(e: React.DragEvent) {
@@ -988,21 +996,54 @@ export function InboxQueue({
         ? t("Ваш движок устарел: обновите его (Настройки → «Доступно обновление движка»), чтобы ставить задачи в очередь.")
         : null);
 
+  const langSelect = (
+    spec: QueueOptionSpec,
+    it: QueueItem,
+    value: string,
+    on: (v: string) => void
+  ) => (
+    <select
+      value={value}
+      onChange={(e) => on(e.target.value)}
+      disabled={working}
+      className="bg-[#1b2334] border border-[#263147] rounded-lg px-2 py-1.5 text-xs flex-shrink-0 max-w-[150px]"
+      title={spec.title || spec.label}
+    >
+      {optionsForItem(spec, it).map((o) => (
+        <option key={o.value} value={o.value}>
+          {o.label}
+        </option>
+      ))}
+    </select>
+  );
+
+  // Выбор «напротив записи»: дополнительный (слева) + основной селект, между ними стрелка потока
   const optionSelect = (it: QueueItem) =>
-    itemOption && (
-      <select
-        value={it.option}
-        onChange={(e) => updateItem(it.id, { option: e.target.value })}
-        disabled={working}
-        className="bg-[#1b2334] border border-[#263147] rounded-lg px-2 py-1.5 text-xs flex-shrink-0 max-w-[150px]"
-        title={itemOption.title || itemOption.label}
-      >
-        {optionsForItem(itemOption, it).map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
-        ))}
-      </select>
+    (itemOption || itemOption2) && (
+      <span className="flex items-center gap-1 flex-shrink-0">
+        {itemOption2 &&
+          langSelect(itemOption2, it, it.option2 ?? "", (v) => updateItem(it.id, { option2: v }))}
+        {itemOption && itemOption2 && (
+          <span className="text-muted-foreground/60 text-xs flex-shrink-0" aria-hidden>
+            →
+          </span>
+        )}
+        {itemOption && (
+          <select
+            value={it.option}
+            onChange={(e) => updateItem(it.id, { option: e.target.value })}
+            disabled={working}
+            className="bg-[#1b2334] border border-[#263147] rounded-lg px-2 py-1.5 text-xs flex-shrink-0 max-w-[150px]"
+            title={itemOption.title || itemOption.label}
+          >
+            {optionsForItem(itemOption, it).map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        )}
+      </span>
     );
 
   const statusIcon = (it: QueueItem) => {

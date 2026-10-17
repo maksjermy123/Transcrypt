@@ -10,6 +10,8 @@ from PyQt6.QtWidgets import (
     QApplication,
     QToolButton,
     QStyle,
+    QComboBox,
+    QLabel,
 )
 from PyQt6.QtGui import QIcon
 from PyQt6.QtGui import QColor
@@ -61,6 +63,30 @@ class FileListWidget(QWidget):
         self.default_formats = []
         self.force_formats = None # If set, overrides all logic
         self.allowed_extensions = None # If set, filters out other extensions
+
+        # Дуальный выбор языков в строке (транскрибация): [исходный] → [перевод]
+        self.dual_language = False
+        self.source_langs = ["auto", "ru", "en", "uk", "es", "de", "fr", "it", "pl"]
+        self.target_langs = ["-", "ru", "en", "uk", "es", "de", "fr", "it", "pl"]
+        self.default_source_lang = "auto"
+        self.default_target_lang = "-"
+
+    def set_dual_language_mode(self, enabled: bool):
+        """Включает в колонке «Язык» два селекта напротив каждой записи:
+        исходный язык → язык перевода (как в веб-версии)."""
+        self.dual_language = bool(enabled)
+        header = "Язык: исх → перевод" if self.dual_language else "Язык"
+        self.table.setHorizontalHeaderItem(2, QTableWidgetItem(header))
+        self.table.setColumnWidth(2, 230 if self.dual_language else 110)
+        if self.dual_language:
+            self.show_language_column(True)
+
+    def set_language_defaults(self, source: str, target: str):
+        """Значения по умолчанию для НОВЫХ строк (последние использованные)."""
+        if source:
+            self.default_source_lang = source
+        if target:
+            self.default_target_lang = target
 
     def _formats_for_path(self, path: str):
         if self.force_formats:
@@ -194,12 +220,33 @@ class FileListWidget(QWidget):
         name = os.path.basename(path)
         self.table.setItem(row, 1, QTableWidgetItem(name))
         
-        # 2: Language (ComboBox)
-        from PyQt6.QtWidgets import QComboBox
-        lang_combo = QComboBox()
-        # Common languages
-        lang_combo.addItems(["ru", "en", "uk", "es", "de", "fr", "it", "pl"])
-        self.table.setCellWidget(row, 2, lang_combo)
+        # 2: Language — один селект или пара «исходный → перевод» напротив записи
+        if self.dual_language:
+            container = QWidget()
+            h = QHBoxLayout(container)
+            h.setContentsMargins(2, 0, 2, 0)
+            h.setSpacing(3)
+            src_combo = QComboBox()
+            src_combo.addItems(self.source_langs)
+            si = src_combo.findText(self.default_source_lang, Qt.MatchFlag.MatchFixedString)
+            src_combo.setCurrentIndex(si if si >= 0 else 0)
+            src_combo.setToolTip(
+                "Исходный язык этой записи: на нём звучит речь «auto» — определить автоматически"
+            )
+            tgt_combo = QComboBox()
+            tgt_combo.addItems(self.target_langs)
+            ti = tgt_combo.findText(self.default_target_lang, Qt.MatchFlag.MatchFixedString)
+            tgt_combo.setCurrentIndex(ti if ti >= 0 else 0)
+            tgt_combo.setToolTip("Перевод для этой записи: «-» — без перевода")
+            h.addWidget(src_combo)
+            h.addWidget(QLabel("→"))
+            h.addWidget(tgt_combo)
+            self.table.setCellWidget(row, 2, container)
+        else:
+            lang_combo = QComboBox()
+            # Common languages
+            lang_combo.addItems(["ru", "en", "uk", "es", "de", "fr", "it", "pl"])
+            self.table.setCellWidget(row, 2, lang_combo)
         
         # 3: Format (ComboBox)
         combo = QComboBox()
@@ -434,10 +481,28 @@ class FileListWidget(QWidget):
         return [f['path'] for f in self.files]
 
     def get_file_language(self, index):
+        """Исходный язык записи (первый селект в дуальном режиме)."""
         if 0 <= index < self.table.rowCount():
-            combo = self.table.cellWidget(index, 2)
-            if combo:
-                return combo.currentText()
+            cell = self.table.cellWidget(index, 2)
+            if cell is None:
+                return None
+            if self.dual_language:
+                combo = cell.findChild(QComboBox)
+                return combo.currentText() if combo else None
+            if hasattr(cell, "currentText"):
+                return cell.currentText()
+        return None
+
+    def get_file_target_language(self, index):
+        """Язык перевода записи (второй селект в дуальном режиме)."""
+        if not self.dual_language:
+            return None
+        if 0 <= index < self.table.rowCount():
+            cell = self.table.cellWidget(index, 2)
+            if cell is not None:
+                combos = cell.findChildren(QComboBox)
+                if len(combos) >= 2:
+                    return combos[1].currentText()
         return None
 
     # Drag & Drop Handlers
