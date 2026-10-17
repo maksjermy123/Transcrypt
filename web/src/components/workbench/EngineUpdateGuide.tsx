@@ -25,7 +25,7 @@ import type { EngineHealth } from "@/lib/engine-bridge";
 import { useI18n, type Lang } from "@/lib/i18n";
 
 /** Последняя версия движка, которую поддерживает сайт. */
-export const LATEST_ENGINE_VERSION = "1.3.7";
+export const LATEST_ENGINE_VERSION = "1.3.8";
 
 export type EngineUpdateReason = "no-jobs" | "no-queue" | "no-docs" | "outdated";
 
@@ -118,7 +118,7 @@ const REASONS: Record<
   },
   outdated: {
     title: (v) => `Движок ${v || "1.2.0"} — доступно обновление до ${LATEST_ENGINE_VERSION}`,
-    why: `В 1.3.5–${LATEST_ENGINE_VERSION}: понятные сообщения, когда YouTube отклоняет скачивание, а cookies из браузеров прочитать не удалось (Chrome/Edge блокируют и шифруют cookie-базу — вместо технических «Failed to decrypt with DPAPI» / «Could not copy Chrome cookie database» теперь честное объяснение и подсказки) + кнопка «Обновить yt-dlp» прямо в Настройках — без PowerShell и терминала. С 1.3.7 в сообщениях об ошибках скачивания указывается версия yt-dlp и распознаются новые типы ошибок (HTTP 403, закрытые видео канала, DRM). Обновите движок той же командой установки — займёт 1–3 минуты.`,
+    why: `В 1.3.5–${LATEST_ENGINE_VERSION}: понятные сообщения, когда YouTube отклоняет скачивание, а cookies из браузеров прочитать не удалось (Chrome/Edge блокируют и шифруют cookie-базу — вместо технических «Failed to decrypt with DPAPI» / «Could not copy Chrome cookie database» теперь честное объяснение и подсказки) + кнопка «Обновить yt-dlp» прямо в Настройках — без PowerShell и терминала. ГЛАВНОЕ в 1.3.8: починено «Requested format is not available», когда на одном компьютере скачивание работает, а на другом нет — движок теперь ставит решатель YouTube-проверок (EJS) и JS-рантайм deno прямо в своё окружение (раньше они зависели от того, что случайно установлено в системе). Сообщения больше не советуют обновлять yt-dlp, если он уже последней версии, а предупреждения yt-dlp пишутся в лог движка. Обновите движок той же командой установки — займёт 1–3 минуты.`,
     tone: "sky",
   },
 };
@@ -139,7 +139,7 @@ const WHY_EN: Record<EngineUpdateReason, string> = {
     "Jobs from different tabs fight each other. After the update, extra jobs queue up, and on a powerful machine heavy ones run in parallel — no result is lost.",
   "no-docs":
     "Word ↔ PDF ↔ TXT conversion and encoding fixes (no more mojibake) arrived in engine 1.3.0 — the old environment lacks the required libraries, so the Converter → Documents tab fails. Update the engine with the same install command — takes 1–3 minutes, Whisper models are kept.",
-  outdated: `Engines 1.3.5–${LATEST_ENGINE_VERSION}: clear error messages for the case when YouTube rejects the download and browser cookies can't be read (Chrome/Edge lock and encrypt the cookie database — instead of the technical "Failed to decrypt with DPAPI" / "Could not copy Chrome cookie database" you now get an honest explanation and hints) + an "Update yt-dlp" button right in Settings — no PowerShell or terminal needed. Since 1.3.7, download error messages include the yt-dlp version and more error types are recognized (HTTP 403, members-only videos, DRM). Update with the same install command — takes 1–3 minutes.`,
+  outdated: `Engines 1.3.5–${LATEST_ENGINE_VERSION}: clear error messages for the case when YouTube rejects the download and browser cookies can't be read (Chrome/Edge lock and encrypt the cookie database — instead of the technical "Failed to decrypt with DPAPI" / "Could not copy Chrome cookie database" you now get an honest explanation and hints) + an "Update yt-dlp" button right in Settings — no PowerShell or terminal needed. KEY FIX in 1.3.8: "Requested format is not available" — when downloads work on one computer but not another — is fixed: the engine now installs the YouTube challenge solver (EJS) and the deno JS runtime into its own environment (previously they depended on whatever happened to be installed system-wide). Error messages no longer suggest updating yt-dlp when it is already the latest version, and yt-dlp warnings are now written to the engine log. Update with the same install command — takes 1–3 minutes.`,
 };
 
 function bannerTitle(reason: EngineUpdateReason, version: string, lang: Lang): string {

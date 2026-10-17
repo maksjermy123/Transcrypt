@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from src.core.downloader import Downloader
+from src.core.downloader import Downloader, _YtDlpLogBridge
 
 
 class TestErrorClassification(unittest.TestCase):
@@ -15,6 +15,13 @@ class TestErrorClassification(unittest.TestCase):
     unavailable video) was swallowed and users only saw the generic
     «yt-dlp не получил информацию о видео (возможна блокировка или 429)».
     """
+
+    def setUp(self):
+        # Тесты не ходят в сеть: PyPI-проверка версии выключается по умолчанию.
+        Downloader._pypi_cache = {"ts": 0.0, "version": ""}
+        p = patch.object(Downloader, "_latest_ytdlp_version", staticmethod(lambda *a, **k: ""))
+        p.start()
+        self.addCleanup(p.stop)
 
     def test_rate_limit(self):
         e = Exception("ERROR: unable to download video data: HTTP Error 429: Too Many Requests")
@@ -101,21 +108,111 @@ class TestErrorClassification(unittest.TestCase):
         ):
             self.assertEqual(Downloader._classify_download_error(Exception(msg)), "fatal_video")
 
-    def test_requested_format_is_extract_fail(self):
+    def test_requested_format_is_no_formats(self):
+        """«Requested format is not available» — это НЕ «устарел yt-dlp»:
+        YouTube вернул ответ без медиа-потоков (решатель/PO Token/IP).
+        Живой эксперимент на yt-dlp 2026.08.19: без JS-рантайма все клиенты
+        дают ровно эту ошибку (форматы под PO Token пропускаются)."""
         e = Exception("ERROR: [youtube] x: Requested format is not available")
-        self.assertEqual(Downloader._classify_download_error(e), "extract_fail")
+        self.assertEqual(Downloader._classify_download_error(e), "no_formats")
+        e2 = Exception("ERROR: [youtube] x: Only images are available for download")
+        self.assertEqual(Downloader._classify_download_error(e2), "no_formats")
+
+    def test_no_formats_hint_mentions_real_causes(self):
+        e = Exception("ERROR: [youtube] x: Requested format is not available")
+        msg = Downloader._friendly_download_error(e, 9)
+        self.assertIn("PO Token", msg)
+        self.assertIn("VPN", msg)
+        self.assertIn("решател", msg)  # решатель/решателя
+        # Старая подсказка утверждала «устарел yt-dlp» — она вводила в
+        # заблуждение при уже обновлённом пакете (реальный кейс 2026-10).
+        self.assertNotIn("устарел yt-dlp", msg)
 
     def test_ytdlp_version_note_appended_to_messages(self):
-        """Оба текста об ошибке заканчиваются версией yt-dlp и путём обновления."""
+        """Оба текста об ошибке заканчиваются версией yt-dlp."""
         note = Downloader._ytdlp_note()
         self.assertIn("Версия yt-dlp:", note)
-        self.assertIn("Обновить yt-dlp", note)
         friendly = Downloader._friendly_download_error(
             Exception("ERROR: [youtube] x: Video unavailable"), 9
         )
         self.assertIn(note, friendly)
         noise = Downloader._all_noise_failure_text(9, cookie_failed=True)
         self.assertIn(note, noise)
+
+    def test_note_outdated_version_suggests_update(self):
+        """На PyPI есть новее → предлагаем кнопку «Обновить yt-dlp»."""
+        with patch.object(
+            Downloader, "_latest_ytdlp_version", staticmethod(lambda *a, **k: "2099.1.1")
+        ):
+            note = Downloader._ytdlp_note()
+        self.assertIn("доступна новее: 2099.1.1", note)
+        self.assertIn("Обновить yt-dlp", note)
+
+    def test_note_latest_version_says_update_wont_help(self):
+        """Пакет уже последней версии → честно говорим, что обновление не
+        поможет, и НЕ отправляем пользователя жать кнопку зря."""
+        current = Downloader._ytdlp_version()
+        with patch.object(
+            Downloader, "_latest_ytdlp_version", staticmethod(lambda *a, **k: current)
+        ):
+            note = Downloader._ytdlp_note()
+        self.assertIn("это последняя", note)
+        self.assertIn("не поможет", note)
+        self.assertNotIn("Обновить yt-dlp", note)
+
+    def test_version_tuple_comparison(self):
+        self.assertEqual(Downloader._version_tuple("2026.08.19"), (2026, 8, 19))
+        self.assertGreater(
+            Downloader._version_tuple("2026.9.1"), Downloader._version_tuple("2026.08.19")
+        )
+        self.assertEqual(Downloader._version_tuple("garbage"), ())
+        self.assertEqual(Downloader._version_tuple(""), ())
+
+    def test_video_selector_has_relaxed_fallback(self):
+        """Адаптивные клиенты (tv и др.) могут вернуть только webm/vp9 —
+        без ослабленного шага bestvideo+bestaudio селектор падает
+        «Requested format is not available» при доступных данных."""
+        sel = Downloader._video_format_selector()
+        self.assertIn("bestvideo[ext=mp4][vcodec^=avc1]+bestaudio[ext=m4a]", sel)
+        self.assertIn("/bestvideo+bestaudio/", sel)
+        self.assertTrue(sel.endswith("/best"))
+
+    def test_base_opts_enable_js_runtime_cascade_and_log_bridge(self):
+        """Решатель EJS без JS-рантайма мёртв: deno (pip в venv) → node → bun.
+        Мост логов обязателен — иначе предупреждения yt-dlp о PO Token
+        не попадают в app-latest.log."""
+        import logging as _logging
+
+        opts = Downloader._base_ydl_opts(logger=_logging.getLogger("test"))
+        self.assertEqual(list(opts["js_runtimes"].keys()), ["deno", "node", "bun"])
+        self.assertIsInstance(opts["logger"], _YtDlpLogBridge)
+        self.assertEqual(opts["remote_components"], ["ejs:github"])
+        # Базовые opts остаются валидными для YoutubeDL (нет лишних ключей)
+        import yt_dlp
+
+        ydl = yt_dlp.YoutubeDL(opts)
+        ydl.close()
+
+    def test_log_bridge_warning_truncation_and_progress_filter(self):
+        import logging as _logging
+
+        records = []
+        logger = _logging.getLogger("bridge-test")
+        logger.setLevel(_logging.DEBUG)  # иначе debug-записи не дойдут до хендлера
+        handler = _logging.Handler()
+        handler.emit = lambda record: records.append(record)
+        logger.addHandler(handler)
+        bridge = _YtDlpLogBridge(logger)
+
+        bridge.warning("n challenge solving failed: Some formats may be missing")
+        bridge.debug("[download] 45.2% of 11.28MiB")  # прогресс — фильтруется
+        bridge.debug("x" * 3000)  # длинный дамп — обрезается
+
+        messages = [r.getMessage() for r in records]
+        self.assertTrue(any("n challenge solving failed" in m for m in messages))
+        self.assertFalse(any("[download]" in m for m in messages))
+        long_msg = next(m for m in messages if len(m) > 100)
+        self.assertLessEqual(len(long_msg), _YtDlpLogBridge._MAX_LEN + len("[yt-dlp] "))
 
     def test_clean_error_strips_issue_link(self):
         e = Exception(

@@ -2,6 +2,8 @@ import os
 import re
 import sys
 import time
+import json
+import urllib.request
 import yt_dlp
 from yt_dlp.networking.impersonate import ImpersonateTarget
 import logging
@@ -11,6 +13,46 @@ from src.utils.fs import (
     safe_artifact_part,
 )
 from src.utils.app_paths import app_support_dir
+
+
+class _YtDlpLogBridge:
+    """Мост логов yt-dlp → наш logger.
+
+    Предупреждения yt-dlp («n challenge solving failed», «... require a GVS
+    PO Token ... skipped») — единственное место, где видна НАСТОЯЩАЯ причина
+    пустого списка форматов. Без моста они терялись (quiet + no_warnings),
+    и сбои скачивания были недиагностируемы по app-latest.log.
+    """
+
+    _MAX_LEN = 500
+
+    def __init__(self, logger):
+        self._logger = logger
+
+    def _cut(self, msg) -> str:
+        s = " ".join(str(msg).split())
+        if len(s) > self._MAX_LEN:
+            s = s[: self._MAX_LEN - 1] + "…"
+        return s
+
+    def debug(self, msg):
+        # Отладочный поток yt-dlp шумный (прогресс «[download] 45%», дампы
+        # JSON): файловый лог живёт на INFO, так что это уйдёт только в
+        # консоль разработчика; длинное и прогресс всё равно режем.
+        s = str(msg)
+        if s.startswith("[download]"):
+            return
+        self._logger.debug("[yt-dlp] %s", self._cut(s))
+
+    def info(self, msg):
+        self._logger.info("[yt-dlp] %s", self._cut(msg))
+
+    def warning(self, msg):
+        self._logger.warning("[yt-dlp] %s", self._cut(msg))
+
+    def error(self, msg):
+        self._logger.error("[yt-dlp] %s", self._cut(msg))
+
 
 class Downloader:
     # Маркеры ошибок YouTube (в нижнем регистре). Проверяются по подстроке:
@@ -31,7 +73,15 @@ class Downloader:
     )
     _EXTRACT_MARKERS = (
         "unable to extract", "player response", "did not get a valid",
-        "nsig", "signature extraction", "requested format is not available",
+        "nsig", "signature extraction",
+    )
+    # «Requested format is not available» / «Only images are available» —
+    # YouTube вернул ответ БЕЗ медиа-потоков: без рабочего решателя EJS и
+    # JS-рантайма (deno/node) все форматы под PO Token пропускаются, остаются
+    # только сториборды-картинки. Это НЕ «устаревший yt-dlp» — отдельный вид
+    # с честной подсказкой (проверено живым тестом на yt-dlp 2026.08.19).
+    _NO_FORMATS_MARKERS = (
+        "requested format is not available", "only images are available",
     )
     # Сбои чтения cookies (браузер не установлен / расшифровка не удалась /
     # база заблокирована запущенным браузером) — это шум перебора, а не
@@ -122,9 +172,16 @@ class Downloader:
             }
         return None
 
-    @staticmethod
-    def _base_ydl_opts() -> dict:
-        """Общие опции yt-dlp: TLS-отпечаток браузера + клиент mweb + EJS."""
+    @classmethod
+    def _base_ydl_opts(cls, logger=None) -> dict:
+        """Общие опции yt-dlp: TLS-отпечаток браузера + клиент mweb + EJS.
+
+        js_runtimes — каскад рантаймов для решателя EJS: deno (ставится
+        pip-пакетом deno прямо в venv движка), затем системные node/bun.
+        Без рантайма решатель мёртв → YouTube пропускает все форматы под
+        PO Token → «Requested format is not available» (главная причина
+        сбоев «на одном компьютере работает, на другом нет»).
+        """
         return {
             "quiet": True,
             "no_warnings": True,
@@ -134,7 +191,43 @@ class Downloader:
             # mweb-клиент + EJS-решатель вызова: нужны для GVS PO Token
             "extractor_args": {"youtube": {"player_client": ["mweb"]}},
             "remote_components": ["ejs:github"],
+            "js_runtimes": {"deno": {}, "node": {}, "bun": {}},
+            # Предупреждения yt-dlp (PO Token, EJS, n-challenge) → наш лог:
+            # без них сбой скачивания недиагностируем по app-latest.log
+            "logger": _YtDlpLogBridge(logger) if logger else logging.getLogger(__name__),
         }
+
+    @staticmethod
+    def _audio_format_selector() -> str:
+        """Аудио (ffmpeg есть): bestaudio матчится на ЛЮБОЙ аудио-поток
+        (включая muxed itag 18), best — запасной muxed."""
+        return "bestaudio/best"
+
+    @staticmethod
+    def _audio_raw_format_selector() -> str:
+        """Аудио без ffmpeg — сохраняем исходный поток как есть."""
+        return "bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best"
+
+    @staticmethod
+    def _video_format_selector() -> str:
+        """Видео (ffmpeg есть): сначала MP4/H.264+AAC для совместимости,
+        затем ослабленный bestvideo+bestaudio (адаптивные клиенты вроде tv
+        могут вернуть только webm/vp9 — без этого шага селектор падает
+        «Requested format is not available», хотя данные доступны), и лишь
+        потом muxed best."""
+        return (
+            "bestvideo[ext=mp4][vcodec^=avc1]+bestaudio[ext=m4a]"
+            "/bestvideo+bestaudio/best[ext=mp4]/best"
+        )
+
+    @staticmethod
+    def _muxed_format_selector() -> str:
+        """Видео без ffmpeg — только готовые muxed-потоки."""
+        return (
+            "best[acodec!=none][vcodec!=none][ext=mp4]"
+            "/best[acodec!=none][vcodec!=none][ext=webm]"
+            "/best[acodec!=none][vcodec!=none]"
+        )
 
     @staticmethod
     def _cookie_browser_candidates() -> list[str]:
@@ -184,6 +277,8 @@ class Downloader:
             return "age"
         if any(m in s for m in cls._BOT_MARKERS):
             return "bot_check"
+        if any(m in s for m in cls._NO_FORMATS_MARKERS):
+            return "no_formats"
         if any(m in s for m in cls._COOKIE_FAIL_MARKERS):
             return "no_cookies"
         if any(m in s for m in cls._FATAL_MARKERS):
@@ -196,6 +291,44 @@ class Downloader:
             return "extract_fail"
         return "other"
 
+    # Кэш ответа PyPI: (timestamp, версия). Ошибки сети тоже кэшируются,
+    # чтобы не добавлять задержку при каждой ошибке скачивания подряд.
+    _pypi_cache: dict = {"ts": 0.0, "version": ""}
+    _PYPI_TTL = 1800  # 30 минут
+
+    @classmethod
+    def _latest_ytdlp_version(cls, timeout: float = 3.0) -> str:
+        """Последняя версия yt-dlp на PyPI (или "" — если проверить не удалось).
+
+        Нужна, чтобы не советовать «обновите yt-dlp», когда у пользователя
+        уже стоит последняя версия — обновление тогда не поможет, и подсказка
+        должна указывать на реальные причины (IP/PO Token/решатель).
+        """
+        now = time.time()
+        if now - cls._pypi_cache["ts"] < cls._PYPI_TTL:
+            return cls._pypi_cache["version"]
+        version = ""
+        try:
+            req = urllib.request.Request(
+                "https://pypi.org/pypi/yt-dlp/json",
+                headers={"User-Agent": "VoxPaperAi-Engine/1.3.8"},
+            )
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                data = json.loads(resp.read().decode("utf-8", "replace"))
+            version = str((data.get("info") or {}).get("version") or "")
+        except Exception:
+            version = ""
+        cls._pypi_cache = {"ts": now, "version": version}
+        return version
+
+    @staticmethod
+    def _version_tuple(v: str) -> tuple:
+        """'2026.08.19' → (2026, 8, 19); некорректное → ()."""
+        try:
+            return tuple(int(part) for part in str(v).strip().split("."))
+        except (ValueError, AttributeError):
+            return ()
+
     @staticmethod
     def _ytdlp_version() -> str:
         try:
@@ -205,12 +338,25 @@ class Downloader:
 
     @classmethod
     def _ytdlp_note(cls) -> str:
-        """Версия yt-dlp + путь обновления — добавляется в конец сообщений
-        об ошибке: сразу видно, отстаёт ли пакет, и есть готовое действие."""
+        """Версия yt-dlp с проверкой по PyPI — добавляется в конец сообщений
+        об ошибке. Если пакет уже последней версии, честно говорим, что
+        обновление не поможет (кнопка «Обновить yt-dlp» ставит ту же версию,
+        и пользователь зря теряет время — реальный кейс 2026-10)."""
         v = cls._ytdlp_version()
         if not v:
             return ""
-        return f"Версия yt-dlp: {v}. Обновить: Настройки сайта → «Обновить yt-dlp»."
+        latest = cls._latest_ytdlp_version()
+        if latest and cls._version_tuple(latest) > cls._version_tuple(v):
+            return (
+                f"Версия yt-dlp: {v}, доступна новее: {latest}. "
+                "Обновить: Настройки сайта → «Обновить yt-dlp»."
+            )
+        if latest:
+            return (
+                f"Версия yt-dlp: {v} — это последняя; обновление пакета "
+                "не поможет."
+            )
+        return f"Версия yt-dlp: {v}."
 
     @staticmethod
     def _clean_ytdlp_error(err: BaseException) -> str:
@@ -254,9 +400,21 @@ class Downloader:
                 "VPN/прокси и блокировщики (AdGuard, DNS-фильтры)."
             ),
             "extract_fail": (
-                "YouTube изменил структуру страницы — устарел yt-dlp. "
-                "Обновите его кнопкой «Обновить yt-dlp» в Настройках сайта "
-                "либо переустановите движок той же командой установки."
+                "YouTube ответил так, что yt-dlp не смог разобрать страницу: "
+                "чаще всего это изменения YouTube, под которые ещё не "
+                "приспособился yt-dlp. Обновите его кнопкой «Обновить yt-dlp» "
+                "в Настройках сайта (если версия уже последняя — см. ниже — "
+                "помогает повторить попытку позже или сменить IP через VPN)."
+            ),
+            "no_formats": (
+                "YouTube вернул ответ без медиа-потоков: защита PO Token "
+                "пропустила все форматы для этой сети/клиента, а вспомогательный "
+                "решатель движка не смог решить проверку. Помогает: включить/"
+                "выключить VPN (сменить IP), повторить через несколько часов; "
+                "проверить, что антивирус не блокирует программы движка, а "
+                "github.com доступен (нужен для решателя); переустановить "
+                "движок — переустановка заново ставит решатель и JS-рантайм. "
+                "Если версия yt-dlp ниже последней — обновите кнопкой «Обновить yt-dlp»."
             ),
             "forbidden": (
                 "YouTube отклонил запрос (HTTP 403): чаще всего помогает "
@@ -378,7 +536,7 @@ class Downloader:
         self.logger.info(f"Starting download: {url}")
         ffmpeg_path = find_ffmpeg_executable()
 
-        base_opts = self._base_ydl_opts()
+        base_opts = self._base_ydl_opts(logger=self.logger)
         base_opts['outtmpl'] = os.path.join(self.output_dir, '%(title)s.%(ext)s')
         base_opts['restrictfilenames'] = False  # Keep original readable titles
         if ffmpeg_path:
@@ -387,7 +545,7 @@ class Downloader:
         if extract_audio or audio_only:
             if ffmpeg_path:
                 base_opts.update({
-                    'format': 'bestaudio/best',
+                    'format': self._audio_format_selector(),
                     'postprocessors': [{
                         'key': 'FFmpegExtractAudio',
                         'preferredcodec': 'mp3',
@@ -397,24 +555,24 @@ class Downloader:
             else:
                 # Without ffmpeg we can only save the original audio stream as-is.
                 base_opts.update({
-                    'format': 'bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best',
+                    'format': self._audio_raw_format_selector(),
                 })
         elif video_only:
              if ffmpeg_path:
                  # Prefer MP4 with H.264 (avc1) and AAC for maximum compatibility on macOS/QuickTime
-                 base_opts.update({'format': 'bestvideo[ext=mp4][vcodec^=avc1]+bestaudio[ext=m4a]/best[ext=mp4]/best'})
+                 base_opts.update({'format': self._video_format_selector()})
              else:
                  # Without ffmpeg download only muxed A/V formats, otherwise yt-dlp leaves .fXXX files.
                  base_opts.update({
-                     'format': 'best[acodec!=none][vcodec!=none][ext=mp4]/best[acodec!=none][vcodec!=none][ext=webm]/best[acodec!=none][vcodec!=none]',
+                     'format': self._muxed_format_selector(),
                  })
         else:
              if ffmpeg_path:
                  # Default: Best quality, prefer compatible MP4
-                 base_opts.update({'format': 'bestvideo[ext=mp4][vcodec^=avc1]+bestaudio[ext=m4a]/best[ext=mp4]/best'})
+                 base_opts.update({'format': self._video_format_selector()})
              else:
                  base_opts.update({
-                     'format': 'best[acodec!=none][vcodec!=none][ext=mp4]/best[acodec!=none][vcodec!=none][ext=webm]/best[acodec!=none][vcodec!=none]',
+                     'format': self._muxed_format_selector(),
                  })
 
         # FIX: Do NOT download all subtitles by default. This causes "70 files" issue.
@@ -601,7 +759,7 @@ class Downloader:
 
     def get_title(self, url):
         try:
-            with yt_dlp.YoutubeDL(self._base_ydl_opts()) as ydl:
+            with yt_dlp.YoutubeDL(self._base_ydl_opts(logger=self.logger)) as ydl:
                 info = ydl.extract_info(url, download=False)
                 return info.get('title', 'Unknown')
         except Exception:
@@ -610,7 +768,7 @@ class Downloader:
     def get_artifact_label(self, url):
         """Returns a readable label like 'YT Channel - Title' for URL-based artifacts."""
         try:
-            with yt_dlp.YoutubeDL(self._base_ydl_opts()) as ydl:
+            with yt_dlp.YoutubeDL(self._base_ydl_opts(logger=self.logger)) as ydl:
                 info = ydl.extract_info(url, download=False)
             return safe_artifact_part(artifact_label_from_info(info, url))
         except Exception:
@@ -623,7 +781,7 @@ class Downloader:
         :return: dict {'manual': [lang_codes], 'auto': [lang_codes]}
         """
         try:
-            ydl_opts = self._base_ydl_opts()
+            ydl_opts = self._base_ydl_opts(logger=self.logger)
             ydl_opts.update({
                 'skip_download': True,
                 'writesubtitles': True,
@@ -726,7 +884,7 @@ class Downloader:
                 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
             }
         }
-        ydl_opts.update(self._base_ydl_opts())
+        ydl_opts.update(self._base_ydl_opts(logger=self.logger))
         
         def stop_hook(d):
             if worker_obj and hasattr(worker_obj, 'is_stop_requested') and worker_obj.is_stop_requested():
