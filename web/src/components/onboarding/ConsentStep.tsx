@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { useI18n } from "@/lib/i18n";
+import { useOnboarding } from "@/lib/onboarding-store";
 
 export function ConsentStep({
   onAgree,
@@ -22,6 +23,8 @@ export function ConsentStep({
   onBack: () => void;
 }) {
   const { t } = useI18n();
+  const mode = useOnboarding((s) => s.mode);
+  const isDesktop = mode === "desktop";
   const [consented, setConsented] = useState(false);
   const [acknowledged, setAcknowledged] = useState(false);
 
@@ -41,35 +44,64 @@ export function ConsentStep({
         </div>
         <h2 className="text-3xl font-bold mb-3">{t("Внимание: ресурсы и ответственность")}</h2>
         <p className="text-muted-foreground max-w-lg mx-auto">
-          {t("Локальный движок задействует ресурсы вашего компьютера. Перед установкой важно понять, что произойдёт.")} </p>
+          {isDesktop
+            ? t("Перед скачиванием программы важно понять, что вы устанавливаете и на каких условиях.")
+            : t("Локальный движок задействует ресурсы вашего компьютера. Перед установкой важно понять, что произойдёт.")} </p>
       </div>
 
       {/* Что произойдёт */}
       <div className="glass-card rounded-2xl p-6 mb-5">
         <h3 className="font-semibold text-sm mb-4 flex items-center gap-2">
           <Cpu className="w-4 h-4 text-amber-400" />
-          {t("Что задействует локальный движок")} </h3>
+          {isDesktop ? t("Что устанавливает программа") : t("Что задействует локальный движок")} </h3>
         <div className="space-y-3">
-          <ResourceLine
-            icon={HardDrive}
-            title={t("~800 МБ на диске")}
-            text={t("Whisper + yt-dlp + ffmpeg-python + зависимости. Устанавливаются в ~/.transcrypt-engine/")}
-          />
-          <ResourceLine
-            icon={Cpu}
-            title={t("CPU/RAM при работе")}
-            text={t("Whisper загружает CPU до 90% и занимает 1-4 ГБ RAM во время распознавания. После завершения задачи ресурсы освобождаются.")}
-          />
-          <ResourceLine
-            icon={Zap}
-            title={t("Автозапуск с системой")}
-            text={t("Движок стартует автоматически при включении компьютера (LaunchAgent/реестр/systemd). Удалить автозапуск: rm -rf ~/.transcrypt-engine/")}
-          />
-          <ResourceLine
-            icon={ShieldCheck}
-            title={t("Сетевые запросы")}
-            text={t("При URL-задачах (YouTube) движок обращается к YouTube с вашего IP через yt-dlp с маскировкой под Chrome. Ваши файлы не отправляются ни на какой сервер.")}
-          />
+          {isDesktop ? (
+            <>
+              <ResourceLine
+                icon={HardDrive}
+                title={t("~1–2 ГБ на диске")}
+                text={t("Whisper и все библиотеки — внутри установщика. Это отдельная программа: движок сайта ей не нужен.")}
+              />
+              <ResourceLine
+                icon={Cpu}
+                title={t("CPU/RAM при работе")}
+                text={t("Whisper загружает CPU до 90% и занимает 1-4 ГБ RAM во время распознавания. После завершения задачи ресурсы освобождаются.")}
+              />
+              <ResourceLine
+                icon={Zap}
+                title={t("Отдельное приложение")}
+                text={t("Работает независимо от сайта: своё окно, свои настройки. Модель Whisper докачается при первой транскрипции.")}
+              />
+              <ResourceLine
+                icon={ShieldCheck}
+                title={t("Сетевые запросы")}
+                text={t("При URL-задачах (YouTube) программа обращается к YouTube с вашего IP через yt-dlp. Ваши файлы не отправляются ни на какой сервер.")}
+              />
+            </>
+          ) : (
+            <>
+              <ResourceLine
+                icon={HardDrive}
+                title={t("~800 МБ на диске")}
+                text={t("Whisper + yt-dlp + ffmpeg-python + зависимости. Устанавливаются в ~/.transcrypt-engine/")}
+              />
+              <ResourceLine
+                icon={Cpu}
+                title={t("CPU/RAM при работе")}
+                text={t("Whisper загружает CPU до 90% и занимает 1-4 ГБ RAM во время распознавания. После завершения задачи ресурсы освобождаются.")}
+              />
+              <ResourceLine
+                icon={Zap}
+                title={t("Автозапуск с системой")}
+                text={t("Движок стартует автоматически при включении компьютера (LaunchAgent/реестр/systemd). Удалить автозапуск: rm -rf ~/.transcrypt-engine/")}
+              />
+              <ResourceLine
+                icon={ShieldCheck}
+                title={t("Сетевые запросы")}
+                text={t("При URL-задачах (YouTube) движок обращается к YouTube с вашего IP через yt-dlp с маскировкой под Chrome. Ваши файлы не отправляются ни на какой сервер.")}
+              />
+            </>
+          )}
         </div>
       </div>
 

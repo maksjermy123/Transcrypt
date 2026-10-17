@@ -10,6 +10,7 @@ export function DoneStep({ onStart }: { onStart: () => void }) {
   const { selectedModel, setCompleted, mode } = useOnboarding();
   const { t } = useI18n();
   const isEngine = mode === "engine";
+  const isDesktop = mode === "desktop";
   const [bookmarked, setBookmarked] = useState(false);
   const [canPress, setCanPress] = useState(false);
 
@@ -62,7 +63,11 @@ export function DoneStep({ onStart }: { onStart: () => void }) {
         </motion.div>
         <h2 className="text-3xl font-bold mb-3">{t("Готово! Всё настроено")}</h2>
         <p className="text-muted-foreground max-w-lg mx-auto">
-          {isEngine ? (
+          {isDesktop ? (
+            <>
+              {t("Вы выбрали настольную программу. Скачайте установщик в шаге «Программа» (кнопка «Назад») или со страницы GitHub Releases — а эта страница остаётся браузерной версией, можно пользоваться обоими вариантами.")}
+            </>
+          ) : isEngine ? (
             <>
               {t("Локальный движок установлен на компьютере. Уровень")}{" "}
               <span className="text-foreground font-medium">Whisper {selectedModel}</span>{" "}
@@ -78,38 +83,46 @@ export function DoneStep({ onStart }: { onStart: () => void }) {
         </p>
       </div>
 
-      <div className="glass-card rounded-2xl p-6 mb-6">
-        <div className="flex items-start gap-4 mb-4">
-          <div className="w-10 h-10 rounded-xl bg-[#7c5bf5]/15 flex items-center justify-center flex-shrink-0">
-            {bookmarked ? (
-              <BookmarkCheck className="w-5 h-5 text-emerald-500" />
-            ) : (
-              <Bookmark className="w-5 h-5 text-[#7c5bf5]" />
-            )}
+      {!isDesktop && (
+        <div className="glass-card rounded-2xl p-6 mb-6">
+          <div className="flex items-start gap-4 mb-4">
+            <div className="w-10 h-10 rounded-xl bg-[#7c5bf5]/15 flex items-center justify-center flex-shrink-0">
+              {bookmarked ? (
+                <BookmarkCheck className="w-5 h-5 text-emerald-500" />
+              ) : (
+                <Bookmark className="w-5 h-5 text-[#7c5bf5]" />
+              )}
+            </div>
+            <div className="flex-1">
+              <h3 className="font-semibold mb-1">{t("Добавьте страницу в закладки")}</h3>
+              <p className="text-sm text-muted-foreground">
+                {t("Так VoxPaperAi всегда будет под рукой — достаточно открыть закладку, и движок сам подтянется из кеша браузера.")}
+              </p>
+            </div>
           </div>
-          <div className="flex-1">
-            <h3 className="font-semibold mb-1">{t("Добавьте страницу в закладки")}</h3>
-            <p className="text-sm text-muted-foreground">
-              {t("Так VoxPaperAi всегда будет под рукой — достаточно открыть закладку, и движок сам подтянется из кеша браузера.")}
-            </p>
-          </div>
+          <button
+            onClick={handleAddBookmark}
+            className={`w-full py-2.5 rounded-xl font-medium text-sm transition-colors ${
+              bookmarked
+                ? "bg-emerald-500/15 text-emerald-400 cursor-default"
+                : "bg-[#1b2334] hover:bg-[#263147] text-foreground"
+            }`}
+          >
+            {bookmarked ? t("Закладка добавлена ✓") : t("Добавить в закладки")}
+          </button>
         </div>
-        <button
-          onClick={handleAddBookmark}
-          className={`w-full py-2.5 rounded-xl font-medium text-sm transition-colors ${
-            bookmarked
-              ? "bg-emerald-500/15 text-emerald-400 cursor-default"
-              : "bg-[#1b2334] hover:bg-[#263147] text-foreground"
-          }`}
-        >
-          {bookmarked ? t("Закладка добавлена ✓") : t("Добавить в закладки")}
-        </button>
-      </div>
+      )}
 
       <div className="glass-card rounded-2xl p-5 mb-8">
         <h3 className="font-medium mb-3 text-sm">{t("Что произойдёт при следующем открытии:")}</h3>
         <ul className="space-y-2 text-sm text-muted-foreground">
-          {isEngine ? (
+          {isDesktop ? (
+            <>
+              <Step n={1} text={t("Программа VoxPaperAi Pro работает независимо от сайта — своё окно, свои настройки")} />
+              <Step n={2} text={t("Эта страница остаётся браузерной версией — можно пользоваться обоими вариантами")} />
+              <Step n={3} text={t("Если позже установите движок сайта — URL-задачи заработают и здесь (в Настройках)")} />
+            </>
+          ) : isEngine ? (
             <>
               <Step n={1} text={t("Движок стартует сам вместе с системой — автозапуск уже настроен установщиком")} />
               <Step n={2} text={t("Страница сама обнаружит его на 127.0.0.1:8765 — индикатор в шапке станет зелёным")} />

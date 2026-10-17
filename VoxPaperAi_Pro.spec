@@ -1,9 +1,16 @@
 # -*- mode: python ; coding: utf-8 -*-
 
 from pathlib import Path
+import sys
 
 import PyQt6
 from PyInstaller.utils.hooks import collect_data_files
+
+# Иконка исполняемого файла: macOS — .icns, Windows/Linux — .ico
+# (PyInstaller на Windows принимает только .ico/.exe/.dll).
+ICON_ICNS = "resources/icon.icns"
+ICON_ICO = "resources/icon.ico"
+ICON = ICON_ICNS if sys.platform == "darwin" else ICON_ICO
 
 whisper_datas = collect_data_files("whisper", includes=["assets/*"])
 docx_datas = collect_data_files("docx", includes=["templates/**/*", "templates/*"])
@@ -60,7 +67,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon="resources/icon.icns",
+    icon=ICON,
 )
 
 coll = COLLECT(

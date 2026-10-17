@@ -6,7 +6,6 @@ import { useOnboarding, type OnboardingStep } from "@/lib/onboarding-store";
 import { useI18n } from "@/lib/i18n";
 import { LangToggle } from "@/components/workbench/LangToggle";
 import { SiteFooter } from "@/components/SiteFooter";
-import { WelcomeStep } from "./WelcomeStep";
 import { ChoiceStep } from "./ChoiceStep";
 import { ConsentStep } from "./ConsentStep";
 import { ResourcesStep } from "./ResourcesStep";
@@ -14,11 +13,23 @@ import { EngineStep } from "./EngineStep";
 import { ModelChoiceStep } from "./ModelChoiceStep";
 import { ModelDownloadStep } from "./ModelDownloadStep";
 import { DoneStep } from "./DoneStep";
+import { DesktopStep } from "./DesktopStep";
 
+/**
+ * Первый экран онбординга — выбор одного из ТРЁХ путей (ChoiceStep):
+ *  1. Только браузер (без установки) — честный обзор возможностей и ограничений.
+ *  2. Браузер + локальный движок — полный функционал.
+ *  3. Настольная программа — скачивание установщика под ОС/процессор с GitHub Releases.
+ *
+ * Пути:
+ *  browser → resources → engine → model-choice → model-download → done
+ *  engine  → consent → resources → engine → … → done
+ *  desktop → consent → desktop → done
+ */
 const STEP_ORDER: OnboardingStep[] = [
-  "welcome",
   "choice",
   "consent",
+  "desktop",
   "resources",
   "engine",
   "model-choice",
@@ -27,9 +38,9 @@ const STEP_ORDER: OnboardingStep[] = [
 ];
 
 const STEP_LABELS: Record<OnboardingStep, string> = {
-  welcome: "Что умеет",
   choice: "Режим",
   consent: "Согласие",
+  desktop: "Программа",
   resources: "Ресурсы ПК",
   engine: "Движок",
   "model-choice": "Модель",
@@ -39,23 +50,23 @@ const STEP_LABELS: Record<OnboardingStep, string> = {
 
 /**
  * Логика перехода назад:
- *  - с welcome — некуда (это первый шаг)
- *  - с choice → welcome
+ *  - с choice — некуда (это первый шаг)
  *  - с consent → choice
+ *  - с desktop → consent
  *  - с resources → consent (если mode === engine) или choice (если mode === browser)
  *  - с engine → resources
  *  - с model-choice → engine
  *  - с model-download → model-choice
- *  - с done → model-download
+ *  - с done → desktop (режим desktop) или model-download
  */
-function getPrevStep(current: OnboardingStep, mode: "browser" | "engine" | null): OnboardingStep | null {
+function getPrevStep(current: OnboardingStep, mode: "browser" | "engine" | "desktop" | null): OnboardingStep | null {
   switch (current) {
-    case "welcome":
-      return null;
     case "choice":
-      return "welcome";
+      return null;
     case "consent":
       return "choice";
+    case "desktop":
+      return "consent";
     case "resources":
       // Если пользователь выбрал "engine" — он прошёл через consent, иначе сразу с choice
       return mode === "engine" ? "consent" : "choice";
@@ -66,7 +77,7 @@ function getPrevStep(current: OnboardingStep, mode: "browser" | "engine" | null)
     case "model-download":
       return "model-choice";
     case "done":
-      return "model-download";
+      return mode === "desktop" ? "desktop" : "model-download";
     default:
       return null;
   }
@@ -77,13 +88,16 @@ export function OnboardingWizard({ onStart }: { onStart: () => void }) {
   const { t } = useI18n();
   const idx = STEP_ORDER.indexOf(step);
   const prevStep = getPrevStep(step, mode);
+  // Шаги ленты прогресса: всё после согласия, кроме desktop-пути (он короткий — без ленты).
+  // Явная аннотация нужна: filter сам сужает тип и indexOf(step) перестаёт компилироваться.
+  const visibleSteps: OnboardingStep[] = STEP_ORDER.slice(2).filter((s) => s !== "desktop");
 
   // На шаге welcome кнопки назад нет (это первый шаг)
   const canGoBack = prevStep !== null;
 
   // Сброс онбординга в начало (из шапки)
   function resetToStart() {
-    setStep("welcome");
+    setStep("choice");
   }
 
   return (
@@ -112,12 +126,12 @@ export function OnboardingWizard({ onStart }: { onStart: () => void }) {
             )}
           </div>
 
-          {/* Center: Stepper (только после Choice) */}
+          {/* Center: Stepper (шаги после согласия; в режиме desktop путь короткий — точки не нужны) */}
           <div className="flex items-center gap-1.5">
-            {idx >= 2 && STEP_ORDER.slice(2).map((s, i) => {
-              const realIdx = i + 2;
+            {idx >= 2 && mode !== "desktop" && visibleSteps.map((s) => {
+              const realIdx = STEP_ORDER.indexOf(s);
               return (
-                <div key={s} className="flex items-center">
+                <div key={s}>
                   <div
                     className={`h-1.5 rounded-full transition-all ${
                       realIdx < idx
@@ -128,7 +142,6 @@ export function OnboardingWizard({ onStart }: { onStart: () => void }) {
                     }`}
                     title={t(STEP_LABELS[s])}
                   />
-                  {i < STEP_ORDER.length - 3 && <div className="w-1.5 h-px bg-transparent" />}
                 </div>
               );
             })}
@@ -136,9 +149,10 @@ export function OnboardingWizard({ onStart }: { onStart: () => void }) {
 
           {/* Right: Step counter + Lang + Reset */}
           <div className="flex items-center gap-3">
-            {idx >= 2 && (
+            {idx >= 2 && mode !== "desktop" && (
               <div className="text-xs text-muted-foreground hidden md:block">
-                {idx - 1} / {STEP_ORDER.length - 3}
+                {visibleSteps.indexOf(step) + 1} /{" "}
+                {visibleSteps.length}
               </div>
             )}
             <LangToggle />
@@ -157,26 +171,28 @@ export function OnboardingWizard({ onStart }: { onStart: () => void }) {
 
       <main className="flex-1">
         <AnimatePresence mode="wait">
-          {step === "welcome" && (
-            <WelcomeStep
-              key="welcome"
-              onNext={() => setStep("choice")}
-            />
-          )}
           {step === "choice" && (
             <ChoiceStep
               key="choice"
               onSelect={(selectedMode) => {
                 useOnboarding.getState().setMode(selectedMode);
-                setStep(selectedMode === "engine" ? "consent" : "resources");
+                // Оба «установочных» пути проходят согласие в начале:
+                // движок — перед установкой, программа — перед скачиванием.
+                setStep(selectedMode === "browser" ? "resources" : "consent");
               }}
             />
           )}
           {step === "consent" && (
             <ConsentStep
               key="consent"
-              onAgree={() => setStep("resources")}
+              onAgree={() => setStep(mode === "desktop" ? "desktop" : "resources")}
               onBack={() => setStep("choice")}
+            />
+          )}
+          {step === "desktop" && (
+            <DesktopStep
+              key="desktop"
+              onNext={() => setStep("done")}
             />
           )}
           {step === "resources" && (

@@ -30,6 +30,37 @@ try {
     [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
     chcp 65001 | Out-Null
 } catch {}
+
+# ══ 0.1 Согласие с политикой и отказом от ответственности ═══════════════
+# Программа бесплатна. Согласие — обязательный ПЕРВЫЙ шаг установки:
+# до любых скачиваний и изменений в системе.
+Write-Host ""
+Write-Host "════════════════════════════════════════════════════════════════"
+Write-Host " ПОЛИТИКА КОНФИДЕНЦИАЛЬНОСТИ И ОТКАЗ ОТ ОТВЕТСТВЕННОСТИ"
+Write-Host "════════════════════════════════════════════════════════════════"
+Write-Host " VoxPaperAi — бесплатная программа. Кратко:"
+Write-Host "  • Мы не собираем персональные данные и не показываем рекламу."
+Write-Host "  • Ваши файлы обрабатываются локально и не покидают компьютер."
+Write-Host "  • Программа предоставляется «как есть», без гарантий."
+Write-Host "  • Скачивание контента с YouTube/TikTok может нарушать их правила —"
+Write-Host "    ответственность лежит на пользователе."
+Write-Host " Полный текст: https://maksjermy123.github.io/Transcrypt/privacy"
+Write-Host "════════════════════════════════════════════════════════════════"
+if ("$env:TRANSCRYPT_CONSENT" -eq "yes") {
+    Write-Host " Согласие принято автоматически (TRANSCRYPT_CONSENT=yes — автоматическая установка)."
+} elseif (-not [Console]::IsInputRedirected) {
+    $Consent = Read-Host " Продолжить установку? [Y/n]"
+    if ($Consent -match '^(n|no|нет|н|Н|НЕТ|н\.?)$') {
+        Write-Host "Установка отменена. Ничего не скачано и не изменено."
+        exit 1
+    }
+} else {
+    Write-Host " НЕинтерактивный запуск — согласиться некому."
+    Write-Host " Для автоматической установки задайте переменную окружения TRANSCRYPT_CONSENT=yes"
+    Write-Host " (означает: политика и отказ от ответственности приняты)."
+    throw "Требуется согласие: TRANSCRYPT_CONSENT=yes"
+}
+
 # GitHub требует TLS 1.2 — на старых .NET по умолчанию выключен
 try {
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12

@@ -14,6 +14,7 @@ export default function Home() {
     completed,
     setCompleted,
     selectedModel,
+    mode,
   } = useOnboarding();
   const { t } = useI18n();
   // Гидратация: на сервере mounted=false (рендер заглушки), на клиенте true.
@@ -28,7 +29,8 @@ export default function Home() {
   // Решаем, что показывать: если онбординг завершён — рабочая страница.
   // Движок подтягивается сам: Workbench автоматически пингует 127.0.0.1:8765,
   // браузерная модель загружается лениво при первом использовании.
-  const ready = mounted && completed && !!selectedModel;
+  // Режим desktop не требует модели (программа ставится отдельно) — модель не обязательна.
+  const ready = mounted && completed && (!!selectedModel || mode === "desktop");
   const view = ready ? "workbench" : "onboarding";
 
   // Тема везде одна (включая онбординг): auto следует настройке компьютера

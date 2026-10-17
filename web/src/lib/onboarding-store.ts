@@ -29,9 +29,9 @@ export function browserSafeModel(id: WhisperModelId | null): BrowserModelId {
 }
 
 export type OnboardingStep =
-  | "welcome"
   | "choice"
   | "consent"
+  | "desktop"
   | "resources"
   | "engine"
   | "model-choice"
@@ -54,7 +54,7 @@ export type ModelStatus =
   | "downloaded"
   | "error";
 
-type Mode = "browser" | "engine";
+type Mode = "browser" | "engine" | "desktop";
 
 export interface HardwareInfo {
   cpuCores: number;
@@ -101,7 +101,7 @@ interface OnboardingState {
 }
 
 const initialState = {
-  step: "welcome" as OnboardingStep,
+  step: "choice" as OnboardingStep, // первый экран — выбор одного из трёх путей
   mode: null as Mode | null,
   engineStatus: "not-started" as EngineStatus,
   modelStatus: "not-downloaded" as ModelStatus,
