@@ -61,6 +61,33 @@ function Exit-WithPause {
     exit $code
 }
 
+# Скачивание файла с повторными попытками и защитой от «зависаний».
+#   1) curl.exe — встроен в Windows 10 (1803+) и 11: заметно быстрее
+#      Invoke-WebRequest (у того медленный прогресс-бар, съедающий скорость),
+#      показывает живой счётчик байтов, сам повторяет обрывы (--retry 3) и
+#      обрывает мёртвую загрузку (--speed-limit/--speed-time: если скорость
+#      упала ниже 2 КБ/с на 60 секунд — обрыв и новая попытка, вечного
+#      «висим на одном числе» больше не бывает).
+#   2) Фолбэк — Invoke-WebRequest (есть на любой Windows).
+function Get-RemoteFile {
+    param([string]$Url, [string]$OutFile, [int]$TimeoutSec = 600)
+    try {
+        $null = Get-Command curl.exe -ErrorAction Stop
+        & curl.exe -L --fail --retry 3 --retry-delay 2 --connect-timeout 30 --speed-time 60 --speed-limit 2048 -o "$OutFile" "$Url"
+        if ($LASTEXITCODE -eq 0 -and (Test-Path $OutFile) -and ((Get-Item $OutFile).Length -gt 0)) { return $true }
+        Write-Warn "curl не справился (код $LASTEXITCODE) — пробуем резервный способ..."
+    } catch {
+        Write-Warn "curl.exe не найден — качаем через Invoke-WebRequest (медленнее)..."
+    }
+    try {
+        Invoke-WebRequest -Uri $Url -OutFile $OutFile -UseBasicParsing -TimeoutSec $TimeoutSec
+        return (Test-Path $OutFile)
+    } catch {
+        Write-Host "    Скачивание не удалось: $($_.Exception.Message)" -ForegroundColor Gray
+        return $false
+    }
+}
+
 Write-Host ""
 Write-Host "======================================================"
 Write-Host "   VoxPaperAi Web Engine - установка для Windows"
@@ -138,7 +165,9 @@ function Install-Python {
     $installer = Join-Path $env:TEMP "python-$pyVer-$arch.exe"
     Write-Host "    Скачиваем Python $pyVer ($arch)..." -ForegroundColor DarkGray
     try {
-        Invoke-WebRequest -Uri $url -OutFile $installer -UseBasicParsing -TimeoutSec 600
+        if (-not (Get-RemoteFile -Url $url -OutFile $installer)) {
+            throw "не удалось скачать $url"
+        }
         Write-Host "    Устанавливаем (1-2 минуты, тихо)..." -ForegroundColor DarkGray
         $p = Start-Process -FilePath $installer -ArgumentList "/quiet", "InstallAllUsers=0", "PrependPath=1", "Include_test=0", "Include_launcher=1" -Wait -PassThru
         if ($p.ExitCode -ne 0) {
@@ -203,14 +232,27 @@ if (-not $ffmpegFound -and (Test-Path $LocalFfmpegExe)) {
 }
 if (-not $ffmpegFound) {
     # ffmpeg нужен для hardsub / конвертации / очистки аудио.
-    # Скачиваем статическую сборку gyan.dev в %LOCALAPPDATA%\VoxPaperAi\runtime\bin —
+    # Скачиваем статическую сборку в %LOCALAPPDATA%\VoxPaperAi\runtime\bin —
     # движок сам находит её там (find_ffmpeg_executable), PATH менять не нужно.
-    Write-Step "ffmpeg не найден — скачиваем статический ffmpeg (~80 МБ)..."
+    Write-Step "ffmpeg не найден — скачиваем статический ffmpeg (~110 МБ)..."
+    Write-Host "    Это самый долгий шаг: на медленном интернете 5-15 минут — это нормально." -ForegroundColor DarkGray
+    Write-Host "    Счётчик байтов в прогрессе должен расти: значит всё идёт, ждём." -ForegroundColor DarkGray
     $TmpZip = Join-Path $env:TEMP "ffmpeg-release-essentials.zip"
     $FfOk = $false
     try {
         New-Item -ItemType Directory -Path $FfmpegBinDir -Force | Out-Null
-        Invoke-WebRequest -Uri "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip" -OutFile $TmpZip -UseBasicParsing -TimeoutSec 600
+        # Основной источник — gyan.dev (свежие сборки), зеркало — BtbN на GitHub
+        # (быстрый CDN, выручает когда основной хост тормозит или недоступен).
+        $FfUrls = @(
+            "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip",
+            "https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/ffmpeg-master-latest-win64-gpl.zip"
+        )
+        $ZipOk = $false
+        foreach ($FfUrl in $FfUrls) {
+            if (Get-RemoteFile -Url $FfUrl -OutFile $TmpZip) { $ZipOk = $true; break }
+            Write-Warn "Источник не ответил — пробуем зеркало..."
+        }
+        if (-not $ZipOk) { throw "не удалось скачать ffmpeg ни с одного источника" }
         $ExtractDir = Join-Path $env:TEMP "ffmpeg-extract-$(Get-Random)"
         Expand-Archive -Path $TmpZip -DestinationPath $ExtractDir -Force
         $binDir = Get-ChildItem $ExtractDir -Directory | Where-Object { Test-Path (Join-Path $_.FullName "bin\ffmpeg.exe") } | Select-Object -First 1
@@ -250,11 +292,8 @@ Write-Step "Скачивание engine_server.py, src/ и requirements-engine.t
 $tmpTarball = Join-Path $InstallDir "repo.tar.gz"
 $tmpExtract = Join-Path $InstallDir "_extract"
 
-try {
-    Invoke-WebRequest -Uri $RepoTarball -OutFile $tmpTarball -UseBasicParsing -TimeoutSec 600
-} catch {
+if (-not (Get-RemoteFile -Url $RepoTarball -OutFile $tmpTarball)) {
     Write-Err "Не удалось скачать архив репозитория. Проверьте интернет."
-    Write-Host "    $($_.Exception.Message)" -ForegroundColor Gray
     Exit-WithPause 1
 }
 
