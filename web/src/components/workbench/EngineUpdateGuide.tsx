@@ -17,6 +17,7 @@ import {
   ChevronDown,
   Copy,
   Check,
+  Info,
   Terminal,
   ShieldCheck,
   Wrench,
@@ -272,6 +273,9 @@ export function EngineUpdateGuide({ reason, health, embedded = false }: EngineUp
         <p className="flex items-start gap-1.5">
           <Wrench className="w-3.5 h-3.5 text-amber-400 flex-shrink-0 mt-0.5" />
           {t("Запускайте обновление, когда активные задачи завершены — установщик перезапускает движок. Пока идёт обновление, индикатор движка погаснет — это нормально, он позеленеет сам после перезапуска.")} </p>
+        <p className="flex items-start gap-1.5">
+          <Info className="w-3.5 h-3.5 text-sky-400 flex-shrink-0 mt-0.5" />
+          {t("Работа движка проверена на MacBook Apple Silicon и Windows 11. На MacBook (Intel) и Linux установка должна пройти так же, но там мы её проверить не могли — если что-то пойдёт не так, расскажите об этом в GitHub Issues.")} </p>
       </div>
     </div>
   );

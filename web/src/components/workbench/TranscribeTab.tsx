@@ -2,17 +2,11 @@
 
 import { motion } from "framer-motion";
 import {
-  Upload,
-  FileAudio,
   Loader2,
   Download,
-  Play,
-  Trash2,
   Mic,
   Settings2,
-  Link2,
   Globe,
-  Zap,
   ServerOff,
   Server,
   AlertTriangle,
@@ -31,7 +25,10 @@ import { transcribeAudio, loadWhisperPipeline } from "@/lib/whisper";
 import { useSettings } from "@/lib/settings-store";
 import { translateText, translateBatch } from "@/lib/translate";
 import {
-  transcribeViaEngine,
+  startBatchJob,
+  getBatchJobInfo,
+  cancelJobById,
+  uploadFileToEngine,
   downloadEngineFile,
   fetchEngineFile,
   resumeActiveJobWithRetry,
@@ -55,22 +52,13 @@ import {
 import { copyTextToClipboard } from "@/lib/clipboard";
 import { useI18n } from "@/lib/i18n";
 import { ConspectBridge } from "@/components/workbench/ConspectBridge";
-import { BatchPanel, type BatchItem } from "@/components/workbench/BatchPanel";
+import { InboxQueue, type QueueItem } from "@/components/workbench/InboxQueue";
 
 type Phase = "idle" | "loading-engine" | "running" | "done" | "error";
 type Seg = { text: string; timestamp: [number, number | null] };
 
 /** Аудио/видео расширения — для drag&drop, когда браузер не дал MIME-тип (macOS). */
 const AV_EXT_RE = /\.(mp3|wav|m4a|m4b|aac|ogg|oga|opus|flac|wma|mp4|m4v|mkv|webm|mov|avi|flv|wmv|ts|3gp)$/i;
-
-/** Оценка скорости Whisper (во сколько раз быстрее реального времени) на CPU: [оптимистично, пессимистично] */
-const SPEED_FACTORS: Record<string, [number, number]> = {
-  tiny: [12, 7],
-  base: [8, 5],
-  small: [5, 3],
-  medium: [3, 1.8],
-  "large-v3": [2, 1.2],
-};
 
 /** Языки для выбора источника и цели перевода */
 const LANG_OPTIONS: { code: string; label: string }[] = [
@@ -103,11 +91,7 @@ export function TranscribeTab({
   const { t } = useI18n();
   const { selectedModel, setSelectedModel, engineServerOnline, engineServerHealth } = useOnboarding();
   const { provider, deeplKey } = useSettings();
-  const [mode, setMode] = useState<"file" | "url">("file");
-  const [file, setFile] = useState<File | Blob | null>(null);
-  const [fileName, setFileName] = useState<string>("");
-  const [fileSize, setFileSize] = useState<number>(0);
-  const [url, setUrl] = useState("");
+  const [url, setUrl] = useState(""); // ссылка восстанавливается из фоновой задачи — для кликов по таймкодам
   const [phase, setPhase] = useState<Phase>("idle");
   const [progress, setProgress] = useState(0);
   const [progressText, setProgressText] = useState("");
@@ -123,16 +107,13 @@ export function TranscribeTab({
   const [translError, setTranslError] = useState<string | null>(null);
   const [segView, setSegView] = useState<"translation" | "original">("translation");
   const [error, setError] = useState<string | null>(null);
-  const [dragOver, setDragOver] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   // Поиск по транскрипту + подсветка активного сегмента при прослушивании
   const [searchQuery, setSearchQuery] = useState("");
   const [onlyMatches, setOnlyMatches] = useState(false);
   const [activeSegIdx, setActiveSegIdx] = useState<number | null>(null);
   const playerRef = useRef<HTMLAudioElement | null>(null);
-  // Оценка времени: длительность файла читается из метаданных аудио
-  const [fileDuration, setFileDuration] = useState<number | null>(null);
+  const [defaultTargetLang, setDefaultTargetLang] = useState<string>("-");
   // Фоновые задачи (Job API): статус поддержки движком + заметка восстановления
   const supportsJobs = !!engineServerHealth?.jobs;
   const supportsQueue = !!engineServerHealth?.queue; // движок ≥ 1.2.0: очереди + параллельные полосы
@@ -146,68 +127,117 @@ export function TranscribeTab({
     setSegView("translation");
   };
 
-  const handleFile = useCallback(
-    (f: File) => {
-      setFile(f);
-      setFileName(f.name);
-      setFileSize(f.size);
-      setText("");
-      setSegments([]);
-      setError(null);
-      clearTranslation();
-      setProgress(0);
-      setPhase("idle");
-      setFileDuration(null);
-      if (audioUrl) URL.revokeObjectURL(audioUrl);
-      setAudioUrl(URL.createObjectURL(f));
-    },
-    [audioUrl]
-  );
-
-  const onDrop = useCallback(
-    (e: React.DragEvent) => {
-      e.preventDefault();
-      setDragOver(false);
-      const f = e.dataTransfer.files?.[0];
-      if (!f) return;
-      // macOS иногда отдаёт пустой MIME-тип — доверяем и расширению
-      const mime = (f.type || "").toLowerCase();
-      if (mime.startsWith("audio/") || mime.startsWith("video/") || AV_EXT_RE.test(f.name)) {
-        handleFile(f);
-      } else {
-        setError(t("Это не похоже на аудио или видео — перетащите файл MP3, WAV, M4A, MP4, MKV, WebM или MOV"));
-      }
-    },
-    [handleFile]
-  );
-
-  function isUrl(s: string) {
-    try {
-      const u = new URL(s.trim());
-      return u.protocol === "http:" || u.protocol === "https:";
-    } catch {
-      return false;
-    }
-  }
-
-  function detectSource(url: string): { label: string; icon: string } {
-    const u = url.toLowerCase();
-    if (u.includes("youtube.com") || u.includes("youtu.be")) return { label: "YouTube", icon: "🎬" };
-    if (u.includes("tiktok.com")) return { label: "TikTok", icon: "🎵" };
-    if (u.includes("instagram.com")) return { label: "Instagram", icon: "📸" };
-    return { label: "URL", icon: "🔗" };
-  }
+  // ═════════ Очередь транскрибации (InboxQueue) ═════════
 
   /**
-   * Запуск транскрипции.
-   *
-   * Логика:
-   *  - URL + движок online → /api/transcribe (Subtitles-First стратегия на сервере)
-   *  - URL + движок offline → ошибка (нельзя YouTube через браузер из-за CORS)
-   *  - Локальный файл + движок online → /api/transcribe (использует нативный Whisper, быстрее)
-   *  - Локальный файл + движок offline → Whisper в браузере (transformers.js)
+   * jobs-режим: создать фоновую задачу движка для записи очереди.
+   * Файл сначала загружается на движок. Перевод — на клиенте после
+   * завершения (onQueueItemDone): оригинал сохраняется, работает
+   * переключатель «Перевод / Оригинал».
    */
-  async function run() {
+  const launchTranscribeJob = useCallback(
+    async (item: QueueItem): Promise<string | null> => {
+      let urlParam: string | undefined;
+      let filePath: string | undefined;
+      if (item.kind === "url") {
+        urlParam = item.label;
+      } else {
+        filePath = await uploadFileToEngine(item.file!, item.label);
+      }
+      return await startBatchJob(
+        "transcribe",
+        {
+          url: urlParam,
+          file_path: filePath,
+          model: selectedModel ?? "base",
+          language,
+          translate_to: "-", // перевод выполняется на клиенте после транскрипции
+        },
+        item.label
+      );
+    },
+    [selectedModel, language]
+  );
+
+  /** jobs-режим: запись завершена — если выбран конечный язык, переводим текст прямо здесь. */
+  const onQueueItemDone = useCallback(
+    (it: QueueItem, update: (patch: Partial<QueueItem>) => void) => {
+      const lang = it.option;
+      const r = it.result || {};
+      if (!lang || lang === "-" || !r.text || r.translated) return;
+      update({ stage: t("Переводим на {l}…", { l: langLabel(lang) }) });
+      translateText(r.text, {
+        targetLang: lang,
+        provider,
+        apiKey: deeplKey || undefined,
+        engineOnline: engineServerOnline,
+      })
+        .then((translated) =>
+          update({ stage: t("Готово"), result: { ...r, translated, translError: null } })
+        )
+        .catch((e: any) => {
+          // Перевод не удался — оригинал не теряем, ошибка покажется при открытии
+          const msg = e?.message ?? t("неизвестная ошибка");
+          update({ stage: t("Готово"), result: { ...r, translated: "", translError: msg } });
+        });
+    },
+    [provider, deeplKey, engineServerOnline, t]
+  );
+
+  /**
+   * sequential-режим (движок offline): распознаём записи по одной в браузерном Whisper.
+   * Результат показывается в основном окне и запоминается в записи (можно переоткрыть).
+   */
+  const runQueueItemSequential = useCallback(
+    async (it: QueueItem, update: (patch: Partial<QueueItem>) => void) => {
+      if (it.kind === "url") {
+        update({
+          status: "error",
+          percent: 100,
+          stage: t("Ошибка"),
+          error: t("Ссылки требуют локальный движок: браузер технически не может скачать видео (CORS и защита от ботов)."),
+          finishedAt: Date.now(),
+        });
+        return;
+      }
+      const outcome = await runTaskBrowser(it.file!, it.label, language, it.option);
+      update({
+        status: "done",
+        percent: 100,
+        stage: t("Готово"),
+        finishedAt: Date.now(),
+        result: {
+          text: outcome.text,
+          source: outcome.sourceLabel,
+          segments: outcome.segments,
+          translated: outcome.translatedText || undefined,
+          translError: outcome.translError,
+        },
+      });
+    },
+    // runTaskBrowser объявлена ниже как function-декларация — в замыкание не попадает
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [language, t]
+  );
+
+  /**
+   * Браузерная транскрипция одной записи (Whisper WASM).
+   * Результат показывается в основном окне И возвращается вызывающему —
+   * чтобы запись очереди запомнила его (клик по готовой записи переоткроет).
+   */
+  async function runTaskBrowser(
+    f: File | Blob,
+    fname: string,
+    srcLang: string,
+    tgtLang: string
+  ): Promise<{
+    text: string;
+    segments: Seg[];
+    translatedText: string;
+    translatedSegments: Seg[];
+    translError: string | null;
+    sourceLabel: string;
+  }> {
     setError(null);
     setProgress(0);
     setProgressLog([]);
@@ -217,93 +247,15 @@ export function TranscribeTab({
     cancelledRef.current = false;
     clearTranslation();
 
-    const urlValue = url.trim();
-    const useUrl = mode === "url" && urlValue && isUrl(urlValue);
-
-    if (mode === "url" && !urlValue) {
-      setError(t("Введите URL видео"));
-      return;
-    }
-    if (mode === "url" && !isUrl(urlValue)) {
-      setError(t("Некорректный URL (нужно http:// или https://)"));
-      return;
-    }
-    if (mode === "file" && !file) {
-      setError(t("Загрузите файл"));
-      return;
-    }
-
-    // URL-задача требует локальный движок
-    if (useUrl && !engineServerOnline) {
-      setError(
-        t("URL-задачи (YouTube, TikTok) требуют локальный движок — yt-dlp с impersonate Chrome. Запустите engine_server.py на компьютере и обновите страницу.")
-      );
-      return;
-    }
-
-    setPhase(useUrl ? "running" : "loading-engine");
-    setProgressText(useUrl ? t("Запрос к локальному движку…") : t("Подгружаем Whisper из кеша…"));
-
+    setPhase("loading-engine");
+    setProgress(5);
+    setProgressText(t("Подгружаем Whisper из кеша…"));
     try {
-      if (engineServerOnline) {
-        // ===== Локальный движок: Subtitles-First стратегия для URL, нативный Whisper для файлов =====
-        setPhase("running");
-        setProgress(5);
-        setProgressText(t("Локальный движок: запускаем задачу…"));
-
-        let filePath: string | undefined;
-        if (mode === "file" && file) {
-          // Загружаем файл на движок
-          setProgressText(t("Загружаем файл на движок…"));
-          setProgress(15);
-          const { uploadFileToEngine } = await import("@/lib/engine-bridge");
-          filePath = await uploadFileToEngine(file as File, fileName);
-          setProgress(25);
-        }
-
-        const result = await transcribeViaEngine(
-          {
-            url: useUrl ? urlValue : undefined,
-            file_path: filePath,
-            model: selectedModel ?? "base",
-            language,
-            translate_to: "-", // перевод выполняется на клиенте после транскрипции
-          },
-          (p: EngineProgress) => {
-            setProgress(p.percent);
-            setProgressText(p.stage || "");
-            setJobNote((n) =>
-              p.stage?.startsWith("В очереди")
-                ? t("Задача стоит в очереди — движок выполняет другую задачу. Она начнётся автоматически: ничего не пропадёт, можно спокойно переключать вкладки.")
-                : n?.startsWith("Задача стоит в очереди")
-                  ? null
-                  : n
-            );
-            if (p.log?.length) {
-              setProgressLog((l) => [...l.slice(-50), ...p.log.slice(-3)]);
-            }
-          },
-          useUrl ? urlValue : fileName || t("локальный файл")
-        );
-
-        await applyEngineResult(result, { label: useUrl ? urlValue : fileName });
-        return;
-      }
-
-      // ===== Браузерный режим: только локальные файлы =====
-      if (!file) {
-        setError(t("В браузерном режиме можно распознавать только локальные файлы"));
-        return;
-      }
-      setPhase("loading-engine");
-      setProgress(5);
-      setProgressText(t("Подгружаем Whisper из кеша…"));
-
       await loadWhisperPipeline(browserSafeModel(selectedModel));
       setPhase("running");
       setProgress(10);
       setProgressText(t("Распознавание речи…"));
-      const result = await transcribeAudio(file, language, (p) => {
+      const result = await transcribeAudio(f, srcLang, (p) => {
         setProgress(10 + Math.round(p * 0.9));
         if (p > 0) setProgressText(t("Распознавание речи… {p}%", { p }));
       });
@@ -317,31 +269,46 @@ export function TranscribeTab({
       }));
       setText(resText);
       setSegments(segs);
-      setSourceLabel(t("Whisper {m} (браузер)", { m: browserSafeModel(selectedModel) }));
+      const srcLabel = fname
+        ? `${fname} · ${t("Whisper {m} (браузер)", { m: browserSafeModel(selectedModel) })}`
+        : t("Whisper {m} (браузер)", { m: browserSafeModel(selectedModel) });
+      setSourceLabel(srcLabel);
+
+      if (audioUrl) URL.revokeObjectURL(audioUrl);
+      setAudioUrl(URL.createObjectURL(f));
 
       // Выбран конечный язык — переводим ДО выдачи результата
-      const tr = await translateIfNeeded(resText, segs);
+      const tr = await translateIfNeeded(resText, segs, tgtLang);
 
       setPhase("done");
       setProgress(100);
       setProgressText(t("Готово"));
       persistLastResult({
-        sourceLabel: t("Whisper {m} (браузер)", { m: browserSafeModel(selectedModel) }),
+        sourceLabel: srcLabel,
         text: resText,
         segments: segs,
-        targetLang,
+        targetLang: tgtLang,
         translatedText: tr.tText,
         translatedSegments: tr.tSegs,
         translError: tr.err,
       });
+      return {
+        text: resText,
+        segments: segs,
+        translatedText: tr.tText,
+        translatedSegments: tr.tSegs,
+        translError: tr.err,
+        sourceLabel: srcLabel,
+      };
     } catch (err: any) {
       if (cancelledRef.current) {
         // Отмена пользователем — состояние уже сброшено cancelRun()
-        return;
+        throw err;
       }
       console.error(err);
       setError(err?.message ?? t("Ошибка распознавания"));
       setPhase("error");
+      throw err;
     }
   }
 
@@ -414,7 +381,8 @@ export function TranscribeTab({
     }
   }
 
-  /** Смена конечного языка после готового результата — мягкий повторный перевод */
+  /** Смена конечного языка после готового результата — мягкий повторный перевод.
+   *  Вызывается при открытии записи очереди, если перевод ещё не готов. */
   async function retranslate(lang: string) {
     if (phase !== "done") return;
     setPhase("running");
@@ -526,6 +494,16 @@ export function TranscribeTab({
     }
   }
 
+  // ═══ Восстановление предпочитаемого конечного языка (дефолт для новых записей) ═══
+  useEffect(() => {
+    try {
+      const v = localStorage.getItem("transcrypt.prefs.targetLang");
+      if (v) setDefaultTargetLang(v);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
   // ═══ Восстановление фоновой задачи при возврате на вкладку ═══
   // Покрывает: переключение вкладок внутри приложения, уход на другую
   // вкладку браузера, перезагрузку страницы и выгрузку вкладки браузером.
@@ -576,7 +554,6 @@ export function TranscribeTab({
       const jp = rec.params as { url?: string };
       if (jp?.url) {
         setUrl(jp.url);
-        setMode("url");
       }
       if (outcome.state === "done") {
         clearActiveJob("transcribe"); // результат забрали — слот освобождаем
@@ -718,26 +695,74 @@ export function TranscribeTab({
     }
   }
 
-  /** Открыть результат из пакетной обработки в основном окне результатов. */
-  async function openBatchResult(it: BatchItem) {
-    if (!it.result) return;
-    setText(it.result.text || "");
-    setSegments([]);
-    clearTranslation();
-    setSourceLabel(it.result.source || it.label);
-    setJobNote(t("Результат пакетной обработки: {x}", { x: it.label }));
+  /** Открыть результат записи очереди в основном окне результатов. */
+  async function openQueueResult(it: QueueItem) {
+    const r = it.result || {};
+    if (!r.text && !r.files?.srt) return;
+    setError(null);
+    setUrl("");
+    if (audioUrl) URL.revokeObjectURL(audioUrl);
+    setAudioUrl(null);
+    setText(r.text || "");
+    setSourceLabel(r.source || it.label);
+    setTargetLang(it.option || "-");
+    setTranslatedText(r.translated || "");
+    setTranslatedSegments([]);
+    setSegView(r.translated ? "translation" : "original");
+    setTranslError(r.translError ?? null);
+    setJobNote(t("Результат из очереди: {x}", { x: it.label }));
     setPhase("done");
     setProgress(100);
     setProgressText(t("Готово"));
-    if (it.result.files?.srt) {
+    let segs: Seg[] = Array.isArray(r.segments) ? r.segments : [];
+    if (r.files?.srt) {
       try {
-        const blob = await fetchEngineFile(it.result.files.srt);
+        const blob = await fetchEngineFile(r.files.srt);
         const srtText = await blob.text();
-        setSegments(parseSrt(srtText));
+        segs = parseSrt(srtText);
       } catch {
         /* текст уже показан — сегменты необязательны */
       }
     }
+    setSegments(segs);
+    setSearchQuery("");
+    setOnlyMatches(false);
+    setActiveSegIdx(null);
+    // Перевод по выбранному языку не готов (браузер был закрыт во время фоновой задачи) —
+    // догоняем прямо сейчас: оригинал уже на экране, перевод появится ниже.
+    if (it.option && it.option !== "-" && !r.translated && (r.text || "").trim()) {
+      const tr = await translateIfNeeded(r.text || "", segs, it.option);
+      persistLastResult({
+        sourceLabel: r.source || it.label,
+        text: r.text || "",
+        segments: segs,
+        targetLang: it.option,
+        translatedText: tr.tText,
+        translatedSegments: tr.tSegs,
+        translError: tr.err,
+      });
+      return;
+    }
+    persistLastResult({
+      sourceLabel: r.source || it.label,
+      text: r.text || "",
+      segments: segs,
+      targetLang: it.option || "-",
+      translatedText: r.translated || "",
+      translatedSegments: [],
+      translError: r.translError ?? null,
+    });
+  }
+
+  /** Скачать текст готовой записи очереди (.txt). */
+  function downloadQueueItemTxt(it: QueueItem) {
+    const r = it.result || {};
+    if (!r.text) return;
+    const base = it.label
+      .replace(/^https?:\/\//, "")
+      .replace(/[^\wа-яА-ЯёЁ.-]+/g, "_")
+      .slice(0, 60);
+    downloadFile(`${base || "task"}.txt`, r.translated || r.text, "text/plain");
   }
 
   async function downloadResultFile(kind: "txt" | "srt" | "vtt" | "json") {
@@ -758,125 +783,26 @@ export function TranscribeTab({
     ? Math.max(...segments.map((s) => s.timestamp[1] ?? s.timestamp[0]))
     : 0;
 
-  function reset() {
-    setFile(null);
-    setFileName("");
-    setFileSize(0);
-    setUrl("");
-    setSegments([]);
-    setText("");
-    setSourceLabel("");
-    clearTranslation();
-    setSearchQuery("");
-    setOnlyMatches(false);
-    setActiveSegIdx(null);
-    setFileDuration(null);
-    if (audioUrl) URL.revokeObjectURL(audioUrl);
-    setAudioUrl(null);
-    setPhase("idle");
-    setProgress(0);
-    setProgressLog([]);
-    setError(null);
-    setJobNote(null);
-    try {
-      localStorage.removeItem("transcrypt.lastTranscribe");
-    } catch {
-      /* ignore */
-    }
-  }
-
-  // ═════════ Общие блоки для обоих режимов (файл / URL) ═════════
+  // ═════════ Общие блоки ═════════
   const busy = phase === "loading-engine" || phase === "running";
-  const urlValue = url.trim();
-  const urlValid = !!urlValue && isUrl(urlValue);
-  const canRun = mode === "url"
-    ? engineServerOnline && urlValid && !busy
-    : !!file && !busy;
 
-  const langControls = (
-    <div className="flex flex-wrap items-start gap-x-6 gap-y-3">
-      <div className="flex items-center gap-3">
-        <Mic className="w-5 h-5 text-[#7c5bf5]" />
-        <div>
-          <div className="font-medium text-sm">{t("Исходный язык")}</div>
-          <select
-            value={language}
-            onChange={(e) => setLanguage(e.target.value)}
-            className="bg-[#0b0f19] border border-[#263147] rounded-lg px-3 py-1.5 text-sm mt-1"
-          >
-            <option value="auto">{t("Автоопределение")}</option>
-            {LANG_OPTIONS.map((l) => (
-              <option key={l.code} value={l.code}>{l.label}</option>
-            ))}
-          </select>
-        </div>
-      </div>
-      <div className="flex items-center gap-3">
-        <Languages className="w-5 h-5 text-emerald-400" />
-        <div>
-          <div className="font-medium text-sm">{t("Перевести на")}</div>
-          <select
-            value={targetLang}
-            onChange={(e) => {
-              const v = e.target.value;
-              setTargetLang(v);
-              try {
-                localStorage.setItem("transcrypt.prefs.targetLang", v);
-              } catch {
-                /* ignore */
-              }
-              // Результат уже готов — сразу переводим его на новый язык
-              if (phase === "done" && v !== "-") retranslate(v);
-            }}
-            className="bg-[#0b0f19] border border-[#263147] rounded-lg px-3 py-1.5 text-sm mt-1"
-          >
-            <option value="-">{t("Оригинал (без перевода)")}</option>
-            {LANG_OPTIONS.map((l) => (
-              <option key={l.code} value={l.code}>{l.label}</option>
-            ))}
-          </select>
-        </div>
-      </div>
+  /** Исходный язык — общий для всех записей очереди (модель — в шапке вкладки). */
+  const srcLangControl = (
+    <div className="flex flex-wrap items-center gap-2">
+      <Mic className="w-4 h-4 text-[#7c5bf5] flex-shrink-0" />
+      <span className="text-xs font-medium">{t("Исходный язык")}</span>
+      <select
+        value={language}
+        onChange={(e) => setLanguage(e.target.value)}
+        className="bg-[#1b2334] border border-[#263147] rounded-lg px-2.5 py-1.5 text-xs"
+      >
+        <option value="auto">{t("Автоопределение")}</option>
+        {LANG_OPTIONS.map((l) => (
+          <option key={l.code} value={l.code}>{l.label}</option>
+        ))}
+      </select>
     </div>
   );
-
-  const runButton = (
-    <button
-      onClick={run}
-      disabled={!canRun}
-      title={
-        mode === "url" && !urlValid
-          ? t("Вставьте корректную ссылку на видео")
-          : undefined
-      }
-      className="bg-gradient-primary text-white px-6 py-3 rounded-xl font-medium hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center gap-2 justify-center glow-primary"
-    >
-      {busy ? (
-        <>
-          <Loader2 className="w-4 h-4 animate-spin" />
-          {t("Обработка…")} </>
-      ) : (
-        <>
-          <Play className="w-4 h-4" />
-          {t("Распознать речь")} </>
-      )}
-    </button>
-  );
-
-  // Оценка времени выполнения — до запуска, из длительности файла и модели
-  const estimateBlock = (() => {
-    if (mode !== "file" || !fileDuration || !isFinite(fileDuration) || fileDuration <= 0) return null;
-    const id = (engineServerOnline ? selectedModel ?? "base" : browserSafeModel(selectedModel)) as string;
-    const f = SPEED_FACTORS[id] ?? SPEED_FACTORS.base;
-    const k = engineServerOnline ? 1 : 0.4; // браузерный WASM заметно медленнее нативного движка
-    const minA = Math.max(1, Math.ceil(fileDuration / 60 / (f[0] * k)));
-    const minB = Math.max(minA, Math.ceil(fileDuration / 60 / (f[1] * k)));
-    return (
-      <p className="text-xs text-muted-foreground">
-        {t("Оценка времени: ≈")} {minA}–{minB}  {t("мин")}{" "}
-        {engineServerOnline ? t("на движке") : t("в браузере (WASM — медленнее)")}{t(". Зависит от процессора.")} </p>
-    );
-  })();
 
   const progressBlock = busy ? (
     <div className="glass-card rounded-2xl p-5">
@@ -1231,228 +1157,77 @@ export function TranscribeTab({
       {/* Баннер обновления движка перенесён в Настройки — вкладки не засоряем сообщениями:
           индикатор в шапке зелёный = всё работает, а обновление доступно в Настройках. */}
 
-      {/* Пакетная обработка: несколько ссылок/файлов в очередь движка */}
-      <BatchPanel
+      {/* ЕДИНОЕ ПРИНИМАЮЩЕЕ ОКНО-ОЧЕРЕДЬ: файлы + вставка ссылок + .txt со ссылками.
+          Ничего не запускается само — список редактируется, затем «Транскрибировать». */}
+      <InboxQueue
+        title={t("Очередь транскрибации")}
+        intro={t("Перетащите файлы, вставьте ссылки или бросьте .txt со списком ссылок — всё соберётся в список. Отредактируйте его и нажмите «Транскрибировать»: без нажатия ничего не запустится.")}
+        acceptAttr="audio/*,video/*"
+        fileFilter={(f) => {
+          const mime = (f.type || "").toLowerCase();
+          return mime.startsWith("audio/") || mime.startsWith("video/") || AV_EXT_RE.test(f.name)
+            ? null
+            : t("не аудио и не видео (нужны MP3, WAV, M4A, MP4, MKV, WebM, MOV)");
+        }}
+        dropHint={t("Перетащите аудио/видео файлы сюда — можно несколько сразу")}
+        allowUrls
+        urlsPlaceholder={t("или вставьте скопированные ссылки сюда — по одной в строке (Enter добавит их в список)")}
+        itemOption={{
+          label: t("Конечный язык"),
+          title: t("Конечный язык этой записи: после распознавания текст будет переведён на него"),
+          defaultValue: defaultTargetLang,
+          options: [
+            { value: "-", label: t("Оригинал (без перевода)") },
+            ...LANG_OPTIONS.map((l) => ({ value: l.code, label: l.label })),
+          ],
+        }}
+        mode={engineServerOnline ? "jobs" : "sequential"}
         engineOnline={engineServerOnline}
         supportsJobs={supportsJobs}
-        model={engineServerOnline ? selectedModel ?? "base" : "base"}
-        language={language}
-        onOpenResult={openBatchResult}
+        launchJob={launchTranscribeJob}
+        pollJobInfo={getBatchJobInfo}
+        cancelJob={cancelJobById}
+        onItemDone={onQueueItemDone}
+        runItem={runQueueItemSequential}
+        storageKey="transcrypt.batchJobs"
+        startLabel={t("Транскрибировать")}
+        runningLabel={t("Транскрибируем…")}
+        openLabel={t("Открыть")}
+        onOpenResult={(it) => void openQueueResult(it)}
+        resultActions={(it) =>
+          it.result?.text ? (
+            <button
+              onClick={() => downloadQueueItemTxt(it)}
+              className="px-2.5 py-1.5 rounded-lg bg-[#1b2334] hover:bg-[#263147] text-xs font-medium inline-flex items-center gap-1"
+            >
+              <Download className="w-3 h-3" />
+              .txt
+            </button>
+          ) : null
+        }
+        footerNote={
+          engineServerOnline && supportsJobs
+            ? t("Задачи выполняются на движке в фоне: можно переключать вкладки и закрыть браузер — записи в списке дождутся вас.")
+            : !engineServerOnline
+              ? t("Браузерный режим: файлы распознаются по очереди, только пока открыта вкладка. Для ссылок и фоновой обработки установите движок.")
+              : undefined
+        }
       />
 
-      {!file && (
-        <div className="flex gap-2 mb-5 bg-[#1b2334] p-1 rounded-xl w-fit">
-          <ModeBtn active={mode === "file"} onClick={() => setMode("file")} icon={Upload} label={t("Файл с компьютера")} />
-          <ModeBtn
-            active={mode === "url"}
-            onClick={() => setMode("url")}
-            icon={Link2}
-            label={engineServerOnline ? t("URL (YouTube и др.)") : t("URL (нужен движок)")}
-          />
-        </div>
-      )}
+      {/* Исходный язык — общий для всех записей (модель — в шапке) */}
+      <div className="glass-card rounded-2xl px-4 py-3 mb-5 flex flex-wrap items-center gap-3">
+        {srcLangControl}
+        <span className="text-xs text-muted-foreground ml-auto">
+          {t("Модель и исходный язык применяются ко всем записям при запуске")}
+        </span>
+      </div>
 
-      {/* URL Input */}
-      {!file && mode === "url" && (
-        <motion.div
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="glass-card rounded-2xl p-6 mb-5"
-        >
-          <label className="text-xs text-muted-foreground mb-2 block">{t("Ссылка на видео (YouTube, TikTok, Instagram, Vimeo и др.)")}</label>
-          <div className="flex gap-2">
-            <div className="flex-1 relative">
-              <Link2 className="w-4 h-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                type="url"
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                placeholder={t("https://youtube.com/watch?v=… или https://youtu.be/…")}
-                className="w-full bg-[#0b0f19] border border-[#263147] rounded-xl pl-10 pr-3 py-3 text-sm focus:outline-none focus:border-[#7c5bf5]/50"
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && canRun) run();
-                }}
-              />
-            </div>
-          </div>
-
-          {urlValid && (
-            <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
-              <Zap className="w-3.5 h-3.5 text-[#7c5bf5]" />
-              <span>{t("Источник:")} <span className="text-foreground font-medium">{detectSource(urlValue).icon} {detectSource(urlValue).label}</span></span>
-              <span>·</span>
-              <span>{t("Стратегия: сначала субтитры → fallback на Whisper")}</span>
-            </div>
-          )}
-
-          {engineServerOnline ? (
-            <div className="mt-4 pt-4 border-t border-[#263147]/60 flex flex-col gap-4 items-stretch justify-between">
-              {langControls}
-              {runButton}
-            </div>
-          ) : (
-            <div className="mt-4 rounded-xl p-4 border-amber-500/30 bg-amber-500/5">
-              <div className="flex items-start gap-3">
-                <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
-                <div className="flex-1">
-                  <p className="text-sm text-amber-200 font-medium mb-1">{t("Для ссылок нужен локальный движок")}</p>
-                  <p className="text-xs text-amber-200/80 leading-relaxed mb-3">
-                    {t("Распознавание по ссылке работает через движок на вашем компьютере (yt-dlp + Whisper): браузер технически не может скачать видео с YouTube напрямую — это блокируют CORS и защита от ботов. Установка — одна команда, без архивов.")} </p>
-                  {onInstallEngine && (
-                    <button
-                      onClick={onInstallEngine}
-                      className="bg-gradient-primary text-white px-4 py-2 rounded-lg text-xs font-medium hover:opacity-90 inline-flex items-center gap-1.5"
-                    >
-                      <Zap className="w-3.5 h-3.5" />
-                      {t("Установить движок за 1 команду")} </button>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {engineServerOnline && (
-            <div className="mt-4 rounded-xl p-4 border border-emerald-500/20 bg-emerald-500/5 text-xs text-emerald-200/80">
-              {t("Фоновые задачи: можно спокойно переключиться на другую вкладку — движок продолжит работу, а результат появится здесь.")} </div>
-          )}
-        </motion.div>
-      )}
-
-      {/* File drop zone */}
-      {!file && mode === "file" && (
-        <div
-          onDragOver={(e) => {
-            e.preventDefault();
-            setDragOver(true);
-          }}
-          onDragLeave={() => setDragOver(false)}
-          onDrop={onDrop}
-          className={`glass-card rounded-2xl p-12 text-center cursor-pointer transition-all ${
-            dragOver ? "border-[#7c5bf5] glow-primary scale-[1.01]" : ""
-          }`}
-          onClick={() => inputRef.current?.click()}
-        >
-          <input
-            ref={inputRef}
-            type="file"
-            accept="audio/*,video/*"
-            hidden
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) handleFile(f);
-            }}
-          />
-          <motion.div
-            initial={{ scale: 1 }}
-            animate={dragOver ? { scale: 1.05 } : { scale: 1 }}
-            className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-[#7c5bf5]/15 mb-4"
-          >
-            <Upload className="w-8 h-8 text-[#7c5bf5]" />
-          </motion.div>
-          <h3 className="font-semibold mb-1">{t("Перетащите аудио или видео сюда")}</h3>
-          <p className="text-sm text-muted-foreground mb-3">
-            {t("MP3, WAV, M4A, MP4, WebM, MOV — до 500 МБ (через движок) или 200 МБ (браузер)")} </p>
-          <button className="text-[#7c5bf5] text-sm font-medium hover:underline">
-            {t("или нажмите, чтобы выбрать файл")}
-          </button>
-        </div>
-      )}
-
-      {/* Файл загружен */}
-      {file && (
-        <div className="space-y-5">
-          {/* Проба длительности для оценки времени (до запуска) */}
-          {audioUrl && (
-            <audio
-              src={audioUrl}
-              className="hidden"
-              preload="metadata"
-              onLoadedMetadata={(e) => setFileDuration(e.currentTarget.duration || null)}
-            />
-          )}
-          <div className="glass-card rounded-2xl p-5 flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-[#7c5bf5]/15 flex items-center justify-center flex-shrink-0">
-              <FileAudio className="w-6 h-6 text-[#7c5bf5]" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="font-medium truncate">{fileName}</div>
-              <div className="text-xs text-muted-foreground">
-                {(fileSize / 1024 / 1024).toFixed(2)}  {t("МБ")} </div>
-            </div>
-            {file.type.startsWith("audio/") && audioUrl && (
-              <audio controls src={audioUrl} className="max-w-xs h-10 hidden md:block" />
-            )}
-            <button
-              onClick={reset}
-              className="p-2 rounded-lg text-muted-foreground hover:text-red-400 hover:bg-red-500/10"
-              title={t("Убрать файл")}
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
-          </div>
-
-          {/* Предупреждение для длинных файлов в браузерном режиме */}
-          {!engineServerOnline && (fileSize / 1024 / 1024) > 50 && (
-            <div className="glass-card rounded-2xl p-4 border-amber-500/30 bg-amber-500/5">
-              <div className="flex items-start gap-3">
-                <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
-                <div className="text-sm text-amber-200">
-                  <p className="font-medium mb-1">{t("Большой файл для браузерного режима")}</p>
-                  <p className="text-xs text-amber-200/80 leading-relaxed">
-                    {t("Браузерный Whisper (WASM) работает медленно для файлов длиннее 10-15 минут и может зависать на очень длинных аудио (более 30 минут). Для длинных файлов рекомендуется установить локальный движок — он работает в 5-10 раз быстрее и не блокирует браузер. Нажмите на индикатор «Только браузер» в шапке справа для перехода к установке.")} </p>
-                </div>
-              </div>
-            </div>
-          )}
-
-          <div className="glass-card rounded-2xl p-5 flex flex-col gap-4 items-stretch justify-between">
-            {langControls}
-            {estimateBlock}
-            {runButton}
-          </div>
-        </div>
-      )}
-
-      {/* Общие блоки прогресса/ошибки/результата — вне контейнеров режима,
-          чтобы восстановленный результат фоновых задач был виден всегда */}
+      {/* Общие блоки прогресса/ошибки/результата — чтобы восстановленный
+          результат фоновых задач был виден всегда */}
       {progressBlock}
       {errorBlock}
       {resultBlock}
     </div>
-  );
-}
-
-function ModeBtn({
-  active,
-  onClick,
-  icon: Icon,
-  label,
-  disabled,
-  disabledHint,
-}: {
-  active: boolean;
-  onClick: () => void;
-  icon: React.ComponentType<{ className?: string }>;
-  label: string;
-  disabled?: boolean;
-  disabledHint?: string;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      title={disabled ? disabledHint : undefined}
-      className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors inline-flex items-center gap-2 ${
-        active
-          ? "bg-gradient-primary text-white"
-          : disabled
-          ? "text-muted-foreground/40 cursor-not-allowed"
-          : "text-muted-foreground hover:text-foreground"
-      }`}
-    >
-      <Icon className="w-4 h-4" />
-      {label}
-    </button>
   );
 }
 

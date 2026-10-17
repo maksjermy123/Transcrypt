@@ -3,11 +3,7 @@
 import { motion } from "framer-motion";
 import {
   Download,
-  FileVideo,
   Loader2,
-  Music,
-  Link2,
-  Sparkles,
   ServerOff,
   History,
   X,
@@ -17,7 +13,9 @@ import {
 import { useEffect, useState } from "react";
 import { useOnboarding } from "@/lib/onboarding-store";
 import {
-  mediaViaEngine,
+  startBatchJob,
+  getBatchJobInfo,
+  cancelJobById,
   downloadEngineFile,
   engineFileUrl,
   resumeActiveJobWithRetry,
@@ -29,20 +27,13 @@ import {
   type TaskResult,
 } from "@/lib/engine-bridge";
 import { useI18n } from "@/lib/i18n";
-
-const ACTIONS: { id: MediaAction; label: string; icon: React.ComponentType<{ className?: string }>; desc: string }[] = [
-  { id: "download_video", label: "Скачать видео", icon: FileVideo, desc: "Скачать видео с YouTube/TikTok/Instagram в MP4 через yt-dlp (impersonate Chrome)" },
-  { id: "download_audio", label: "Скачать аудио", icon: Music, desc: "Извлечь аудиодорожку в MP3 192 kbps" },
-];
-
+import { InboxQueue, type QueueItem } from "@/components/workbench/InboxQueue";
 
 export function MediaTab() {
   const { t } = useI18n();
   const { engineServerOnline, selectedModel, engineServerHealth } = useOnboarding();
   const supportsJobs = !!engineServerHealth?.jobs;
   const supportsQueue = !!engineServerHealth?.queue; // движок ≥ 1.2.0: очереди задач
-  const [action, setAction] = useState<MediaAction>("download_video");
-  const [url, setUrl] = useState("");
   const [phase, setPhase] = useState<"idle" | "running" | "done" | "error">("idle");
   const [progress, setProgress] = useState(0);
   const [progressText, setProgressText] = useState("");
@@ -64,11 +55,11 @@ export function MediaTab() {
     }
   }
 
-  function persistLastMedia(fileUrl: string, fname: string) {
+  function persistLastMedia(fileUrl: string, fname: string, opt: string) {
     try {
       localStorage.setItem(
         "transcrypt.lastMedia",
-        JSON.stringify({ at: Date.now(), file: fileUrl, name: fname, action })
+        JSON.stringify({ at: Date.now(), file: fileUrl, name: fname, action: opt })
       );
     } catch {
       /* ignore */
@@ -171,7 +162,7 @@ export function MediaTab() {
         setPhase("done");
         setProgress(100);
         setProgressText(t("Готово"));
-        persistLastMedia(res.file, fileNameFromUrl(res.file));
+        persistLastMedia(res.file, fileNameFromUrl(res.file), "-");
       } catch (e: any) {
         if (cancelled) return;
         setError(e?.message ?? t("Ошибка фоновой задачи"));
@@ -223,67 +214,40 @@ export function MediaTab() {
       /* ignore */
     }
   }
+  // reset() доступен из карточки последнего файла ниже
 
-  async function run() {
-    if (!engineServerOnline) {
-      setError(t("Медиа-операции требуют локальный движок (engine_server.py). Запустите его и обновите страницу."));
-      return;
-    }
-    if (!url.trim()) {
-      setError(t("Вставьте ссылку на видео (YouTube, TikTok, Instagram…)"));
-      return;
-    }
+  // ═════════ Очередь скачивания (InboxQueue) ═════════
 
-    setError(null);
-    setResultFile(null);
-    setProgressLog([]);
-    setProgress(0);
-    setPhase("running");
-    setProgressText(t("Запускаем задачу на движке…"));
-    setJobNote(null);
-    setDownloadError(null);
+  /** jobs-режим: создать фоновую задачу скачивания для записи очереди. */
+  const launchMediaJob = async (item: QueueItem): Promise<string | null> =>
+    await startBatchJob(
+      "media",
+      {
+        action: (item.option || "download_video") as MediaAction,
+        url: item.label,
+        model: selectedModel ?? "base",
+      },
+      item.label
+    );
 
+  /** jobs-режим: запись готова — обновляем карточку «последний файл». */
+  const onMediaItemDone = (it: QueueItem) => {
+    const r = it.result || {};
+    if (r.file) persistLastMedia(r.file, fileNameFromUrl(r.file), it.option);
+  };
+
+  /** Скачать файл готовой записи (с понятной ошибкой при неудаче). */
+  async function downloadQueueItemFile(it: QueueItem, update: (patch: Partial<QueueItem>) => void) {
+    const r = it.result || {};
+    if (!r.file) return;
+    const fname = fileNameFromUrl(r.file);
     try {
-      setProgressText(t("Запуск обработки на движке…"));
-      const result = await mediaViaEngine(
-        {
-          action,
-          url: url.trim() || undefined,
-          model: selectedModel ?? "base",
-        },
-        (p: EngineProgress) => {
-          setProgress(p.percent);
-          setProgressText(p.stage || t("Обработка…"));
-          setJobNote((n) =>
-            p.stage?.startsWith("В очереди")
-              ? t("Задача стоит в очереди — движок выполняет другую задачу (например, транскрипцию). Она начнётся автоматически: ничего не пропадёт, можно переключать вкладки.")
-              : n?.startsWith("Задача стоит в очереди")
-                ? null
-                : n
-          );
-          if (p.log?.length) {
-            setProgressLog((l) => [...l.slice(-50), ...p.log.slice(-3)]);
-          }
-        },
-        url.trim() || action
-      );
-
-      if (result.status !== "success" || !result.file) {
-        throw new Error(result.message || t("Движок вернул ошибку"));
-      }
-
-      const fileUrl = result.file;
-      const fname = fileNameFromUrl(fileUrl);
-      setResultFile(fileUrl);
-      setResultName(fname);
-      setPhase("done");
-      setProgress(100);
-      setProgressText(t("Готово"));
-      persistLastMedia(fileUrl, fname);
-    } catch (err: any) {
-      console.error(err);
-      setError(err?.message ?? t("Ошибка обработки"));
-      setPhase("error");
+      await downloadEngineFile(r.file, fname);
+      update({ result: { ...r, downloadError: null } });
+    } catch (e: any) {
+      const msg = e?.message ?? t("Не удалось скачать файл");
+      console.error(e);
+      update({ result: { ...r, downloadError: msg } });
     }
   }
 
@@ -377,80 +341,73 @@ export function MediaTab() {
         </div>
       )}
 
-      {/* Выбор действия */}
-      <div className="grid grid-cols-2 md:grid-cols-2 gap-2 mb-6">
-        {ACTIONS.map((a) => {
-          const Icon = a.icon;
-          const active = action === a.id;
+      {/* ЕДИНОЕ ПРИНИМАЮЩЕЕ ОКНО-ОЧЕРЕДЬ: вставляйте ссылки (можно пачкой), .txt со списком —
+          для каждой записи выбирается формат; запуск только по кнопке «Скачать». */}
+      <InboxQueue
+        title={t("Очередь скачивания")}
+        intro={t("Вставьте ссылки на видео или бросьте .txt со списком ссылок — всё соберётся в список. Выберите формат напротив каждой записи и нажмите «Скачать»: без нажатия ничего не запустится.")}
+        dropHint={t("Перетащите .txt со списком ссылок — или вставьте ссылки в поле ниже")}
+        allowUrls
+        urlsPlaceholder={t("https://youtube.com/watch?v=… https://youtu.be/… https://vk.com/video-… — по одной в строке (Enter добавит)")}
+        batchTextExts={[".txt", ".md"]}
+        fileFilter={() => t("здесь принимаются только ссылки — файлы скачивает движок")}
+        itemOption={{
+          label: t("Формат"),
+          title: t("Что скачать из этой ссылки"),
+          defaultValue: "download_video",
+          options: [
+            { value: "download_video", label: t("Видео (MP4)") },
+            { value: "download_audio", label: t("Аудио (MP3)") },
+          ],
+        }}
+        mode="jobs"
+        engineOnline={engineServerOnline}
+        supportsJobs={supportsJobs}
+        launchJob={launchMediaJob}
+        pollJobInfo={getBatchJobInfo}
+        cancelJob={cancelJobById}
+        onItemDone={onMediaItemDone}
+        storageKey="transcrypt.mediaJobs"
+        startLabel={t("Скачать")}
+        runningLabel={t("Скачиваем…")}
+        openLabel={t("Открыть")}
+        resultActions={(it, update) => {
+          const r = it.result || {};
+          if (!r.file) return null;
           return (
-            <button
-              key={a.id}
-              onClick={() => {
-                setAction(a.id);
-                reset();
-              }}
-              className={`p-4 rounded-xl text-left transition-all ${
-                active
-                  ? "bg-gradient-primary text-white glow-primary"
-                  : "glass-card hover:border-[#7c5bf5]/50"
-              }`}
-            >
-              <Icon className="w-5 h-5 mb-2" />
-              <div className="font-medium text-sm mb-0.5">{t(a.label)}</div>
-              <div className={`text-xs ${active ? "text-white/80" : "text-muted-foreground"}`}>
-                {t(a.desc)}
-              </div>
-            </button>
+            <span className="flex gap-1.5">
+              <button
+                onClick={() => void downloadQueueItemFile(it, update)}
+                className="px-2.5 py-1.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 text-xs font-medium inline-flex items-center gap-1"
+              >
+                <Download className="w-3 h-3" />
+                {t("Скачать")}
+              </button>
+              <button
+                onClick={() => window.open(engineFileUrl(r.file), "_blank", "noopener")}
+                title={t("Открыть файл напрямую")}
+                className="px-2.5 py-1.5 rounded-lg bg-[#1b2334] hover:bg-[#263147] text-xs font-medium"
+              >
+                ↗
+              </button>
+            </span>
           );
-        })}
-      </div>
+        }}
+        footerNote={
+          engineServerOnline && supportsJobs
+            ? t("Скачивание идёт на движке в фоне: можно переключать вкладки и закрыть браузер — файлы дождутся вас в списке.")
+            : undefined
+        }
+      />
 
-      {/* URL input */}
-      <motion.div
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="glass-card rounded-2xl p-5 mb-4"
-        >
-          <label className="text-xs text-muted-foreground mb-2 block">
-            {t("Ссылка на видео")}
-          </label>
-          <div className="flex gap-2">
-            <div className="flex-1 relative">
-              <Link2 className="w-4 h-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                type="url"
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                placeholder="https://youtube.com/watch?v=…"
-                className="w-full bg-[#0b0f19] border border-[#263147] rounded-xl pl-10 pr-3 py-3 text-sm focus:outline-none focus:border-[#7c5bf5]/50"
-              />
-            </div>
-          </div>
-      </motion.div>
+      {/* Ошибка скачивания готовой записи очереди */}
+      {error && (
+        <div className="glass-card rounded-2xl p-4 mb-4 border-red-500/40">
+          <div className="text-sm text-red-400">{t("Ошибка:")} {error}</div>
+        </div>
+      )}
 
-      {/* Run button */}
-      <div className="flex justify-center mb-5">
-        <button
-          onClick={run}
-          disabled={phase === "running"}
-          className="bg-gradient-primary text-white px-8 py-3.5 rounded-xl font-medium hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center gap-2 glow-primary"
-        >
-          {phase === "running" ? (
-            <>
-              <Loader2 className="w-4 h-4 animate-spin" />
-              {progressText || t("Обработка…")}
-            </>
-          ) : (
-            <>
-              <Sparkles className="w-4 h-4" />
-              {action === "download_video" && t("Скачать видео")}
-              {action === "download_audio" && t("Скачать аудио")}
-            </>
-          )}
-        </button>
-      </div>
-
-      {/* Progress */}
+      {/* Прогресс восстановленной одиночной задачи (слот прошлых сессий) */}
       {phase === "running" && (
         <div className="glass-card rounded-2xl p-5 mb-4">
           <div className="flex items-center justify-between mb-2 text-sm">
@@ -510,16 +467,25 @@ export function MediaTab() {
             <div>
               <div className="flex items-center gap-2 mb-1">
                 <Download className="w-5 h-5 text-emerald-500" />
-                <h3 className="font-semibold">{t("Файл готов!")}</h3>
+                <h3 className="font-semibold">{t("Последний готовый файл")}</h3>
               </div>
               <div className="text-sm text-foreground">{resultName}</div>
             </div>
-            <button
-              onClick={download}
-              className="bg-emerald-500/15 text-emerald-400 px-5 py-2.5 rounded-xl font-medium inline-flex items-center gap-2 hover:bg-emerald-500/25"
-            >
-              <Download className="w-4 h-4" />
-              {t("Скачать")} </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={download}
+                className="bg-emerald-500/15 text-emerald-400 px-5 py-2.5 rounded-xl font-medium inline-flex items-center gap-2 hover:bg-emerald-500/25"
+              >
+                <Download className="w-4 h-4" />
+                {t("Скачать")} </button>
+              <button
+                onClick={reset}
+                className="p-2 rounded-lg text-muted-foreground hover:text-red-400 hover:bg-red-500/10"
+                title={t("Убрать из показа")}
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
           </div>
         </motion.div>
       )}

@@ -8,6 +8,7 @@ import {
   ArrowRight,
   ShieldCheck,
   Info,
+  AlertTriangle,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useI18n } from "@/lib/i18n";
@@ -139,6 +140,14 @@ export function DesktopStep({ onNext }: { onNext: () => void }) {
             </a>
           )}
         </div>
+      </div>
+
+      {/* Честное предупреждение о протестированных платформах */}
+      <div className="glass-card rounded-2xl p-4 mb-5 border-amber-500/30 bg-amber-500/5 flex items-start gap-3">
+        <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
+        <p className="text-xs text-amber-200/90 leading-relaxed">
+          {t("Честно о проверках: программа протестирована на MacBook Apple Silicon и Windows 11. Установщики для MacBook (Intel) и Linux собраны, но работоспособность на них не проверялась — возможны нюансы. Нашли проблему — расскажите о ней в GitHub Issues, починим.")}
+        </p>
       </div>
 
       {/* Все системы — на случай неточного определения */}
