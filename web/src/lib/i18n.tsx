@@ -165,6 +165,8 @@ export const EN: Record<string, string> = {
   "Скачать": "Download",
   "Отменить": "Cancel",
   "Скрыть": "Hide",
+  "Скрыть и очистить: результат больше не восстановится, а его файл на диске движка будет удалён": "Hide and clean up: the result won't be restored again and its file will be deleted from the engine's disk",
+  "Скрыть и очистить: результат больше не восстановится, а его файлы на диске движка будут удалены": "Hide and clean up: the result won't be restored again and its files will be deleted from the engine's disk",
   "Формат": "Format",
   "🟢 Документы конвертируются на вашем компьютере (движок) — Word ↔ PDF ↔ TXT, никуда не отправляются":
     "🟢 Documents are converted on your computer (engine) — Word ↔ PDF ↔ TXT, nothing is uploaded",

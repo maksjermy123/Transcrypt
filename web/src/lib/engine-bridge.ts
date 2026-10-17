@@ -748,6 +748,119 @@ export async function cancelJobById(jobId: string): Promise<void> {
   }
 }
 
+/* ─── Очистка файлов задач на диске движка (движок ≥ 1.3.9) ──────────────── */
+/* Файлы задач копятся в web_output движка бесконечно: транскрипты, субтитры,
+   скачанные видео, конвертированные копии. Крестики «скрыть восстановленный
+   результат» и «удалить из списка» теперь подчищают их через /api/files/delete. */
+
+export type EngineJobListEntry = {
+  job_id?: string;
+  id?: string;
+  type?: string;
+  status?: string;
+};
+
+/** Список задач из журнала движка (null — движок недоступен или старый). */
+export async function listEngineJobs(): Promise<EngineJobListEntry[] | null> {
+  try {
+    const resp = await fetch(`${ENGINE_URL}/api/jobs`);
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    return Array.isArray(data?.jobs) ? (data.jobs as EngineJobListEntry[]) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Удалить файлы задач с диска движка (принимает и абсолютные пути, и ссылки
+ * «/api/download?file=…»). Возвращает число удалённых файлов; null — движок
+ * недоступен или старше 1.3.9 (эндпоинта ещё нет — это не ошибка).
+ */
+export async function deleteEngineFiles(payload: {
+  paths?: string[];
+  job_ids?: string[];
+}): Promise<number | null> {
+  try {
+    const resp = await fetch(`${ENGINE_URL}/api/files/delete`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    return typeof data?.deleted === "number" ? data.deleted : 0;
+  } catch {
+    return null;
+  }
+}
+
+/** Путь файла на диске движка из ссылки «/api/download?file=/path/to/file». */
+export function enginePathFromUrl(ref: string): string | null {
+  if (!ref) return null;
+  try {
+    const u = new URL(ref.startsWith("http") ? ref : `http://x${ref}`);
+    const fp = u.searchParams.get("file");
+    return fp ? decodeURIComponent(fp) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Очистить файлы вкладки на диске движка: берём все задачи данного типа из
+ * журнала движка и удаляем их файлы, КРОМЕ задач, чьи id ещё живут в журналах
+ * очередей (localStorage) — по этим записям список всё ещё умеет скачивать
+ * результаты. Возвращает число удалённых файлов (null — движок недоступен).
+ */
+export async function purgeTabEngineFiles(
+  type: EngineTaskType,
+  keepJournalKeys: string[]
+): Promise<number | null> {
+  const keep = new Set<string>();
+  for (const key of keepJournalKeys) {
+    try {
+      const raw = localStorage.getItem(key);
+      const arr = raw ? JSON.parse(raw) : [];
+      if (Array.isArray(arr)) {
+        for (const it of arr) {
+          if (it && typeof it.jobId === "string" && it.jobId) keep.add(it.jobId);
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+  const jobs = await listEngineJobs();
+  if (!jobs) return null;
+  const ids = jobs
+    .filter((j) => (j.type || "") === type)
+    .map((j) => String(j.job_id || j.id || ""))
+    .filter((id) => id && !keep.has(id));
+  if (!ids.length) return 0;
+  return await deleteEngineFiles({ job_ids: ids });
+}
+
+/** Собрать из записей очереди пути+jobId для точечного удаления (строка удалена). */
+export function collectQueueFilesForDelete(items: { jobId?: string; result?: any }[]): {
+  paths: string[];
+  job_ids: string[];
+} {
+  const paths: string[] = [];
+  const job_ids: string[] = [];
+  for (const it of items) {
+    if (it?.jobId) job_ids.push(it.jobId);
+    const r = it?.result || {};
+    const refs: unknown[] = [r.file, r.media_file, ...(r.files ? Object.values(r.files) : [])];
+    for (const ref of refs) {
+      if (typeof ref !== "string" || !ref) continue;
+      const p = enginePathFromUrl(ref);
+      if (p && !paths.includes(p)) paths.push(p);
+    }
+  }
+  return { paths, job_ids };
+}
+
 /* ─── Обновление yt-dlp из интерфейса (движок ≥ 1.3.6) ─────────────────── */
 
 export type YtDlpUpdateResult = {

@@ -35,6 +35,9 @@ import {
   watchJobToCompletion,
   clearActiveJob,
   cancelActiveJob,
+  deleteEngineFiles,
+  collectQueueFilesForDelete,
+  purgeTabEngineFiles,
   type EngineProgress,
   type TranscribeResult,
 } from "@/lib/engine-bridge";
@@ -51,7 +54,6 @@ import {
 } from "@/lib/subtitles";
 import { copyTextToClipboard } from "@/lib/clipboard";
 import { useI18n } from "@/lib/i18n";
-import { ConspectBridge } from "@/components/workbench/ConspectBridge";
 import { InboxQueue, type QueueItem } from "@/components/workbench/InboxQueue";
 
 type Phase = "idle" | "loading-engine" | "running" | "done" | "error";
@@ -118,6 +120,10 @@ export function TranscribeTab({
   const supportsJobs = !!engineServerHealth?.jobs;
   const supportsQueue = !!engineServerHealth?.queue; // движок ≥ 1.2.0: очереди + параллельные полосы
   const [jobNote, setJobNote] = useState<string | null>(null);
+  // Отдельная заметка «Восстановлен последний результат»: её крестик не просто
+  // скрывает баннер — он чистит кеш (результат больше не восстановится) и
+  // удаляет файлы этой вкладки с диска движка (≥ 1.3.9).
+  const [restoreNote, setRestoreNote] = useState<string | null>(null);
   const cancelledRef = useRef(false);
 
   const clearTranslation = () => {
@@ -488,10 +494,26 @@ export function TranscribeTab({
       setProgress(100);
       setProgressText(t("Готово"));
       const when = r.at ? new Date(r.at).toLocaleString() : "";
-      setJobNote(t("Восстановлен последний результат{when}.", { when: when ? t("(от {d})", { d: when }) : "" }));
+      setRestoreNote(t("Восстановлен последний результат{when}.", { when: when ? t("(от {d})", { d: when }) : "" }));
     } catch {
       /* ignore */
     }
+  }
+
+  /**
+   * Крестик на баннере восстановления: кеш результата сбрасывается (в следующей
+   * сессии ничего не восстановится), а файлы задач этой вкладки на диске движка
+   * удаляются (транскрипты, субтитры, скачанные аудио). Записи, которые ещё
+   * живут в списке очереди, не трогаем — по ним «Скачать/Открыть» продолжает работать.
+   */
+  async function discardRestoredResult() {
+    setRestoreNote(null);
+    try {
+      localStorage.removeItem("transcrypt.lastTranscribe");
+    } catch {
+      /* ignore */
+    }
+    await purgeTabEngineFiles("transcribe", ["transcrypt.batchJobs"]);
   }
 
   // ═══ Восстановление предпочитаемого конечного языка (дефолт для новых записей) ═══
@@ -864,8 +886,6 @@ export function TranscribeTab({
       animate={{ opacity: 1, y: 0 }}
       className="space-y-4"
     >
-      <ConspectBridge text={viewText} segments={viewSegments} sourceLabel={sourceLabel} />
-
       {sourceLabel && (
         <div className="glass-card rounded-2xl p-3 px-4 text-xs text-muted-foreground">
           {t("Источник:")} <span className="text-foreground font-medium">{sourceLabel}</span>
@@ -1140,6 +1160,19 @@ export function TranscribeTab({
       )}
 
       {/* Баннер восстановления фоновой задачи / последнего результата */}
+      {restoreNote && (
+        <div className="mb-5 p-3 rounded-xl border border-[#7c5bf5]/30 bg-[#7c5bf5]/10 text-sm text-[#cfc2ff] flex items-start gap-3">
+          <History className="w-4 h-4 mt-0.5 flex-shrink-0" />
+          <span className="flex-1">{restoreNote}</span>
+          <button
+            onClick={() => void discardRestoredResult()}
+            className="p-1 rounded-md hover:bg-white/10 flex-shrink-0"
+            title={t("Скрыть и очистить: результат больше не восстановится, а его файлы на диске движка будут удалены")}
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
       {jobNote && (
         <div className="mb-5 p-3 rounded-xl border border-[#7c5bf5]/30 bg-[#7c5bf5]/10 text-sm text-[#cfc2ff] flex items-start gap-3">
           <History className="w-4 h-4 mt-0.5 flex-shrink-0" />
@@ -1190,6 +1223,11 @@ export function TranscribeTab({
         onItemDone={onQueueItemDone}
         runItem={runQueueItemSequential}
         storageKey="transcrypt.batchJobs"
+        onDeleteJobFiles={(removed) => {
+          // Удаление записи из списка — её файлы на движке больше не нужны
+          const { paths, job_ids } = collectQueueFilesForDelete(removed);
+          if (paths.length || job_ids.length) void deleteEngineFiles({ paths, job_ids });
+        }}
         startLabel={t("Транскрибировать")}
         runningLabel={t("Транскрибируем…")}
         openLabel={t("Открыть")}

@@ -295,6 +295,9 @@ export interface InboxQueueProps {
   runItem?: (item: QueueItem, update: (patch: Partial<QueueItem>) => void) => Promise<void>;
   /** Ключ localStorage для журнала запущенных задач (jobs-режим) */
   storageKey?: string;
+  /** Записи удалены из списка («Удалить» у строки / «Очистить список») —
+   *  вкладка может подчистить их файлы на диске движка */
+  onDeleteJobFiles?: (removed: QueueItem[]) => void;
   /** Надпись кнопки запуска (со счётчиком добавится автоматически) */
   startLabel: string;
   runningLabel?: string;
@@ -329,6 +332,7 @@ export function InboxQueue({
   onItemDone,
   runItem,
   storageKey,
+  onDeleteJobFiles,
   startLabel,
   runningLabel,
   startDisabledReason,
@@ -542,18 +546,22 @@ export function InboxQueue({
 
   function clearList() {
     if (working) return;
+    const removed = itemsRef.current;
     setItems([]);
     persist([]);
     setNotice(null);
+    if (removed.length) onDeleteJobFiles?.(removed);
   }
 
   function removeItem(id: string) {
     if (working) return;
+    const victim = itemsRef.current.find((it) => it.id === id);
     setItems((prev) => {
       const next = prev.filter((it) => it.id !== id);
       persist(next);
       return next;
     });
+    if (victim) onDeleteJobFiles?.([victim]);
   }
 
   async function cancelItem(it: QueueItem) {

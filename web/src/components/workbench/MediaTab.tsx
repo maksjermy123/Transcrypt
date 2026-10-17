@@ -22,6 +22,9 @@ import {
   watchJobToCompletion,
   clearActiveJob,
   cancelActiveJob,
+  deleteEngineFiles,
+  collectQueueFilesForDelete,
+  purgeTabEngineFiles,
   type EngineProgress,
   type MediaAction,
   type TaskResult,
@@ -42,6 +45,8 @@ export function MediaTab() {
   const [resultName, setResultName] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
   const [jobNote, setJobNote] = useState<string | null>(null);
+  // Отдельная заметка восстановления: её крестик чистит кеш и файлы на диске движка
+  const [restoreNote, setRestoreNote] = useState<string | null>(null);
   const [downloadError, setDownloadError] = useState<string | null>(null);
 
   /** Вытаскиваем имя файла из URL /api/download?file=/path/to/file.mp4 */
@@ -76,10 +81,21 @@ export function MediaTab() {
       setResultName(r.name || "output.bin");
       setPhase("done");
       const when = r.at ? new Date(r.at).toLocaleString() : "";
-      setJobNote(t("Восстановлен последний готовый файл{when}.", { when: when ? t("(от {d})", { d: when }) : "" }));
+      setRestoreNote(t("Восстановлен последний готовый файл{when}.", { when: when ? t("(от {d})", { d: when }) : "" }));
     } catch {
       /* ignore */
     }
+  }
+
+  /** Крестик на баннере восстановления: кеш сбрасывается, файлы вкладки на диске движка удаляются. */
+  async function discardRestoredMedia() {
+    setRestoreNote(null);
+    try {
+      localStorage.removeItem("transcrypt.lastMedia");
+    } catch {
+      /* ignore */
+    }
+    await purgeTabEngineFiles("media", ["transcrypt.mediaJobs"]);
   }
 
   // ═══ Восстановление фоновой задачи при возврате на вкладку ═══
@@ -207,12 +223,16 @@ export function MediaTab() {
     setPhase("idle");
     setProgressLog([]);
     setJobNote(null);
+    setRestoreNote(null);
     setDownloadError(null);
     try {
       localStorage.removeItem("transcrypt.lastMedia");
     } catch {
       /* ignore */
     }
+    // «Убрать из показа» — это и чистка диска: файлы задач медиа, на которые
+    // больше не ссылается ни одна запись списка, удаляются с движка
+    void purgeTabEngineFiles("media", ["transcrypt.mediaJobs"]);
   }
   // reset() доступен из карточки последнего файла ниже
 
@@ -327,6 +347,19 @@ export function MediaTab() {
       )}
 
       {/* Баннер восстановления фоновой задачи / результата */}
+      {restoreNote && (
+        <div className="mb-5 p-3 rounded-xl border border-[#7c5bf5]/30 bg-[#7c5bf5]/10 text-sm text-[#cfc2ff] flex items-start gap-3">
+          <History className="w-4 h-4 mt-0.5 flex-shrink-0" />
+          <span className="flex-1">{restoreNote}</span>
+          <button
+            onClick={() => void discardRestoredMedia()}
+            className="p-1 rounded-md hover:bg-white/10 flex-shrink-0"
+            title={t("Скрыть и очистить: результат больше не восстановится, а его файлы на диске движка будут удалены")}
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
       {jobNote && (
         <div className="mb-5 p-3 rounded-xl border border-[#7c5bf5]/30 bg-[#7c5bf5]/10 text-sm text-[#cfc2ff] flex items-start gap-3">
           <History className="w-4 h-4 mt-0.5 flex-shrink-0" />
@@ -367,6 +400,11 @@ export function MediaTab() {
         cancelJob={cancelJobById}
         onItemDone={onMediaItemDone}
         storageKey="transcrypt.mediaJobs"
+        onDeleteJobFiles={(removed) => {
+          // Удаление записи из списка — скачанный файл с движка тоже убираем
+          const { paths, job_ids } = collectQueueFilesForDelete(removed);
+          if (paths.length || job_ids.length) void deleteEngineFiles({ paths, job_ids });
+        }}
         startLabel={t("Скачать")}
         runningLabel={t("Скачиваем…")}
         openLabel={t("Открыть")}
@@ -374,22 +412,13 @@ export function MediaTab() {
           const r = it.result || {};
           if (!r.file) return null;
           return (
-            <span className="flex gap-1.5">
-              <button
-                onClick={() => void downloadQueueItemFile(it, update)}
-                className="px-2.5 py-1.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 text-xs font-medium inline-flex items-center gap-1"
-              >
-                <Download className="w-3 h-3" />
-                {t("Скачать")}
-              </button>
-              <button
-                onClick={() => window.open(engineFileUrl(r.file), "_blank", "noopener")}
-                title={t("Открыть файл напрямую")}
-                className="px-2.5 py-1.5 rounded-lg bg-[#1b2334] hover:bg-[#263147] text-xs font-medium"
-              >
-                ↗
-              </button>
-            </span>
+            <button
+              onClick={() => void downloadQueueItemFile(it, update)}
+              className="px-2.5 py-1.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 text-xs font-medium inline-flex items-center gap-1"
+            >
+              <Download className="w-3 h-3" />
+              {t("Скачать")}
+            </button>
           );
         }}
         footerNote={

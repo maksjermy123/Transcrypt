@@ -26,6 +26,9 @@ import {
   watchJobToCompletion,
   clearActiveJob,
   cancelActiveJob,
+  deleteEngineFiles,
+  enginePathFromUrl,
+  collectQueueFilesForDelete,
   type EngineProgress,
   type TaskResult,
 } from "@/lib/engine-bridge";
@@ -106,6 +109,9 @@ function MediaConverter() {
   const [resultName, setResultName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [jobNote, setJobNote] = useState<string | null>(null);
+  // Отдельная заметка восстановления: её крестик чистит кеш и удаляет файл с диска движка
+  const [restoreNote, setRestoreNote] = useState<string | null>(null);
+  const [restoredConvertPath, setRestoredConvertPath] = useState<string | null>(null);
   const [downloadError, setDownloadError] = useState<string | null>(null);
 
   /** Вытаскиваем имя файла из URL /api/download?file=... */
@@ -138,14 +144,27 @@ function MediaConverter() {
       if (!r?.file) return;
       setResultFile(r.file);
       setResultName(r.name || "output");
+      setRestoredConvertPath(enginePathFromUrl(r.file));
       const when = r.at ? new Date(r.at).toLocaleString() : "";
-      setJobNote(t("Восстановлен последний готовый файл{when}.", { when: when ? t("(от {d})", { d: when }) : "" }));
+      setRestoreNote(t("Восстановлен последний готовый файл{when}.", { when: when ? t("(от {d})", { d: when }) : "" }));
     } catch {
       /* ignore */
     }
   }
 
-  // ═══ Восстановление фоновой задачи (слот прошлых сессий) ═══
+  /** Крестик на баннере восстановления: кеш сбрасывается, файл удаляется с диска движка. */
+  async function discardRestoredConvert() {
+    setRestoreNote(null);
+    try {
+      localStorage.removeItem("transcrypt.lastConvert");
+    } catch {
+      /* ignore */
+    }
+    if (restoredConvertPath) {
+      await deleteEngineFiles({ paths: [restoredConvertPath] });
+      setRestoredConvertPath(null);
+    }
+  }
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -386,27 +405,18 @@ function MediaConverter() {
           const r = it.result || {};
           if (r.file) {
             return (
-              <span className="flex gap-1.5">
-                <button
-                  onClick={() => {
-                    downloadEngineFile(r.file, r.name || "output").catch((e: any) => {
-                      console.error(e);
-                      update({ result: { ...r, downloadError: e?.message ?? t("Не удалось скачать файл") } });
-                    });
-                  }}
-                  className="px-2.5 py-1.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 text-xs font-medium inline-flex items-center gap-1"
-                >
-                  <Download className="w-3 h-3" />
-                  {t("Скачать")}
-                </button>
-                <button
-                  onClick={() => window.open(engineFileUrl(r.file), "_blank", "noopener")}
-                  title={t("Открыть файл напрямую")}
-                  className="px-2.5 py-1.5 rounded-lg bg-[#1b2334] hover:bg-[#263147] text-xs font-medium"
-                >
-                  ↗
-                </button>
-              </span>
+              <button
+                onClick={() => {
+                  downloadEngineFile(r.file, r.name || "output").catch((e: any) => {
+                    console.error(e);
+                    update({ result: { ...r, downloadError: e?.message ?? t("Не удалось скачать файл") } });
+                  });
+                }}
+                className="px-2.5 py-1.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 text-xs font-medium inline-flex items-center gap-1"
+              >
+                <Download className="w-3 h-3" />
+                {t("Скачать")}
+              </button>
             );
           }
           if (r.data) {
@@ -427,9 +437,27 @@ function MediaConverter() {
             ? t("Записи конвертируются по очереди на движке (нативный ffmpeg) — страница должна оставаться открытой, порядок соответствует списку.")
             : t("Записи конвертируются по очереди через ffmpeg.wasm в браузере — страница должна оставаться открытой; готовые файлы скачиваются автоматически.")
         }
+        onDeleteJobFiles={(removed) => {
+          // Удаление записи из списка — сконвертированный файл с движка тоже убираем
+          const { paths } = collectQueueFilesForDelete(removed);
+          if (paths.length) void deleteEngineFiles({ paths });
+        }}
       />
 
       {/* Слот фоновой задачи прошлых сессий: баннеры, прогресс, результат */}
+      {restoreNote && !busy && (
+        <div className="glass-card rounded-2xl p-4 border border-[#7c5bf5]/30 flex items-start gap-3">
+          <History className="w-4 h-4 mt-0.5 text-[#a78bfa] flex-shrink-0" />
+          <span className="text-sm text-[#cfc2ff] flex-1">{restoreNote}</span>
+          <button
+            onClick={() => void discardRestoredConvert()}
+            className="p-0.5 rounded hover:bg-white/10 flex-shrink-0"
+            title={t("Скрыть и очистить: результат больше не восстановится, а его файл на диске движка будет удалён")}
+          >
+            <X className="w-4 h-4 text-muted-foreground" />
+          </button>
+        </div>
+      )}
       {jobNote && !busy && (
         <div className="glass-card rounded-2xl p-4 border border-[#7c5bf5]/30 flex items-start gap-3">
           <History className="w-4 h-4 mt-0.5 text-[#a78bfa] flex-shrink-0" />
@@ -727,6 +755,9 @@ function DocConverter() {
   const [progressText, setProgressText] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [jobNote, setJobNote] = useState<string | null>(null);
+  // Отдельная заметка восстановления: её крестик чистит кеш и удаляет файл с диска движка
+  const [restoreNote, setRestoreNote] = useState<string | null>(null);
+  const [restoredDocPath, setRestoredDocPath] = useState<string | null>(null);
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [resultFile, setResultFile] = useState<string | null>(null);
   const [resultName, setResultName] = useState("");
@@ -761,10 +792,25 @@ function DocConverter() {
       if (!r?.file) return;
       setResultFile(r.file);
       setResultName(r.name || "output");
+      setRestoredDocPath(enginePathFromUrl(r.file));
       const when = r.at ? new Date(r.at).toLocaleString() : "";
-      setJobNote(t("Восстановлен последний готовый файл{when}.", { when: when ? t("(от {d})", { d: when }) : "" }));
+      setRestoreNote(t("Восстановлен последний готовый файл{when}.", { when: when ? t("(от {d})", { d: when }) : "" }));
     } catch {
       /* ignore */
+    }
+  }
+
+  /** Крестик на баннере восстановления: кеш сбрасывается, файл удаляется с диска движка. */
+  async function discardRestoredDoc() {
+    setRestoreNote(null);
+    try {
+      localStorage.removeItem("transcrypt.lastConvert");
+    } catch {
+      /* ignore */
+    }
+    if (restoredDocPath) {
+      await deleteEngineFiles({ paths: [restoredDocPath] });
+      setRestoredDocPath(null);
     }
   }
 
@@ -1003,27 +1049,18 @@ function DocConverter() {
           const r = it.result || {};
           if (!r.file) return null;
           return (
-            <span className="flex gap-1.5">
-              <button
-                onClick={() => {
-                  downloadEngineFile(r.file, r.name || "output").catch((e: any) => {
-                    console.error(e);
-                    update({ result: { ...r, downloadError: e?.message ?? t("Не удалось скачать файл") } });
-                  });
-                }}
-                className="px-2.5 py-1.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 text-xs font-medium inline-flex items-center gap-1"
-              >
-                <Download className="w-3 h-3" />
-                {t("Скачать")}
-              </button>
-              <button
-                onClick={() => window.open(engineFileUrl(r.file), "_blank", "noopener")}
-                title={t("Открыть файл напрямую")}
-                className="px-2.5 py-1.5 rounded-lg bg-[#1b2334] hover:bg-[#263147] text-xs font-medium"
-              >
-                ↗
-              </button>
-            </span>
+            <button
+              onClick={() => {
+                downloadEngineFile(r.file, r.name || "output").catch((e: any) => {
+                  console.error(e);
+                  update({ result: { ...r, downloadError: e?.message ?? t("Не удалось скачать файл") } });
+                });
+              }}
+              className="px-2.5 py-1.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 text-xs font-medium inline-flex items-center gap-1"
+            >
+              <Download className="w-3 h-3" />
+              {t("Скачать")}
+            </button>
           );
         }}
         footerNote={
@@ -1031,9 +1068,27 @@ function DocConverter() {
             ? t("Записи конвертируются по очереди на движке — страница должна оставаться открытой, порядок соответствует списку.")
             : t("Без движка конвертируются только текстовые форматы (TXT/MD/CSV/JSON) — готовые файлы скачиваются автоматически. Word и PDF требуют запущенный движок.")
         }
+        onDeleteJobFiles={(removed) => {
+          // Удаление записи из списка — сконвертированный файл с движка тоже убираем
+          const { paths } = collectQueueFilesForDelete(removed);
+          if (paths.length) void deleteEngineFiles({ paths });
+        }}
       />
 
       {/* Слот фоновой задачи прошлых сессий: баннеры, прогресс, результат */}
+      {restoreNote && !busy && (
+        <div className="glass-card rounded-2xl p-4 border border-[#7c5bf5]/30 flex items-start gap-3">
+          <History className="w-4 h-4 mt-0.5 text-[#a78bfa] flex-shrink-0" />
+          <span className="text-sm text-[#cfc2ff] flex-1">{restoreNote}</span>
+          <button
+            onClick={() => void discardRestoredDoc()}
+            className="p-0.5 rounded hover:bg-white/10 flex-shrink-0"
+            title={t("Скрыть и очистить: результат больше не восстановится, а его файл на диске движка будет удалён")}
+          >
+            <X className="w-4 h-4 text-muted-foreground" />
+          </button>
+        </div>
+      )}
       {jobNote && !busy && (
         <div className="glass-card rounded-2xl p-4 border border-[#7c5bf5]/30 flex items-start gap-3">
           <History className="w-4 h-4 mt-0.5 text-[#a78bfa] flex-shrink-0" />

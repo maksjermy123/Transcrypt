@@ -265,6 +265,82 @@ def _prune_jobs():
         JOBS.pop(jid, None)
 
 
+def _file_param_from_url(ref: str) -> str:
+    """«/api/download?file=%2Fpath%2Fa.mp4» → «/path/a.mp4» (уже развёрнутый)."""
+    if not isinstance(ref, str) or not ref:
+        return ""
+    if ref.startswith("/api/download?file="):
+        try:
+            return urllib.parse.unquote(ref[len("/api/download?file="):])
+        except Exception:
+            return ""
+    return ref
+
+
+def _job_file_paths(job: dict):
+    """Все файлы на диске, относящиеся к задаче: вход (upload/скачанное
+    медиа) и выходы (результат). Используется эндпоинтом /api/files/delete,
+    когда пользователь очищает кеш вкладки (крестик на восстановленном
+    результате / удаление записи из очереди)."""
+    out = []
+    params = job.get("params") or {}
+    fp = params.get("file_path")
+    if isinstance(fp, str) and fp:
+        out.append(fp)
+    result = job.get("result") or {}
+    if isinstance(result, dict):
+        for key in ("file", "media_file"):
+            v = result.get(key)
+            if isinstance(v, str) and v:
+                out.append(v)
+        files = result.get("files")
+        if isinstance(files, dict):
+            for v in files.values():
+                if isinstance(v, str) and v:
+                    out.append(v)
+    return [_file_param_from_url(x) for x in out if _file_param_from_url(x)]
+
+
+def _delete_engine_files(paths, job_ids):
+    """Удаление файлов задач внутри OUTPUT_DIR (защита: только файлы,
+    лежащие в web_output; сам jobs.json не удаляется никогда).
+    Возвращает {deleted, errors, skipped}."""
+    root = os.path.realpath(OUTPUT_DIR)
+    candidates = set()
+    with JOBS_LOCK:
+        for jid in job_ids or []:
+            job = JOBS.get(str(jid))
+            if job:
+                candidates.update(_job_file_paths(job))
+    for p in paths or []:
+        if isinstance(p, str) and p:
+            candidates.add(_file_param_from_url(p))
+
+    deleted, errors, skipped = [], [], 0
+    for p in candidates:
+        try:
+            rp = os.path.realpath(p)
+            if not os.path.isfile(rp):
+                continue
+            if os.path.basename(rp) == "jobs.json" or not (
+                os.path.dirname(rp) == root or rp.startswith(root + os.sep)
+            ):
+                skipped += 1
+                continue
+            os.remove(rp)
+            deleted.append(rp)
+        except Exception as e:
+            errors.append(f"{p}: {e}")
+
+    # Записи удалённых задач выкидываем из журнала — они больше не имеют файлов
+    if job_ids:
+        with JOBS_LOCK:
+            for jid in job_ids:
+                JOBS.pop(str(jid), None)
+        _save_jobs()
+    return {"deleted": len(deleted), "errors": errors, "skipped": skipped}
+
+
 def make_job_logger(job):
     """Логгер конкретной задачи: пишет в её прогресс и зеркалит в глобальный
     progress_state, чтобы legacy-клиенты (/api/progress) тоже видели активность."""
@@ -390,6 +466,11 @@ def task_transcribe(data: dict, log, worker=None) -> dict:
     source_type = "unknown"
     detected_lang = lang
     saved_media_files = []
+    # Файл, скачанный движком для этой задачи (URL без субтитров → аудио).
+    # Возвращается в result.media_file — чтобы клиент мог удалить его с диска
+    # (кнопки «очистить кеш вкладки»). Для локального файла путь и так лежит
+    # в params.file_path задачи.
+    downloaded_media_file = None
 
     # ─── URL CASE ───
     if url.startswith("http"):
@@ -440,6 +521,7 @@ def task_transcribe(data: dict, log, worker=None) -> dict:
                 progress_callback=dl_callback
             )
             log(f"✅ Аудио скачано: {os.path.basename(media_path)}", stage="Медиа скачано", percent=60)
+            downloaded_media_file = media_path
 
             if save_audio:
                 saved_media_files.append(media_path)
@@ -520,7 +602,7 @@ def task_transcribe(data: dict, log, worker=None) -> dict:
 
     log("✅ Транскрибация успешно завершена!", stage="Готово", percent=100)
 
-    return {
+    result = {
         "status": "success",
         "source": source_type,
         "detected_language": detected_lang,
@@ -533,6 +615,9 @@ def task_transcribe(data: dict, log, worker=None) -> dict:
             "json": f"/api/download?file={urllib.parse.quote(json_path)}",
         }
     }
+    if downloaded_media_file:
+        result["media_file"] = downloaded_media_file
+    return result
 
 
 def task_media(data: dict, log, worker=None) -> dict:
@@ -763,7 +848,7 @@ class EngineHTTPRequestHandler(BaseHTTPRequestHandler):
 
         self.send_json({
             "status": "ok",
-            "version": "1.3.8",
+            "version": "1.3.9",
             "jobs": True,  # Job API: фоновые задачи, переживающие закрытие вкладки
             "queue": True,  # очереди задач + видимый статус «В очереди»
             "parallel_heavy": HEAVY_PARALLEL,  # сколько тяжёлых задач идёт одновременно
@@ -826,6 +911,8 @@ class EngineHTTPRequestHandler(BaseHTTPRequestHandler):
                 self.handle_upload()
             elif path == "/api/jobs":
                 self.handle_job_create()
+            elif path == "/api/files/delete":
+                self.handle_files_delete()
             elif path.startswith("/api/jobs/") and path.endswith("/cancel"):
                 self.handle_job_cancel(path[len("/api/jobs/"):-len("/cancel")])
             elif path == "/api/stop":
@@ -1017,6 +1104,25 @@ class EngineHTTPRequestHandler(BaseHTTPRequestHandler):
             self.send_error_json("Задача не найдена (журнал очищен или движок перезапускался)", 404)
             return
         self.send_json(snap)
+
+    def handle_files_delete(self):
+        """Удаление файлов задач с диска движка (≥ 1.3.9).
+        Тело: {"paths": ["/path/…" | "/api/download?file=…"], "job_ids": […]}.
+        Пути вне web_output и jobs.json игнорируются. Нужен вкладкам для кнопки
+        «закрыть восстановленный результат» и «удалить из списка» — иначе файлы
+        задач копятся на диске бесконечно."""
+        try:
+            data = self.read_json_body()
+        except Exception:
+            self.send_error_json("Ожидается JSON-тело", 400)
+            return
+        paths = data.get("paths") if isinstance(data.get("paths"), list) else []
+        job_ids = data.get("job_ids") if isinstance(data.get("job_ids"), list) else []
+        if not paths and not job_ids:
+            self.send_error_json("Не указаны paths или job_ids", 400)
+            return
+        res = _delete_engine_files(paths, job_ids)
+        self.send_json({"status": "ok", **res})
 
     def handle_job_cancel(self, job_id):
         with JOBS_LOCK:

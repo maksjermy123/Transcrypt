@@ -26,7 +26,7 @@ import type { EngineHealth } from "@/lib/engine-bridge";
 import { useI18n, type Lang } from "@/lib/i18n";
 
 /** Последняя версия движка, которую поддерживает сайт. */
-export const LATEST_ENGINE_VERSION = "1.3.8";
+export const LATEST_ENGINE_VERSION = "1.3.9";
 
 export type EngineUpdateReason = "no-jobs" | "no-queue" | "no-docs" | "outdated";
 
@@ -119,7 +119,7 @@ const REASONS: Record<
   },
   outdated: {
     title: (v) => `Движок ${v || "1.2.0"} — доступно обновление до ${LATEST_ENGINE_VERSION}`,
-    why: `В 1.3.5–${LATEST_ENGINE_VERSION}: понятные сообщения, когда YouTube отклоняет скачивание, а cookies из браузеров прочитать не удалось (Chrome/Edge блокируют и шифруют cookie-базу — вместо технических «Failed to decrypt with DPAPI» / «Could not copy Chrome cookie database» теперь честное объяснение и подсказки) + кнопка «Обновить yt-dlp» прямо в Настройках — без PowerShell и терминала. ГЛАВНОЕ в 1.3.8: починено «Requested format is not available», когда на одном компьютере скачивание работает, а на другом нет — движок теперь ставит решатель YouTube-проверок (EJS) и JS-рантайм deno прямо в своё окружение (раньше они зависели от того, что случайно установлено в системе). Сообщения больше не советуют обновлять yt-dlp, если он уже последней версии, а предупреждения yt-dlp пишутся в лог движка. Обновите движок той же командой установки — займёт 1–3 минуты.`,
+    why: `В 1.3.5–${LATEST_ENGINE_VERSION}: понятные сообщения, когда YouTube отклоняет скачивание, а cookies из браузеров прочитать не удалось (Chrome/Edge блокируют и шифруют cookie-базу — вместо технических «Failed to decrypt with DPAPI» / «Could not copy Chrome cookie database» теперь честное объяснение и подсказки) + кнопка «Обновить yt-dlp» прямо в Настройках — без PowerShell и терминала. ГЛАВНОЕ в 1.3.8: починено «Requested format is not available», когда на одном компьютере скачивание работает, а на другом нет — движок теперь ставит решатель YouTube-проверок (EJS) и JS-рантайм deno прямо в своё окружение (раньше они зависели от того, что случайно установлено в системе). В 1.3.9: крестики «скрыть восстановленный результат» и «удалить из списка» теперь удаляют файлы задач с диска движка (новый эндпоинт /api/files/delete) — папка web_output больше не растёт бесконечно. Обновите движок той же командой установки — займёт 1–3 минуты.`,
     tone: "sky",
   },
 };

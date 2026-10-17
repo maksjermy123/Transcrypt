@@ -34,6 +34,27 @@ export function Workbench({ onExit }: { onExit: () => void }) {
   const [checking, setChecking] = useState(true);
   const [showBanner, setShowBanner] = useState(true);
 
+  // Последняя активная вкладка восстанавливается после перезагрузки страницы:
+  // перезагрузка из «Медиа» возвращает в «Медиа», а не в «Транскрипцию».
+  // Эффект вместо ленивого useState — иначе SSR-кадр разошёлся бы с клиентом.
+  useEffect(() => {
+    try {
+      const v = localStorage.getItem("transcrypt.activeTab");
+      if (v && TABS.some((x) => x.id === v)) setTab(v as WorkTab);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  function switchTab(id: WorkTab) {
+    setTab(id);
+    try {
+      localStorage.setItem("transcrypt.activeTab", id);
+    } catch {
+      /* ignore */
+    }
+  }
+
   // Авто-пинг локального движка при загрузке
   // Гистерезис: «движок online» ставится сразу при первом успехе, а «движка нет» —
   // только после 3 неудачных опросов ПОДРЯД. Один медленный/пропавший ответ
@@ -109,7 +130,7 @@ export function Workbench({ onExit }: { onExit: () => void }) {
               return (
                 <button
                   key={t2.id}
-                  onClick={() => setTab(t2.id)}
+                  onClick={() => switchTab(t2.id)}
                   title={t(t2.hint)}
                   className={`px-2 xl:px-2.5 2xl:px-3 py-1.5 rounded-lg text-[13px] font-medium transition-colors inline-flex items-center gap-1.5 flex-shrink-0 ${
                     tab === t2.id
