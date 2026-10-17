@@ -3,16 +3,11 @@
 import { motion } from "framer-motion";
 import {
   Download,
-  FileAudio,
   FileVideo,
   Loader2,
   Music,
-  Trash2,
-  Upload,
   Link2,
   Sparkles,
-  Film,
-  Settings2,
   ServerOff,
   History,
   X,
@@ -25,7 +20,6 @@ import {
   mediaViaEngine,
   downloadEngineFile,
   engineFileUrl,
-  uploadFileToEngine,
   resumeActiveJobWithRetry,
   watchJobToCompletion,
   clearActiveJob,
@@ -39,14 +33,8 @@ import { useI18n } from "@/lib/i18n";
 const ACTIONS: { id: MediaAction; label: string; icon: React.ComponentType<{ className?: string }>; desc: string }[] = [
   { id: "download_video", label: "Скачать видео", icon: FileVideo, desc: "Скачать видео с YouTube/TikTok/Instagram в MP4 через yt-dlp (impersonate Chrome)" },
   { id: "download_audio", label: "Скачать аудио", icon: Music, desc: "Извлечь аудиодорожку в MP3 192 kbps" },
-  { id: "clean_audio", label: "Очистить аудио", icon: Sparkles, desc: "Шумоподавление + нормализация громкости через ffmpeg" },
-  { id: "hardsub", label: "Вшить субтитры", icon: Film, desc: "Hardsub: рендер субтитров прямо в кадры видео. Субтитры берутся с YouTube или генерируются через Whisper" },
 ];
 
-/** Аудио/видео расширения — для drag&drop, когда браузер не дал MIME-тип (macOS). */
-const AV_EXT_RE = /\.(mp3|wav|m4a|m4b|aac|ogg|oga|opus|flac|wma|mp4|m4v|mkv|webm|mov|avi|flv|wmv|ts|3gp)$/i;
-const VIDEO_EXT_RE = /\.(mp4|m4v|mkv|webm|mov|avi|flv|wmv|ts|3gp)$/i;
-const SUB_EXT_RE = /\.(srt|vtt)$/i;
 
 export function MediaTab() {
   const { t } = useI18n();
@@ -55,13 +43,6 @@ export function MediaTab() {
   const supportsQueue = !!engineServerHealth?.queue; // движок ≥ 1.2.0: очереди задач
   const [action, setAction] = useState<MediaAction>("download_video");
   const [url, setUrl] = useState("");
-  const [localFile, setLocalFile] = useState<File | null>(null);
-  const [localFileName, setLocalFileName] = useState("");
-  const [subtitleFile, setSubtitleFile] = useState<File | null>(null);
-  const [subtitleName, setSubtitleName] = useState("");
-  const [subLang, setSubLang] = useState("ru");
-  // Перевод субтитров при вшивании ("-" — без перевода)
-  const [subTranslate, setSubTranslate] = useState("-");
   const [phase, setPhase] = useState<"idle" | "running" | "done" | "error">("idle");
   const [progress, setProgress] = useState(0);
   const [progressText, setProgressText] = useState("");
@@ -71,8 +52,6 @@ export function MediaTab() {
   const [error, setError] = useState<string | null>(null);
   const [jobNote, setJobNote] = useState<string | null>(null);
   const [downloadError, setDownloadError] = useState<string | null>(null);
-  const [dragFileOver, setDragFileOver] = useState(false);
-  const [dragSubOver, setDragSubOver] = useState(false);
 
   /** Вытаскиваем имя файла из URL /api/download?file=/path/to/file.mp4 */
   function fileNameFromUrl(fileUrl: string): string {
@@ -229,10 +208,6 @@ export function MediaTab() {
   }
 
   function reset() {
-    setLocalFile(null);
-    setLocalFileName("");
-    setSubtitleFile(null);
-    setSubtitleName("");
     setResultFile(null);
     setResultName("");
     setProgress(0);
@@ -249,63 +224,13 @@ export function MediaTab() {
     }
   }
 
-  function pickLocalFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    setLocalFile(f);
-    setLocalFileName(f.name);
-    setResultFile(null);
-    setError(null);
-  }
-
-  function pickSubtitleFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    setSubtitleFile(f);
-    setSubtitleName(f.name);
-  }
-
-  // ─── Drag&drop: macOS часто отдаёт файлы с пустым MIME — доверяем и расширению ───
-  function dropMediaFile(e: React.DragEvent) {
-    e.preventDefault();
-    setDragFileOver(false);
-    const f = e.dataTransfer.files?.[0];
-    if (!f) return;
-    const mime = (f.type || "").toLowerCase();
-    if (action === "clean_audio") {
-      const avOk = mime.startsWith("audio/") || mime.startsWith("video/") || AV_EXT_RE.test(f.name);
-      if (!avOk) {
-        setError(t("Перетащите аудио- или видео-файл (MP3, WAV, M4A, MP4, MKV…)"));
-        return;
-      }
-    } else if (!(mime.startsWith("video/") || VIDEO_EXT_RE.test(f.name))) {
-      setError(t("Для вшивания субтитров перетащите видео (MP4, MKV, WebM, MOV…)"));
-      return;
-    }
-    setLocalFile(f);
-    setLocalFileName(f.name);
-    setResultFile(null);
-    setError(null);
-  }
-
-  function dropSubtitleFile(e: React.DragEvent) {
-    e.preventDefault();
-    setDragSubOver(false);
-    const f = e.dataTransfer.files?.[0];
-    if (!f) return;
-    const mime = (f.type || "").toLowerCase();
-    if (!(mime.startsWith("text/") || SUB_EXT_RE.test(f.name))) {
-      setError(t("Перетащите файл субтитров .srt или .vtt"));
-      return;
-    }
-    setSubtitleFile(f);
-    setSubtitleName(f.name);
-    setError(null);
-  }
-
   async function run() {
     if (!engineServerOnline) {
       setError(t("Медиа-операции требуют локальный движок (engine_server.py). Запустите его и обновите страницу."));
+      return;
+    }
+    if (!url.trim()) {
+      setError(t("Вставьте ссылку на видео (YouTube, TikTok, Instagram…)"));
       return;
     }
 
@@ -319,34 +244,12 @@ export function MediaTab() {
     setDownloadError(null);
 
     try {
-      let filePath: string | undefined;
-      let subFilePath: string | undefined;
-
-      // Для clean/hardsub: загружаем локальный файл если есть
-      if (action === "clean_audio" || action === "hardsub") {
-        if (localFile) {
-          setProgressText(t("Загружаем файл на движок…"));
-          setProgress(15);
-          filePath = await uploadFileToEngine(localFile, localFileName);
-          setProgress(25);
-        }
-        if (action === "hardsub" && subtitleFile) {
-          setProgressText(t("Загружаем субтитры на движок…"));
-          subFilePath = await uploadFileToEngine(subtitleFile, subtitleName);
-          setProgress(30);
-        }
-      }
-
       setProgressText(t("Запуск обработки на движке…"));
       const result = await mediaViaEngine(
         {
           action,
           url: url.trim() || undefined,
-          file_path: filePath,
-          sub_file: subFilePath,
-          sub_lang: subLang,
           model: selectedModel ?? "base",
-          translate_to: action === "hardsub" ? subTranslate : undefined,
         },
         (p: EngineProgress) => {
           setProgress(p.percent);
@@ -362,7 +265,7 @@ export function MediaTab() {
             setProgressLog((l) => [...l.slice(-50), ...p.log.slice(-3)]);
           }
         },
-        url.trim() || localFileName || action
+        url.trim() || action
       );
 
       if (result.status !== "success" || !result.file) {
@@ -400,10 +303,6 @@ export function MediaTab() {
     window.open(engineFileUrl(resultFile), "_blank", "noopener");
   }
 
-  const needsUrl = action === "download_video" || action === "download_audio" || !localFile;
-  const needsFile = action === "clean_audio" || action === "hardsub";
-  const needsSubs = action === "hardsub";
-
   // Если движок недоступен — показываем предупреждение
   if (!engineServerOnline) {
     return (
@@ -411,7 +310,7 @@ export function MediaTab() {
         <div className="mb-6">
           <h1 className="text-2xl font-bold mb-1">{t("Медиа операции")}</h1>
           <p className="text-sm text-muted-foreground">
-            {t("Скачать видео/аудио, очистить аудио, вшить субтитры — через локальный движок с yt-dlp и ffmpeg.")} </p>
+            {t("Скачать видео/аудио с YouTube, TikTok и других площадок — через локальный движок с yt-dlp.")} </p>
         </div>
 
         <div className="glass-card rounded-2xl p-8 text-center">
@@ -420,7 +319,7 @@ export function MediaTab() {
           </div>
           <h3 className="font-semibold mb-2">{t("Локальный движок не найден")}</h3>
           <p className="text-sm text-muted-foreground mb-5 max-w-md mx-auto">
-            {t("Медиа-операции (скачивание с YouTube, очистка аудио, hardsub) работают через локальный Python-движок — только yt-dlp умеет обходить блокировки YouTube и только ffmpeg поддерживает все форматы.")} </p>
+            {t("Медиа-операции (скачивание с YouTube и других площадок) работают через локальный Python-движок — только yt-dlp умеет обходить блокировки YouTube.")} </p>
           <div className="text-left max-w-md mx-auto bg-[#0b0f19] rounded-xl p-4 font-mono text-xs space-y-1">
             <div className="text-muted-foreground">{t("# Установить зависимости (один раз):")}</div>
             <div className="text-foreground">pip install -r requirements.txt</div>
@@ -479,7 +378,7 @@ export function MediaTab() {
       )}
 
       {/* Выбор действия */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-2 gap-2 mb-6">
         {ACTIONS.map((a) => {
           const Icon = a.icon;
           const active = action === a.id;
@@ -507,16 +406,13 @@ export function MediaTab() {
       </div>
 
       {/* URL input */}
-      {needsUrl && (
-        <motion.div
+      <motion.div
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           className="glass-card rounded-2xl p-5 mb-4"
         >
           <label className="text-xs text-muted-foreground mb-2 block">
-            {action === "clean_audio" || action === "hardsub"
-              ? t("URL источника (опционально, если нет локального файла)")
-              : t("Ссылка на видео")}
+            {t("Ссылка на видео")}
           </label>
           <div className="flex gap-2">
             <div className="flex-1 relative">
@@ -530,173 +426,7 @@ export function MediaTab() {
               />
             </div>
           </div>
-        </motion.div>
-      )}
-
-      {/* Local file input (для clean/hardsub) */}
-      {needsFile && (
-        <motion.div
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          onDragOver={(e) => {
-            e.preventDefault();
-            setDragFileOver(true);
-          }}
-          onDragLeave={() => setDragFileOver(false)}
-          onDrop={dropMediaFile}
-          className="glass-card rounded-2xl p-5 mb-4"
-        >
-          <label className="text-xs text-muted-foreground mb-2 block">
-            {action === "clean_audio" ? t("Аудио-файл (или используйте URL выше) — можно перетащить сюда") : t("Видео-файл (или используйте URL выше) — можно перетащить сюда")}
-          </label>
-          {!localFile ? (
-            <label className={`block border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors ${
-              dragFileOver ? "border-[#7c5bf5] bg-[#7c5bf5]/5" : "border-[#263147] hover:border-[#7c5bf5]/50"
-            }`}>
-              <input
-                type="file"
-                accept={action === "clean_audio" ? "audio/*,video/*" : "video/*"}
-                hidden
-                onChange={pickLocalFile}
-              />
-              <Upload className={`w-6 h-6 mx-auto mb-2 ${dragFileOver ? "text-[#7c5bf5]" : "text-muted-foreground"}`} />
-              <span className="text-sm text-foreground">
-                {dragFileOver ? t("Отпустите файл здесь") : t("Нажмите или перетащите файл")}
-              </span>
-            </label>
-          ) : (
-            <div className="flex items-center gap-3">
-              <FileAudio className="w-5 h-5 text-[#7c5bf5]" />
-              <span className="text-sm flex-1 truncate">{localFileName}</span>
-              <button
-                onClick={() => {
-                  setLocalFile(null);
-                  setLocalFileName("");
-                }}
-                className="p-1.5 rounded-lg text-muted-foreground hover:text-red-400"
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
-            </div>
-          )}
-        </motion.div>
-      )}
-
-      {/* Subtitle file (для hardsub) */}
-      {needsSubs && (
-        <motion.div
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          onDragOver={(e) => {
-            e.preventDefault();
-            setDragSubOver(true);
-          }}
-          onDragLeave={() => setDragSubOver(false)}
-          onDrop={dropSubtitleFile}
-          className="glass-card rounded-2xl p-5 mb-4"
-        >
-          <label className="text-xs text-muted-foreground mb-2 block">
-            {t("Файл субтитров (.srt или .vtt) — опционально, можно перетащить")} </label>
-          {!subtitleFile ? (
-            <label className={`block border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors ${
-              dragSubOver ? "border-[#7c5bf5] bg-[#7c5bf5]/5" : "border-[#263147] hover:border-[#7c5bf5]/50"
-            }`}>
-              <input
-                type="file"
-                accept=".srt,.vtt,text/vtt,application/x-subrip"
-                hidden
-                onChange={pickSubtitleFile}
-              />
-              <Film className={`w-6 h-6 mx-auto mb-2 ${dragSubOver ? "text-[#7c5bf5]" : "text-muted-foreground"}`} />
-              <span className="text-sm text-foreground">
-                {dragSubOver ? t("Отпустите файл здесь") : t("Загрузите .srt или .vtt")}
-              </span>
-              <span className="block text-xs text-muted-foreground mt-1">
-                {t("Если не указать, движок попробует скачать субтитры с YouTube (язык:")} {subLang}{t("), а если их нет — сгенерирует через Whisper.")} </span>
-            </label>
-          ) : (
-            <div className="flex items-center gap-3">
-              <Film className="w-5 h-5 text-[#7c5bf5]" />
-              <span className="text-sm flex-1 truncate">{subtitleName}</span>
-              <button
-                onClick={() => {
-                  setSubtitleFile(null);
-                  setSubtitleName("");
-                }}
-                className="p-1.5 rounded-lg text-muted-foreground hover:text-red-400"
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
-            </div>
-          )}
-
-          <div className="mt-3 flex flex-wrap items-center gap-4">
-            <div className="flex items-center gap-2">
-              <Settings2 className="w-3.5 h-3.5 text-muted-foreground" />
-              <label className="text-xs text-muted-foreground">{t("Язык субтитров для поиска на YouTube:")}</label>
-              <select
-                value={subLang}
-                onChange={(e) => setSubLang(e.target.value)}
-                className="bg-[#0b0f19] border border-[#263147] rounded-lg px-2 py-1 text-xs"
-              >
-                <option value="ru">{t("Русский")}</option>
-                <option value="en">English</option>
-                <option value="uk">{t("Українська")}</option>
-                <option value="de">Deutsch</option>
-                <option value="fr">Français</option>
-                <option value="es">Español</option>
-                <option value="it">Italiano</option>
-                <option value="pt">Português</option>
-                <option value="pl">Polski</option>
-                <option value="tr">Türkçe</option>
-              </select>
-            </div>
-            <div className="flex items-center gap-2">
-              <label className="text-xs text-muted-foreground">{t("Перевести субтитры на:")}</label>
-              <select
-                value={subTranslate}
-                onChange={(e) => setSubTranslate(e.target.value)}
-                className="bg-[#0b0f19] border border-[#263147] rounded-lg px-2 py-1 text-xs"
-              >
-                <option value="-">{t("Без перевода")}</option>
-                <option value="ru">{t("Русский")}</option>
-                <option value="en">English</option>
-                <option value="uk">{t("Українська")}</option>
-                <option value="de">Deutsch</option>
-                <option value="fr">Français</option>
-                <option value="es">Español</option>
-                <option value="it">Italiano</option>
-                <option value="pt">Português</option>
-                <option value="pl">Polski</option>
-                <option value="tr">Türkçe</option>
-              </select>
-            </div>
-          </div>
-        </motion.div>
-      )}
-
-      {/* ffmpeg отсутствует на движке — hardsub/очистка не сработают */}
-      {(action === "hardsub" || action === "clean_audio") && engineServerHealth && engineServerHealth.ffmpeg === false && (
-        <div className="glass-card rounded-2xl p-4 mb-4 border-amber-500/30 bg-amber-500/5">
-          <div className="flex items-start gap-3">
-            <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
-            <div className="flex-1">
-              <p className="text-sm text-amber-200 font-medium mb-1">{t("На движке нет ffmpeg")}</p>
-              <p className="text-xs text-amber-200/80 leading-relaxed">
-                {t("Эта операция требует ffmpeg. Переустановите движок той же командой — установщик скачает его автоматически. Или вручную:")} <code className="font-mono">brew install ffmpeg</code> (macOS) /{" "}
-                <code className="font-mono">apt install ffmpeg</code> (Linux).
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Описание конвейера hardsub */}
-      {action === "hardsub" && (
-        <div className="text-xs text-muted-foreground mb-4 px-1 leading-relaxed">
-          {t("Конвейер: скачивание видео → субтитры (YouTube или Whisper) → перевод (по желанию) →")}{" "}
-          <span className="text-foreground">{t("умное вшивание")}</span>{t(": субтитры внизу по центру с отступами и обводкой — не перекрывают центр кадра, размер шрифта подстраивается под разрешение.")} </div>
-      )}
+      </motion.div>
 
       {/* Run button */}
       <div className="flex justify-center mb-5">
@@ -715,8 +445,6 @@ export function MediaTab() {
               <Sparkles className="w-4 h-4" />
               {action === "download_video" && t("Скачать видео")}
               {action === "download_audio" && t("Скачать аудио")}
-              {action === "clean_audio" && t("Очистить аудио")}
-              {action === "hardsub" && t("Вшить субтитры")}
             </>
           )}
         </button>

@@ -1,47 +1,49 @@
 "use client";
 
-import { Sun, Moon } from "lucide-react";
+import { Sun, Moon, SunMoon } from "lucide-react";
 import { useSyncExternalStore } from "react";
-import { getStoredTheme, toggleTheme, type Theme } from "@/lib/theme";
+import {
+  cycleThemeSetting,
+  getStoredSetting,
+  setThemeSetting,
+  subscribeTheme,
+  type ThemeSetting,
+} from "@/lib/theme";
 import { useI18n } from "@/lib/i18n";
 
-/** Мини-стор темы: localStorage — источник истины, подписка — для перерисовки кнопки. */
-const themeStore = {
-  listeners: new Set<() => void>(),
-  subscribe(l: () => void) {
-    this.listeners.add(l);
-    return () => {
-      this.listeners.delete(l);
-    };
-  },
-  emit() {
-    this.listeners.forEach((l) => l());
-  },
-  snapshot: (): Theme => getStoredTheme(),
-  serverSnapshot: (): Theme => "dark",
+/**
+ * Переключатель темы в шапке: три состояния — «как в системе» (auto),
+ * тёмная, светлая. В auto тема следует настройке компьютера (в т.ч.
+ * автоматической смене день/ночь по времени суток) и меняется на лету.
+ */
+const TITLE_KEYS: Record<ThemeSetting, string> = {
+  auto: "Тема: как в системе (меняется сама по настройкам компьютера)",
+  dark: "Тема: тёмная",
+  light: "Тема: светлая",
 };
 
-/** Переключатель день/ночь в шапке. Тема применяется к <html> и переживает перезагрузку. */
 export function ThemeToggle() {
-  const theme = useSyncExternalStore(
-    (l) => themeStore.subscribe(l),
-    themeStore.snapshot,
-    themeStore.serverSnapshot
+  const setting = useSyncExternalStore<ThemeSetting>(
+    subscribeTheme,
+    getStoredSetting,
+    () => "auto" as ThemeSetting
   );
-  const isLight = theme === "light";
   const { t } = useI18n();
 
   return (
     <button
-      onClick={() => {
-        toggleTheme();
-        themeStore.emit();
-      }}
-      title={isLight ? t("Включить тёмную тему") : t("Включить светлую тему")}
-      aria-label={isLight ? t("Включить тёмную тему") : t("Включить светлую тему")}
+      onClick={() => setThemeSetting(cycleThemeSetting(setting))}
+      title={t(TITLE_KEYS[setting])}
+      aria-label={t(TITLE_KEYS[setting])}
       className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-[#1b2334] transition-colors"
     >
-      {isLight ? <Moon className="w-[18px] h-[18px]" /> : <Sun className="w-[18px] h-[18px]" />}
+      {setting === "auto" ? (
+        <SunMoon className="w-[18px] h-[18px]" />
+      ) : setting === "dark" ? (
+        <Moon className="w-[18px] h-[18px]" />
+      ) : (
+        <Sun className="w-[18px] h-[18px]" />
+      )}
     </button>
   );
 }

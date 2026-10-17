@@ -12,8 +12,6 @@ const COMPARISON: Array<{ feature: string; browser: string | boolean; engine: st
   { feature: "Транскрипция по URL (YouTube, TikTok, Instagram)", browser: false, engine: true },
   { feature: "Скачивание видео с YouTube/TikTok", browser: false, engine: true },
   { feature: "Скачивание аудио (MP3 192k)", browser: false, engine: true },
-  { feature: "Очистка аудио от шума", browser: false, engine: true },
-  { feature: "Вшивание субтитров (hardsub)", browser: false, engine: true },
   { feature: "Конвертация медиа (mp4↔mp3, wav, ogg)", browser: "Через ffmpeg.wasm (медленно)", engine: "Через нативный ffmpeg (быстро)" },
   { feature: "Конвертация изображений (PNG/JPEG/WebP)", browser: true, engine: true },
   { feature: "Конвертация текстовых файлов", browser: true, engine: true },
@@ -56,7 +54,7 @@ export function ChoiceStep({ onSelect }: { onSelect: (mode: Mode) => void }) {
           icon={Server}
           title={t("С локальным движком")}
           subtitle={t("Полный функционал")}
-          desc={t("Установка локального Python-движка (~800 МБ). Доступны URL-задачи (YouTube, TikTok), скачивание, очистка аудио, hardsub, нативный Whisper (в 5+ раз быстрее).")}
+          desc={t("Установка локального Python-движка (~800 МБ). Доступны URL-задачи (YouTube, TikTok), скачивание видео и аудио, нативный Whisper (в 5+ раз быстрее).")}
           cta={t("Установить движок →")}
           recommended={true}
           onSelect={() => onSelect("engine")}

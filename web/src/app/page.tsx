@@ -31,15 +31,12 @@ export default function Home() {
   const ready = mounted && completed && !!selectedModel;
   const view = ready ? "workbench" : "onboarding";
 
-  // Домашняя страница (приветствие/онбординг) — всегда ТЁМНАЯ: это брендовая
-  // идентичность. Сохранённый выбор темы не трогаем — при входе в рабочую
-  // область возвращаем то, что выбрал пользователь.
+  // Тема везде одна (включая онбординг): auto следует настройке компьютера
+  // (prefers-color-scheme — ОС меняет оформление по времени суток), иначе
+  // сохранённый ручной выбор. Без ветвления — иначе онбординг мигал бы
+  // тёмным на светлой системе и наоборот.
   useEffect(() => {
-    if (view === "onboarding") {
-      applyTheme("dark");
-    } else {
-      applyTheme(getStoredTheme());
-    }
+    applyTheme(getStoredTheme());
   }, [view]);
 
   if (!mounted) {
