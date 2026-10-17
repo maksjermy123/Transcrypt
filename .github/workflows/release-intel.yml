@@ -1,0 +1,66 @@
+name: Release desktop Intel
+
+# macOS Intel (x86_64) сборка VoxPaperAi Pro.
+#
+# Почему отдельный workflow: раннеры macos-13 (последние Intel-машины GitHub)
+# безнадёжно стоят в очереди (дефицит/вывод из эксплуатации). Вместо этого
+# собираем на macos-14 (Apple Silicon) с x86_64-Python под Rosetta 2 —
+# PyInstaller собирает бандл под архитектуру интерпретатора, поэтому
+# результат — честное x86_64-приложение для Intel-маков.
+#
+# Особенности окружения x64-python на Apple Silicon:
+#  - PyPI-torch для macOS всегда CPU-only; последний x86_64-колесо — torch 2.2.2
+#    (ставим явно), а под него — numpy<2 (torch 2.2 несовместим с numpy 2).
+#  - Дальше requirements.txt доустанавливает остальное x86_64-колёсами.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Тег существующего релиза для загрузки артефакта"
+        required: true
+        default: "v1.0.0"
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build-intel:
+    runs-on: macos-14 # Apple Silicon; x86_64-Python работает под Rosetta 2
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          architecture: "x64" # x86_64-Python → PyInstaller соберёт x86_64-приложение
+
+      - name: Install torch 2.2.2 + numpy<2 (последние x86_64-колёса macOS)
+        run: |
+          python -m pip install --upgrade pip
+          pip install "torch==2.2.2" "numpy<2"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install -r requirements-build.txt
+
+      - name: Build with PyInstaller
+        run: python -m PyInstaller --noconfirm --clean "VoxPaperAi_Pro.spec"
+
+      - name: Package (macOS)
+        run: |
+          cd dist
+          zip -qry "../VoxPaperAi-Pro-macos-intel.zip" "VoxPaperAi Pro.app"
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event_name == 'push' && github.ref_name || github.event.inputs.tag }}
+          draft: false
+          prerelease: false
+          files: VoxPaperAi-Pro-macos-intel.zip

@@ -33,8 +33,9 @@ jobs:
             asset: VoxPaperAi-Pro-windows-x64.zip
           - os: macos-14 # Apple Silicon (arm64)
             asset: VoxPaperAi-Pro-macos-apple-silicon.zip
-          - os: macos-13 # Intel (x86_64)
-            asset: VoxPaperAi-Pro-macos-intel.zip
+          # macOS Intel собирается отдельно: .github/workflows/release-intel.yml —
+          # раннеры macos-13 (Intel) подолгу стоят в очереди, поэтому x86_64-сборка
+          # идёт на macos-14 под Rosetta (x64-Python) и загружается в тот же релиз.
           - os: ubuntu-latest
             asset: VoxPaperAi-Pro-linux-x64.tar.gz
 
