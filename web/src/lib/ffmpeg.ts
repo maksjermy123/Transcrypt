@@ -5,8 +5,6 @@
  * Используется для:
  *  - медиа-конвертации в «Конвертере» (когда локальный движок не запущен)
  *  - извлечения аудиодорожки из видео
- *  - очистки аудио (шумоподавление, нормализация)
- *  - вшивания субтитров в видео (hardsub)
  *
  * ─── Как грузится (важно, здесь легко сломать) ───
  * 1. Лёгкие UMD-обёртки @ffmpeg/ffmpeg (ffmpeg.js + воркер-чанк 814.ffmpeg.js,
@@ -177,101 +175,6 @@ export async function extractAudioForWhisper(
     ["-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le"],
     onLog
   );
-}
-
-/**
- * Очистка аудио: шумоподавление, нормализация, удаление тихих участков (по желанию).
- * @param data аудиофайл
- * @param inputName с расширением
- * @param outputName с расширением
- * @param mode "denoise" | "normalize" | "both"
- */
-export async function cleanAudio(
-  data: Uint8Array,
-  inputName: string,
-  outputName: string,
-  mode: "denoise" | "normalize" | "both" = "both",
-  onLog?: (msg: string) => void
-): Promise<Uint8Array> {
-  const filters: string[] = [];
-  if (mode === "denoise" || mode === "both") {
-    filters.push("afftdn=nr=12"); // Шумоподавление (n=12 — умеренное)
-    filters.push("highpass=f=80"); // Срез НЧ (гул)
-    filters.push("lowpass=f=12000"); // Срез ВЧ (шипение)
-  }
-  if (mode === "normalize" || mode === "both") {
-    filters.push("loudnorm=I=-16:LRA=11:TP=-1.5"); // EBU R128 нормализация громкости
-  }
-  const af = filters.join(",");
-
-  return convertMedia(
-    data,
-    inputName,
-    outputName,
-    ["-af", af],
-    onLog
-  );
-}
-
-/**
- * Вшивание субтитров в видео (hardsub).
- * @param videoData видеофайл (Uint8Array)
- * @param subtitlesContent содержимое .srt/.vtt файла (string)
- * @param outputName имя выходного файла (с расширением .mp4)
- */
-export async function hardsubVideo(
-  videoData: Uint8Array,
-  subtitlesContent: string,
-  videoName: string,
-  outputName: string = "hardsubbed.mp4",
-  fontSize: number = 24,
-  onLog?: (msg: string) => void
-): Promise<Uint8Array> {
-  const ffmpeg = await getFFmpeg();
-
-  if (onLog) {
-    ffmpeg.on("log", ({ message }: { message: string }) => onLog(message));
-  }
-
-  await ffmpeg.writeFile(videoName, videoData);
-
-  // Записываем субтитры в виртуальную FS
-  const subName = "subs.ass";
-  // ffmpeg.wasm может читать .srt/.vtt напрямую, но фильтр subtitles требует абсолютный путь
-  // Используем простую .srt-загрузку через filter_complex
-  const srtName = "subs.srt";
-  await ffmpeg.writeFile(srtName, new TextEncoder().encode(subtitlesContent));
-
-  // Простейший hardsub — фильтр subtitles рендерит субтитры прямо в кадры
-  //_force_style позволяет настроить шрифт/размер
-  const filter = `subtitles=${srtName}:force_style='FontSize=${fontSize},OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=0'`;
-
-  await ffmpeg.exec([
-    "-i",
-    videoName,
-    "-vf",
-    filter,
-    "-c:a",
-    "copy",
-    "-c:v",
-    "libx264",
-    "-preset",
-    "ultrafast",
-    outputName,
-  ]);
-
-  const result = await ffmpeg.readFile(outputName);
-
-  try {
-    await ffmpeg.deleteFile(videoName);
-    await ffmpeg.deleteFile(srtName);
-    await ffmpeg.deleteFile(outputName);
-    await ffmpeg.deleteFile(subName);
-  } catch {
-    /* ignore */
-  }
-
-  return result as Uint8Array;
 }
 
 /**

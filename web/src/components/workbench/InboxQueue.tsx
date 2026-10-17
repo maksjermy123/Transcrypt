@@ -204,6 +204,268 @@ export function parseQueueUrls(text: string): string[] {
   return out;
 }
 
+// ─── Проверка ссылок: это страница с видео или нет ───
+//
+// Задача: отсечь ссылки, которые НЕ ведут на конкретный ролик, ДО отправки
+// в движок — иначе пользователь ждёт минутами и получает непонятную ошибку
+// yt-dlp (классика: ссылка на YouTube Studio или на канал вместо видео).
+//
+// Вердикты:
+//  "video"     — уверенно страница конкретного видео/аудио (есть ID ролика);
+//  "unknown"   — проверить нельзя (сокращённые ссылки, живые эфиры, чужие домены,
+//                yt-dlp поддерживает 1000+ сайтов) — пропускаем как раньше;
+//  "not-video" — уверенно НЕ видео (канал, студия, плейлист, профиль, поиск,
+//                разделы каталога) — отклоняем с объяснением.
+
+export type UrlHint = "youtube-page" | "playlist" | "profile" | "section";
+export type UrlVerdict = "video" | "unknown" | { verdict: "not-video"; hint: UrlHint };
+
+const YT_VIDEO_ID = "[A-Za-z0-9_-]{11}";
+
+export function classifyVideoUrl(raw: string): UrlVerdict {
+  let u: URL;
+  try {
+    u = new URL(raw);
+  } catch {
+    return "unknown";
+  }
+  if (u.protocol !== "http:" && u.protocol !== "https:") return "unknown";
+  const host = u.hostname.toLowerCase().replace(/^www\./, "");
+  const path = u.pathname;
+
+  // ── YouTube (вкл. studio./m./music./nocookie/youtu.be) ──
+  if (/(^|\.)youtube\.com$|(^|\.)youtube-nocookie\.com$|^youtu\.be$/.test(host)) {
+    if (host === "studio.youtube.com") return { verdict: "not-video", hint: "youtube-page" };
+    if (host === "youtu.be") {
+      const id = path.replace(/^\//, "").split("/")[0];
+      return new RegExp(`^${YT_VIDEO_ID}`).test(id)
+        ? "video"
+        : path === "/" || path === ""
+        ? { verdict: "not-video", hint: "youtube-page" }
+        : "unknown";
+    }
+    if (path === "/watch")
+      return new RegExp(`[?&]v=${YT_VIDEO_ID}`).test(u.search)
+        ? "video"
+        : { verdict: "not-video", hint: "youtube-page" };
+    if (
+      new RegExp(`^/(?:shorts|embed|live|v)/${YT_VIDEO_ID}`).test(path) &&
+      !path.includes("videoseries")
+    )
+      return "video";
+    if (
+      /^(?:\/(?:playlist|channel|c|user|results|feed|gaming|trending)(?:\/|$)|\/@|\/(?:embed\/)?videoseries(?:\/|$))/.test(
+        path
+      ) ||
+      path === "/" ||
+      path === ""
+    )
+      return {
+        verdict: "not-video",
+        hint: path.startsWith("/playlist") || path.includes("videoseries") ? "playlist" : "youtube-page",
+      };
+    return "unknown";
+  }
+
+  // ── VK / VK Видео ──
+  if (/(^|\.)vk\.com$|(^|\.)vk\.ru$|(^|\.)vkvideo\.(?:ru|com)$/.test(host)) {
+    if (/^\/(?:video|clip)[-_\d]/.test(path)) return "video";
+    if (path === "/video" || path === "/clip")
+      return /z=(?:video|clip)[-_\d]/.test(u.search)
+        ? "video"
+        : { verdict: "not-video", hint: "section" };
+    if (/^\/video_ext\.php$/.test(path))
+      return /[?&](?:oid|id)=/.test(u.search) ? "video" : { verdict: "not-video", hint: "section" };
+    return { verdict: "not-video", hint: "profile" };
+  }
+
+  // ── Rutube ──
+  if (/(^|\.)rutube\.ru$/.test(host)) {
+    if (/^\/video\/[0-9a-f]{32}\/?$/i.test(path)) return "video";
+    if (/^\/(?:play\/embed|shorts)\/[0-9a-z-]+\/?$/i.test(path)) return "video";
+    if (/^(?:\/$|\/(?:channel|hashtags?|search|feed|categor\w*)\b)/.test(path))
+      return { verdict: "not-video", hint: "profile" };
+    return "unknown";
+  }
+
+  // ── Дзен ──
+  if (/(^|\.)dzen\.ru$/.test(host)) {
+    if (/^\/video\/watch\/[^/]+/.test(path)) return "video";
+    if (/^\/shorts\/[^/]+/.test(path)) return "video";
+    return { verdict: "not-video", hint: "profile" };
+  }
+
+  // ── TikTok (вкл. vt.tiktok.com — сокращения не проверить) ──
+  if (/(^|\.)tiktok\.com$/.test(host)) {
+    if (/^\/@[A-Za-z0-9._-]+\/(?:video|photo)\/\d+/.test(path)) return "video";
+    if (/^\/@[A-Za-z0-9._-]+\/?$/.test(path)) return { verdict: "not-video", hint: "profile" };
+    if (/^\/(?:discover|tag|music|hashtag)/.test(path)) return { verdict: "not-video", hint: "section" };
+    return "unknown";
+  }
+
+  // ── Twitch ──
+  if (/(^|\.)twitch\.tv$/.test(host)) {
+    if (host.startsWith("clips.")) return path.length > 1 ? "video" : { verdict: "not-video", hint: "section" };
+    if (/^\/videos\/\d+/.test(path)) return "video";
+    if (/^\/[^/]+\/clip\//.test(path)) return "video";
+    return "unknown"; // канал может быть в прямом эфире
+  }
+
+  // ── Vimeo ──
+  if (/(^|\.)vimeo\.com$/.test(host)) {
+    if (/^\/(?:video\/)?\d+(?:$|[/?])/.test(path)) return "video";
+    if (/^\/user\d+\/review\//.test(path)) return "video";
+    if (/^(?:\/$|\/(?:channels?|groups?|categories?|album|showcase|user\d+))/.test(path))
+      return { verdict: "not-video", hint: "profile" };
+    return "unknown";
+  }
+
+  // ── Одноклассники ──
+  if (/(^|\.)ok\.ru$/.test(host)) {
+    if (/^\/(?:video|videoembed|live)\/\d+/.test(path)) return "video";
+    if (/\/status\/\d+/.test(path)) return "video";
+    if (path === "/" || path === "") return { verdict: "not-video", hint: "section" };
+    return "unknown";
+  }
+
+  // ── Bilibili (b23.tv — сокращения не проверить) ──
+  if (/(^|\.)bilibili\.com$/.test(host)) {
+    if (/^\/video\/[A-Za-z0-9]+/.test(path)) return "video";
+    if (/^\/bangumi\/play\//.test(path)) return "video";
+    if (/^\/(?:space|user)/.test(path)) return { verdict: "not-video", hint: "profile" };
+    return "unknown";
+  }
+  if (host === "b23.tv") return "unknown";
+
+  // ── X / Twitter (t.co — сокращения) ──
+  if (/(^|\.)x\.com$|(^|\.)twitter\.com$/.test(host)) {
+    if (/^\/[^/]+\/status(?:es)?\/\d+/.test(path)) return "video";
+    if (/^\/(?:home|explore|search|notifications|messages|settings|hashtag)\b/.test(path))
+      return { verdict: "not-video", hint: "section" };
+    return { verdict: "not-video", hint: "profile" };
+  }
+  if (host === "t.co") return "unknown";
+
+  // ── Facebook / fb.watch ──
+  if (/(^|\.)facebook\.com$/.test(host)) {
+    if (/^\/reel\/\d+/.test(path)) return "video";
+    if (/^\/watch\/?/.test(path) && /[?&]v=\d+/.test(u.search)) return "video";
+    if (/^\/(?:video\.php|watch\/live)/.test(path) && /[?&]v=\d+/.test(u.search)) return "video";
+    if (/^\/[^/]+\/videos\//.test(path)) return "video";
+    if (/^\/(?:reel|watch|videos)(?:\/|$)/.test(path)) return { verdict: "not-video", hint: "section" };
+    return "unknown";
+  }
+  if (host === "fb.watch") return "unknown";
+
+  // ── Instagram ──
+  if (/(^|\.)instagram\.com$/.test(host)) {
+    if (/^\/(?:reel|reels|p|tv)\/[A-Za-z0-9_-]+/.test(path)) return "video";
+    if (/^\/(?:explore|accounts)\b/.test(path)) return { verdict: "not-video", hint: "section" };
+    if (/^\/[A-Za-z0-9._]+\/?$/.test(path)) return { verdict: "not-video", hint: "profile" };
+    return "unknown";
+  }
+
+  // ── Threads ──
+  if (/(^|\.)threads\.(?:net|com)$/.test(host)) {
+    if (/^\/[^/]+\/post\/[A-Za-z0-9_-]+/.test(path)) return "video";
+    if (/^\/@/.test(path)) return { verdict: "not-video", hint: "profile" };
+    return "unknown";
+  }
+
+  // ── SoundCloud ──
+  if (/(^|\.)soundcloud\.com$/.test(host)) {
+    if (host.startsWith("on.")) return "unknown"; // on.soundcloud.com — сокращения
+    if (/^\/(?:discover|search|charts|feed|you|upload)\b/.test(path))
+      return { verdict: "not-video", hint: "section" };
+    if (/^\/[^/]+\/[^/?#]+/.test(path)) return "video"; // исполнитель/трек
+    return { verdict: "not-video", hint: "profile" };
+  }
+
+  // ── Loom ──
+  if (/(^|\.)loom\.com$/.test(host)) {
+    if (/^\/(?:share|embed|recordings?)\/[A-Za-z0-9]+/.test(path)) return "video";
+    return "unknown";
+  }
+
+  // ── Rumble ──
+  if (/(^|\.)rumble\.com$/.test(host)) {
+    if (/^\/(?:embed|v)\/[A-Za-z0-9]+/.test(path)) return "video";
+    if (/^\/[A-Za-z0-9]+-[^/]*\.html/.test(path)) return "video";
+    if (/^\/(?:user|search|browse)\b/.test(path)) return { verdict: "not-video", hint: "section" };
+    return "unknown";
+  }
+
+  // ── Odysee ──
+  if (/(^|\.)odysee\.com$/.test(host)) {
+    if (/^\/@[^/]+\/[^/]+/.test(path)) return "video";
+    return "unknown";
+  }
+
+  // ── BitChute ──
+  if (/(^|\.)bitchute\.com$/.test(host)) {
+    if (/^\/(?:video|embed)\/[A-Za-z0-9]+/.test(path)) return "video";
+    if (/^\/channel\//.test(path)) return { verdict: "not-video", hint: "profile" };
+    return "unknown";
+  }
+
+  // ── Streamable ──
+  if (/(^|\.)streamable\.com$/.test(host)) {
+    if (/^\/[A-Za-z0-9]+\/?$/.test(path)) return "video";
+    return "unknown";
+  }
+
+  // ── Reddit (redd.it — сокращения) ──
+  if (/(^|\.)reddit\.com$/.test(host)) {
+    if (/^\/r\/[^/]+\/comments\/[A-Za-z0-9]+/.test(path)) return "video";
+    if (/^\/(?:user|r)\//.test(path)) return { verdict: "not-video", hint: "profile" };
+    return "unknown";
+  }
+  if (host === "redd.it") return "unknown";
+
+  // ── Dailymotion / dai.ly ──
+  if (/(^|\.)dailymotion\.com$/.test(host)) {
+    if (/^\/(?:video|embed\/video)\/[A-Za-z0-9]+/.test(path)) return "video";
+    if (/^(?:\/$|\/(?:search|profile|channel|playlist)\b)/.test(path))
+      return { verdict: "not-video", hint: "section" };
+    return "unknown";
+  }
+  if (host === "dai.ly") return path.length > 1 ? "video" : { verdict: "not-video", hint: "section" };
+
+  return "unknown";
+}
+
+/** Короткое отображение ссылки для сообщений (длинные обрезаем). */
+export function shortUrlLabel(u: string, max = 60): string {
+  return u.length > max ? u.slice(0, max - 1) + "…" : u;
+}
+
+/** Тексты-объяснения для ссылок «не на видео» (по подсказке классификатора). */
+function notVideoNotice(url: string, hint: UrlHint, t: (k: string, p?: Record<string, string | number>) => string): string {
+  const shown = shortUrlLabel(url);
+  switch (hint) {
+    case "youtube-page":
+      return t(
+        "Ссылка {url} пропущена — это страница канала или студии YouTube, а не видео. Нужна ссылка на конкретный ролик (youtube.com/watch?v=… или youtu.be/…).",
+        { url: shown }
+      );
+    case "playlist":
+      return t(
+        "Ссылка {url} пропущена — это плейлист, а не отдельное видео. Нужна ссылка на конкретный ролик (youtube.com/watch?v=…).",
+        { url: shown }
+      );
+    case "profile":
+      return t(
+        "Ссылка {url} пропущена — это страница профиля или канала, а не конкретное видео. Откройте нужный ролик и скопируйте ссылку на него.",
+        { url: shown }
+      );
+    case "section":
+      return t(
+        "Ссылка {url} пропущена — это раздел сайта (поиск или каталог), а не видео. Откройте нужный ролик и скопируйте ссылку на него.",
+        { url: shown }
+      );
+  }
+}
+
 /** Лимит на файл, из которого вытягиваем ссылки (больше — скорее всего не текстовый список). */
 const MAX_BATCH_TEXT_BYTES = 10 * 1024 * 1024;
 
@@ -389,15 +651,24 @@ export function InboxQueue({
   // ─── Приём: файлы и ссылки ───
 
   const addUrlItems = useCallback(
-    (urls: string[]) => {
-      if (!urls.length) return 0;
+    (urls: string[]): { added: number; notVideo: Array<{ url: string; hint: UrlHint }> } => {
+      // Пре-валидация: ссылки «не на видео» (студия/каналы/плейлисты/профили)
+      // не попадают в очередь — пользователь сразу получает объяснение.
+      const notVideo: Array<{ url: string; hint: UrlHint }> = [];
+      const good = urls.filter((u) => {
+        const v = classifyVideoUrl(u);
+        if (v === "video" || v === "unknown") return true;
+        notVideo.push({ url: u, hint: v.hint });
+        return false;
+      });
+      if (!good.length) return { added: 0, notVideo };
       const existing = new Set(
         itemsRef.current.filter((it) => it.kind === "url").map((it) => it.label)
       );
-      const fresh = urls.filter((u) => !existing.has(u));
+      const fresh = good.filter((u) => !existing.has(u));
       if (!fresh.length) {
         setNotice(t("Эти ссылки уже есть в списке."));
-        return 0;
+        return { added: 0, notVideo };
       }
       const added: QueueItem[] = fresh.map((u) => ({
         id: nextId(),
@@ -414,7 +685,7 @@ export function InboxQueue({
         persist(next);
         return next;
       });
-      return fresh.length;
+      return { added: fresh.length, notVideo };
     },
     [itemOption, persist, t]
   );
@@ -477,8 +748,10 @@ export function InboxQueue({
             msgs.push(t("В файле {name} ссылок не найдено.", { name: f.name }));
             continue;
           }
-          addUrlItems(urls);
-          msgs.push(t("Из файла {name} извлечено ссылок: {n}.", { name: f.name, n: urls.length }));
+          const { added, notVideo } = addUrlItems(urls);
+          if (added > 0)
+            msgs.push(t("Из файла {name} извлечено ссылок: {n}.", { name: f.name, n: added }));
+          for (const { url, hint } of notVideo) msgs.push(notVideoNotice(url, hint, t));
         } catch {
           msgs.push(t("В файле {name} ссылок не найдено.", { name: f.name }));
         }
@@ -528,11 +801,14 @@ export function InboxQueue({
       setNotice(t("Вставьте ссылки (http:// или https://) — по одной в строке или через пробел."));
       return;
     }
-    const n = addUrlItems(urls);
-    if (n > 0) {
-      setNotice(t("Добавлено ссылок: {n}.", { n }));
+    const { added, notVideo } = addUrlItems(urls);
+    const msgs: string[] = [];
+    if (added > 0) {
+      msgs.push(t("Добавлено ссылок: {n}.", { n: added }));
       setUrlsText("");
     }
+    for (const { url, hint } of notVideo) msgs.push(notVideoNotice(url, hint, t));
+    if (msgs.length) setNotice(msgs.join(" "));
   }
 
   // ─── Запуск ───

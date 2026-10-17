@@ -20,7 +20,7 @@ type WorkTab = "transcribe" | "media" | "convert" | "translate" | "settings" | "
 
 const TABS: { id: WorkTab; label: string; icon: React.ComponentType<{ className?: string }>; hint: string }[] = [
   { id: "transcribe", label: "Транскрипция", icon: Mic, hint: "Whisper превратит голос в текст с таймкодами" },
-  { id: "media", label: "Медиа", icon: FileAudio, hint: "Скачать видео/аудио, очистить аудио, вшить субтитры" },
+  { id: "media", label: "Медиа", icon: FileAudio, hint: "Скачивание видео/аудио по ссылкам через локальный движок" },
   { id: "convert", label: "Конвертер", icon: FileArchive, hint: "Медиа через ffmpeg, изображения, документы" },
   { id: "translate", label: "Перевод", icon: Languages, hint: "Текст и файлы TXT/DOCX/PDF, включая LAYOUT с разметкой" },
   { id: "settings", label: "Настройки", icon: Wrench, hint: "Железо, движок, модели Whisper, переводчик" },
