@@ -5,6 +5,7 @@ from PyQt6.QtCore import Qt, QThread, pyqtSlot
 from src.ui.widgets.file_list import FileListWidget
 from src.core.worker import TaskWorker
 from src.core.subtitles import parse_subtitles
+from src.utils.url_checker import classify_url, not_video_message, NOT_VIDEO, SECTION
 import logging
 import os
 import re
@@ -99,18 +100,22 @@ class TranscriptionTab(QWidget):
         list_actions_layout = QHBoxLayout()
         
         self.btn_paste = QPushButton("📋 Вставить ссылку")
+        self.btn_paste.setObjectName("ghostButton")
         self.btn_paste.clicked.connect(lambda: self.file_list.paste_from_clipboard())
         list_actions_layout.addWidget(self.btn_paste)
 
         self.btn_import_links = QPushButton("📄 Импорт ссылок (.txt)")
+        self.btn_import_links.setObjectName("ghostButton")
         self.btn_import_links.clicked.connect(self.import_links_from_txt)
         list_actions_layout.addWidget(self.btn_import_links)
         
         self.btn_clear = QPushButton("🗑 Очистить список")
+        self.btn_clear.setObjectName("ghostButton")
         self.btn_clear.clicked.connect(lambda: self.file_list.clear())
         list_actions_layout.addWidget(self.btn_clear)
 
         self.btn_clear_logs = QPushButton("🗑 Очистить логи")
+        self.btn_clear_logs.setObjectName("ghostButton")
         self.btn_clear_logs.clicked.connect(self.clear_logs)
         list_actions_layout.addWidget(self.btn_clear_logs)
         
@@ -122,26 +127,27 @@ class TranscriptionTab(QWidget):
         # Force transcription formats regardless of input file type
         self.file_list.set_override_formats(["txt", "docx", "srt", "json", "vtt", "md"])
         self.file_list.files_dropped.connect(self.on_files_dropped)
+        self.file_list.urls_rejected.connect(self.on_urls_rejected)
         # self.file_list.set_format_options(...) # Not needed if overriding
         layout.addWidget(self.file_list)
         
         # --- Buttons ---
         btn_layout = QHBoxLayout()
         self.btn_start = QPushButton("НАЧАТЬ ОБРАБОТКУ")
+        self.btn_start.setObjectName("successButton")
         self.btn_start.clicked.connect(self.start_processing)
-        self.btn_start.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold; padding: 10px;")
         btn_layout.addWidget(self.btn_start)
         
         self.btn_stop = QPushButton("СТОП")
+        self.btn_stop.setObjectName("dangerButton")
         self.btn_stop.clicked.connect(self.stop_processing)
-        self.btn_stop.setStyleSheet("background-color: #f44336; color: white; font-weight: bold; padding: 10px;")
         self.btn_stop.setEnabled(False)
         btn_layout.addWidget(self.btn_stop)
         
         layout.addLayout(btn_layout)
 
         self.queue_status_label = QLabel("Готов к работе")
-        self.queue_status_label.setStyleSheet("color: #6B7280;")
+        self.queue_status_label.setObjectName("statusLabel")
         layout.addWidget(self.queue_status_label)
         
         # --- Log & Progress ---
@@ -200,22 +206,9 @@ class TranscriptionTab(QWidget):
             self.queue_status_label.setText("Готов к работе")
 
     def _extract_urls_from_text(self, text: str) -> list[str]:
-        if not text:
-            return []
-        urls = []
-        for line in text.splitlines():
-            for u in re.findall(r"https?://\S+", line.strip()):
-                u = u.strip().rstrip(").,;\"'")
-                if u.startswith("http"):
-                    urls.append(u)
-        # de-dup, preserve order
-        seen = set()
-        out = []
-        for u in urls:
-            if u not in seen:
-                seen.add(u)
-                out.append(u)
-        return out
+        from src.utils.url_checker import extract_urls_from_text
+
+        return extract_urls_from_text(text or "")
 
     def _extract_urls_from_document(self, path: str) -> list[str]:
         from src.core.translator import Translator
@@ -227,6 +220,7 @@ class TranscriptionTab(QWidget):
         """If user drops a text-like file with links, import URLs as tasks."""
         imported_total = 0
         removed_total = 0
+        rejected_messages: list[str] = []
         importable_exts = {".txt", ".md", ".json", ".csv", ".log", ".xml", ".doc", ".docx", ".odt", ".rtf", ".rtfd", ".pdf"}
         for p in paths:
             if os.path.isfile(p) and os.path.splitext(p)[1].lower() in importable_exts:
@@ -234,8 +228,12 @@ class TranscriptionTab(QWidget):
                     urls = self._extract_urls_from_document(p)
                     if urls:
                         for u in urls:
+                            verdict, hint = classify_url(u)
+                            if verdict == NOT_VIDEO:
+                                rejected_messages.append(not_video_message(u, hint or SECTION))
+                                continue
                             self.file_list.add_file(u)
-                        imported_total += len(urls)
+                            imported_total += 1
                         if self.file_list.remove_by_path(p):
                             removed_total += 1
                     else:
@@ -252,6 +250,22 @@ class TranscriptionTab(QWidget):
 
         if imported_total:
             self.log(f"✅ Импортировано ссылок из документа: {imported_total}")
+        if rejected_messages:
+            self._show_rejected_notice(rejected_messages)
+
+    def on_urls_rejected(self, messages: list):
+        """Ссылки «не на видео» отклонены классификатором при вставке."""
+        for msg in messages:
+            self.log(f"⚠️ {msg}")
+        self._show_rejected_notice(list(messages))
+
+    def _show_rejected_notice(self, messages: list):
+        if not messages:
+            return
+        shown = messages[:4]
+        if len(messages) > len(shown):
+            shown.append(f"… и ещё {len(messages) - len(shown)}")
+        self._notify("\n".join(shown), "warning")
 
     def import_links_from_txt(self):
         try:
@@ -274,10 +288,17 @@ class TranscriptionTab(QWidget):
                 QMessageBox.information(self, "Импорт ссылок", "В файле не найдено ссылок (http/https).")
                 return
             added = 0
+            rejected_messages: list[str] = []
             for u in urls:
+                verdict, hint = classify_url(u)
+                if verdict == NOT_VIDEO:
+                    rejected_messages.append(not_video_message(u, hint or SECTION))
+                    continue
                 if self.file_list.add_file(u) is not False:
                     added += 1
             self.log(f"✅ Импортировано ссылок: {added}")
+            if rejected_messages:
+                self._show_rejected_notice(rejected_messages)
         except Exception as e:
             QMessageBox.warning(self, "Импорт ссылок", f"Ошибка: {e}")
 

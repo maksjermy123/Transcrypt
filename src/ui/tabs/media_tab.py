@@ -73,8 +73,25 @@ class MediaTab(QWidget):
         options_layout.addStretch()
         layout.addWidget(options_group)
         
+        # --- Link Actions ---
+        link_actions_layout = QHBoxLayout()
+        self.btn_paste = QPushButton("📋 Вставить ссылку")
+        self.btn_paste.setObjectName("ghostButton")
+        self.btn_paste.setToolTip("Вставить ссылку на видео из буфера обмена (ссылки на каналы/плейлисты отклоняются с объяснением)")
+        self.btn_paste.clicked.connect(lambda: self.file_list.paste_from_clipboard())
+        link_actions_layout.addWidget(self.btn_paste)
+        
+        self.btn_clear_list = QPushButton("🗑 Очистить список")
+        self.btn_clear_list.setObjectName("ghostButton")
+        self.btn_clear_list.clicked.connect(lambda: self.file_list.clear())
+        link_actions_layout.addWidget(self.btn_clear_list)
+        
+        link_actions_layout.addStretch()
+        layout.addLayout(link_actions_layout)
+        
         # --- File List ---
         self.file_list = FileListWidget()
+        self.file_list.urls_rejected.connect(self.on_urls_rejected)
         layout.addWidget(self.file_list)
         
         # --- Output Directory ---
@@ -91,8 +108,10 @@ class MediaTab(QWidget):
         # --- Controls ---
         control_layout = QHBoxLayout()
         self.btn_start = QPushButton("▶ НАЧАТЬ")
+        self.btn_start.setObjectName("successButton")
         self.btn_start.clicked.connect(self.start_processing)
         self.btn_stop = QPushButton("🛑 СТОП")
+        self.btn_stop.setObjectName("dangerButton")
         self.btn_stop.setEnabled(False)
         self.btn_stop.clicked.connect(self.stop_processing)
         
@@ -103,6 +122,7 @@ class MediaTab(QWidget):
         control_layout.addWidget(self.btn_stop)
         
         self.btn_clear_logs = QPushButton("🗑️ Очистить логи")
+        self.btn_clear_logs.setObjectName("ghostButton")
         self.btn_clear_logs.setToolTip("Очистить окно логов ниже и сбросить очередь")
         self.btn_clear_logs.clicked.connect(self.clear_logs_and_list)
         control_layout.addWidget(self.btn_clear_logs)
@@ -111,7 +131,7 @@ class MediaTab(QWidget):
         layout.addLayout(control_layout)
 
         self.queue_status_label = QLabel("Готов к работе")
-        self.queue_status_label.setStyleSheet("color: #6B7280;")
+        self.queue_status_label.setObjectName("statusLabel")
         layout.addWidget(self.queue_status_label)
         
         # --- Log ---
@@ -214,6 +234,15 @@ class MediaTab(QWidget):
         self.file_list.clear()
         self.progress_bar.setValue(0)
         self.log("✅ Логи и список файлов очищены. Можно добавлять новые задачи.")
+
+    def on_urls_rejected(self, messages: list):
+        """Ссылки «не на видео» отклонены классификатором при вставке."""
+        for msg in messages:
+            self.log(f"⚠️ {msg}")
+        shown = list(messages)[:4]
+        if len(messages) > len(shown):
+            shown.append(f"… и ещё {len(messages) - len(shown)}")
+        self._notify("\n".join(shown), "warning")
 
     def _notify(self, message: str, level: str = "info"):
         main_window = self.window()

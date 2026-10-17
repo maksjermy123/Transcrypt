@@ -20,6 +20,7 @@ import os
 class FileListWidget(QWidget):
     files_dropped = pyqtSignal(list) # Emits list of file paths
     files_rejected = pyqtSignal(list) # Emits list of rejected file paths (due to ext)
+    urls_rejected = pyqtSignal(list) # Emits list of messages: ссылки «не на видео», отклонённые при вставке
     
     def __init__(self):
         super().__init__()
@@ -35,9 +36,14 @@ class FileListWidget(QWidget):
         self.table.setColumnWidth(2, 110)
         self.table.setColumnWidth(3, 110)
         self.table.setColumnWidth(5, 280)
-        self.table.verticalHeader().setDefaultSectionSize(36)
+        self.table.verticalHeader().setDefaultSectionSize(40)
+        self.table.verticalHeader().setVisible(False)
+        self.table.setShowGrid(False)
+        self.table.setAlternatingRowColors(True)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.table.setWordWrap(False)
         
         # Hide Language column by default
         self.table.setColumnHidden(2, True)
@@ -493,12 +499,26 @@ class FileListWidget(QWidget):
                 get_event_log().write("paste_from_clipboard", length=len(text), sample=text[:120])
             except Exception:
                 pass
-            # Check if it's a URL or multiple URLs
-            lines = text.split('\n')
-            for line in lines:
-                line = line.strip()
-                if line.startswith("http"):
-                    self.add_file(line) # add_file handles strings too
+            # Ссылки — в любом месте вставленного текста, не только в начале строки.
+            # КАЖДАЯ ссылка ПЕРЕД добавлением проверяется классификатором:
+            # страницы каналов/студий/плейлистов/профилей отклоняются с объяснением,
+            # чтобы не ждать ошибку yt-dlp после старта.
+            from src.utils.url_checker import extract_urls_from_text, filter_video_urls
+
+            urls, rejected = filter_video_urls(extract_urls_from_text(text))
+            added = 0
+            for url in urls:
+                if self.add_file(url) is not False:
+                    added += 1
+            if rejected:
+                self.urls_rejected.emit(rejected)
+            if added:
+                try:
+                    from src.utils.event_log import get_event_log
+
+                    get_event_log().write("paste_urls_added", added=int(added), rejected=len(rejected))
+                except Exception:
+                    pass
     
     def remove_selected(self):
         rows = sorted(set(index.row() for index in self.table.selectedIndexes()), reverse=True)

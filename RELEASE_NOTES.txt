@@ -1,5 +1,41 @@
 ================================================================================
-  VOXPAPERAI PRO v1.0.0 - RELEASE NOTES
+  VOXPAPERAI PRO v1.0.2 - RELEASE NOTES
+================================================================================
+
+📝 VERSION: 1.0.2
+🗓️  BUILD DATE: October 17, 2026
+🐍 PYTHON: 3.12
+📦 PYQT6: 6.6.1
+✅ STATUS: Production Ready
+
+================================================================================
+🆕 WHAT'S NEW IN v1.0.2
+================================================================================
+
+1. LINK PRE-VALIDATION (same as web app)
+   • Every pasted/imported link is checked BEFORE processing starts
+   • YouTube Studio/channel/playlist pages, profiles and search sections
+     are rejected immediately with a clear explanation
+   • No more waiting minutes for a yt-dlp error on wrong links
+   • Works for clipboard paste (button or Ctrl/Cmd+V) and for links
+     imported from text/document files
+   • New "Paste link" / "Clear list" buttons in the Media tab
+
+2. MODERN REDESIGN (dark + light)
+   • New "Midnight Indigo" dark theme and "Porcelain" light theme
+   • Pill-style tabs with emoji icons, adaptive header with logo and version
+   • Unified button system (primary / success / danger / ghost)
+   • Refined tables (no gridlines, alternating rows, styled headers),
+     inputs with focus ring, modern scrollbars, menus and tooltips
+   • Notifications adapt to the current system theme
+
+3. QUALITY OF LIFE
+   • Last active tab is remembered between app launches
+   • URL extraction from pasted text finds links anywhere in the text
+   • Updated in-app documentation
+
+================================================================================
+  VOXPAPERAI PRO v1.0.0 - RELEASE NOTES (архив)
 ================================================================================
 
 📝 VERSION: 1.0.0

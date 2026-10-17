@@ -28,12 +28,12 @@ class TestVoxPaperUI(unittest.TestCase):
         self.assertEqual(tabs.count(), 6)
         
         expected_tabs = [
-            "Транскрибация", 
-            "Медиа", 
-            "Конвертер", 
-            "Перевод", 
-            "Настройки", 
-            "О программе"
+            "🎙 Транскрибация",
+            "⬇ Медиа",
+            "🔄 Конвертер",
+            "🌐 Перевод",
+            "⚙ Настройки",
+            "ℹ О программе"
         ]
         
         for i, expected_name in enumerate(expected_tabs):
