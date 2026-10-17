@@ -1001,58 +1001,60 @@ export function TranscribeTab({
         </div>
       )}
 
-      {text && (
-        <div className="glass-card rounded-2xl p-5">
-          <div className="flex items-center justify-between gap-2 mb-3">
-            <h3 className="font-semibold text-sm">
-              {translatedText ? t("Полный текст (оригинал)") : t("Полный текст")}
-            </h3>
-            <CopyModesBtn
-              modes={[
-                { id: "plain", label: t("Обычный текст"), get: () => text },
-                {
-                  id: "stamps",
-                  label: t("С таймкодами"),
-                  get: () => (segments.length ? segmentsWithStamps(segments) : text),
-                },
-                {
-                  id: "quotes",
-                  label: t("Цитатами (для конспекта)"),
-                  get: () => (segments.length ? segmentsAsQuotes(segments) : text),
-                },
-              ]}
-            />
-          </div>
-          <p className="text-sm leading-relaxed whitespace-pre-wrap">{text}</p>
-        </div>
-      )}
-
-      {translatedText && (
-        <div className="glass-card rounded-2xl p-5 border-emerald-500/30">
-          <div className="flex items-center justify-between gap-2 mb-3">
+      {(text || translatedText) && (
+        <div className={showingTranslation ? "glass-card rounded-2xl p-5 border-emerald-500/30" : "glass-card rounded-2xl p-5"}>
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
             <h3 className="font-semibold text-sm inline-flex items-center gap-2">
-              <Languages className="w-4 h-4 text-emerald-400" />
-              {t("Перевод —")} {langLabel(targetLang)}
+              {showingTranslation && <Languages className="w-4 h-4 text-emerald-400" />}
+              {showingTranslation
+                ? <>{t("Перевод —")} {langLabel(targetLang)}</>
+                : translatedText
+                  ? t("Полный текст (оригинал)")
+                  : t("Полный текст")}
             </h3>
-            <CopyModesBtn
-              modes={[
-                { id: "plain", label: t("Обычный текст"), get: () => translatedText },
-                {
-                  id: "stamps",
-                  label: t("С таймкодами"),
-                  get: () =>
-                    translatedSegments.length ? segmentsWithStamps(translatedSegments) : translatedText,
-                },
-                {
-                  id: "quotes",
-                  label: t("Цитатами (для конспекта)"),
-                  get: () =>
-                    translatedSegments.length ? segmentsAsQuotes(translatedSegments) : translatedText,
-                },
-              ]}
-            />
+            <div className="flex items-center gap-2">
+              {translatedText && (
+                <div className="flex bg-[#1b2334] rounded-lg p-0.5 text-xs">
+                  <button
+                    onClick={() => setSegView("translation")}
+                    className={`px-2.5 py-1 rounded-md font-medium transition-colors ${
+                      segView === "translation"
+                        ? "bg-gradient-primary text-white"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {t("Перевод")}
+                  </button>
+                  <button
+                    onClick={() => setSegView("original")}
+                    className={`px-2.5 py-1 rounded-md font-medium transition-colors ${
+                      segView === "original"
+                        ? "bg-gradient-primary text-white"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {t("Оригинал")}
+                  </button>
+                </div>
+              )}
+              <CopyModesBtn
+                modes={[
+                  { id: "plain", label: t("Обычный текст"), get: () => viewText },
+                  {
+                    id: "stamps",
+                    label: t("С таймкодами"),
+                    get: () => (viewSegments.length ? segmentsWithStamps(viewSegments) : viewText),
+                  },
+                  {
+                    id: "quotes",
+                    label: t("Цитатами (для конспекта)"),
+                    get: () => (viewSegments.length ? segmentsAsQuotes(viewSegments) : viewText),
+                  },
+                ]}
+              />
+            </div>
           </div>
-          <p className="text-sm leading-relaxed whitespace-pre-wrap">{translatedText}</p>
+          <p className="text-sm leading-relaxed whitespace-pre-wrap">{viewText}</p>
         </div>
       )}
 
