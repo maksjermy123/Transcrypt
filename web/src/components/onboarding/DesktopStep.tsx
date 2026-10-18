@@ -9,6 +9,9 @@ import {
   ShieldCheck,
   Info,
   AlertTriangle,
+  Terminal,
+  Clipboard,
+  ClipboardCheck,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useI18n } from "@/lib/i18n";
@@ -82,6 +85,180 @@ const OS_LABEL: Record<DesktopOs, string> = {
   macos: "macOS",
   linux: "Linux",
 };
+
+/** Единая строка о согласии — завершает инструкции на всех ОС. */
+const CONSENT_KEY =
+  "При первом запуске программа сама попросит согласие с политикой и отказом от ответственности — это обязательно и всегда бывает в начале.";
+
+type InstallStep = {
+  text: string;
+  detail?: string;
+  command?: string;
+  commandTitle?: string;
+  commandHint?: string;
+};
+
+/**
+ * Пошаговые инструкции установки по ОС. Команды вынесены в отдельные
+ * копируемые блоки (CommandBlock) — НИКОГДА не вставляйте команду внутрь
+ * предложения: пользователь скопирует её вместе с пунктуацией и получит
+ * ошибку парсера (реальный кейс: xattr … ").» → zsh parse error).
+ * macOS-факт: с macOS 15 Sequoia правый клик → «Открыть» больше не предлагает
+ * обход Gatekeeper — работают только «Открыть всё равно» в Настройках или
+ * xattr в Терминале.
+ */
+const INSTALL_STEPS: Record<DesktopOs, InstallStep[]> = {
+  windows: [
+    {
+      text: "Распакуйте ZIP: правый клик по скачанному файлу → «Извлечь всё…» → «Извлечь». Не запускайте программу изнутри архива — сначала распакуйте.",
+    },
+    {
+      text: "Откройте появившуюся папку «VoxPaperAi Pro» и запустите «VoxPaperAi Pro» двойным кликом.",
+    },
+    {
+      text: "Если появится синий экран SmartScreen «Система Windows защитила ваш компьютер» — нажмите «Подробнее» → «Выполнить в любом случае».",
+      detail: "Окно появляется потому, что у программы нет платной цифровой подписи. Исходники открыты на GitHub, сборка делается автоматически на GitHub Actions.",
+    },
+    { text: CONSENT_KEY },
+  ],
+  macos: [
+    {
+      text: "Распакуйте ZIP: двойной клик по скачанному файлу — появится «VoxPaperAi Pro.app».",
+    },
+    {
+      text: "Перетащите «VoxPaperAi Pro.app» в папку «Программы» в боковой панели Finder.",
+    },
+    {
+      text: "Откройте приложение двойным кликом. Появится окно «Apple не удалось подтвердить, что файл „VoxPaperAi Pro“ не содержит вредоносного ПО» — это ожидаемо: приложение не подписано платным сертификатом Apple. Снимите карантин (шаг 4) — делается один раз.",
+    },
+    {
+      text: "Снимите карантин одной командой — самый надёжный способ на любой версии macOS:",
+      command: 'xattr -cr "/Applications/VoxPaperAi Pro.app"',
+      commandTitle: "Терминал (Terminal)",
+      commandHint: "Откройте Терминал: Cmd+Space → «Terminal» → Enter. Вставьте команду (Cmd+V) и нажмите Enter. Если Терминал молча напечатал новую строку — всё получилось. Если приложение лежит не в «Программах» — замените путь в команде.",
+    },
+    {
+      text: "Альтернатива без Терминала: Системные настройки → «Конфиденциальность и безопасность» → прокрутите вниз до раздела «Безопасность» → кнопка «Открыть всё равно» → введите пароль.",
+      detail: "В macOS 15 и новее правый клик → «Открыть» больше не предлагает запуск неподписанных приложений — работает только этот раздел настроек.",
+    },
+    {
+      text: "Готово: теперь «VoxPaperAi Pro» открывается обычным двойным кликом. Шаги 3–5 нужны только один раз.",
+    },
+    { text: CONSENT_KEY },
+  ],
+  linux: [
+    {
+      text: "Распакуйте архив командой в Терминале (Ctrl+Alt+T):",
+      command: "tar -xzf ~/Downloads/VoxPaperAi-Pro-linux-x64.tar.gz -C ~/Downloads",
+      commandTitle: "Терминал",
+      commandHint: "Появится папка «VoxPaperAi Pro» в «Загрузках». Если файл скачался в другую папку — поправьте путь.",
+    },
+    {
+      text: "Запустите программу:",
+      command: '~/Downloads/"VoxPaperAi Pro"/"VoxPaperAi Pro"',
+      commandTitle: "Терминал",
+      commandHint: "Или откройте папку «VoxPaperAi Pro» в файловом менеджере и запустите файл «VoxPaperAi Pro» двойным кликом. При необходимости подтвердите «Разрешить выполнение».",
+    },
+    { text: CONSENT_KEY },
+  ],
+};
+
+/** Блок команды с кнопкой копирования — команда копируется целиком, без пунктуации вокруг. */
+function CommandBlock({
+  command,
+  title,
+  hint,
+}: {
+  command: string;
+  title: string;
+  hint?: string;
+}) {
+  const { t } = useI18n();
+  const [copied, setCopied] = useState(false);
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(command);
+    } catch {
+      const ta = document.createElement("textarea");
+      ta.value = command;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      try {
+        document.execCommand("copy");
+      } catch {
+        /* игнорируем */
+      }
+      document.body.removeChild(ta);
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 3000);
+  }
+
+  return (
+    <div className="my-2 rounded-xl overflow-hidden border border-[#263147] bg-[#0b0f19]">
+      <div className="flex items-center justify-between gap-2 px-3 py-1.5 bg-[#1b2334] border-b border-[#263147]">
+        <span className="text-xs text-muted-foreground inline-flex items-center gap-1.5 min-w-0">
+          <Terminal className="w-3.5 h-3.5 flex-shrink-0" />
+          <span className="truncate">{title}</span>
+        </span>
+        <button
+          onClick={copy}
+          className={`text-xs px-2.5 py-1 rounded-md font-medium transition-colors inline-flex items-center gap-1.5 flex-shrink-0 ${
+            copied
+              ? "bg-emerald-500/15 text-emerald-400"
+              : "bg-[#7c5bf5]/15 text-[#7c5bf5] hover:bg-[#7c5bf5]/25"
+          }`}
+        >
+          {copied ? (
+            <>
+              <ClipboardCheck className="w-3 h-3" />
+              {t("Скопировано ✓")}
+            </>
+          ) : (
+            <>
+              <Clipboard className="w-3 h-3" />
+              {t("Скопировать команду")}
+            </>
+          )}
+        </button>
+      </div>
+      <pre className="px-3 py-2.5 text-xs font-mono text-emerald-300 whitespace-pre-wrap break-all select-all">
+        {command}
+      </pre>
+      {hint && (
+        <div className="px-3 pb-2.5 text-[11px] text-muted-foreground leading-relaxed">{hint}</div>
+      )}
+    </div>
+  );
+}
+
+/** Один шаг инструкции: номер-бейдж + текст (+ пояснение / блок команды). */
+function InstallRow({ n, step }: { n: number; step: InstallStep }) {
+  const { t } = useI18n();
+  return (
+    <div className="flex items-start gap-3">
+      <span className="flex-shrink-0 w-6 h-6 rounded-full bg-[#7c5bf5]/20 text-[#7c5bf5] text-xs font-bold flex items-center justify-center mt-0.5">
+        {n}
+      </span>
+      <div className="flex-1 min-w-0">
+        <div className="text-sm leading-relaxed">{t(step.text)}</div>
+        {step.detail && (
+          <div className="text-xs text-muted-foreground mt-1 leading-relaxed">{t(step.detail)}</div>
+        )}
+        {step.command && (
+          <CommandBlock
+            command={step.command}
+            title={step.commandTitle ? t(step.commandTitle) : t("Терминал")}
+            hint={step.commandHint ? t(step.commandHint) : undefined}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
 
 export function DesktopStep({ onNext }: { onNext: () => void }) {
   const { t } = useI18n();
@@ -182,27 +359,11 @@ export function DesktopStep({ onNext }: { onNext: () => void }) {
             <Info className="w-4 h-4 text-[#7c5bf5]" />
             {t("Как установить:")}
           </h3>
-          {target.os === "windows" && (
-            <ol className="space-y-2 text-sm text-muted-foreground list-decimal list-inside">
-              <li>{t("Распакуйте ZIP в любую папку — внутри лежит «VoxPaperAi Pro».")}</li>
-              <li>{t("Запустите «VoxPaperAi Pro». Если появится окно SmartScreen: «Подробнее» → «Выполнить в любом случае» (программа без цифровой подписи, исходники открыты на GitHub).")}</li>
-              <li>{t("При первом запуске программа сама попросит согласие с политикой и отказом от ответственности — это обязательно и всегда бывает в начале.")}</li>
-            </ol>
-          )}
-          {target.os === "macos" && (
-            <ol className="space-y-2 text-sm text-muted-foreground list-decimal list-inside">
-              <li>{t("Распакуйте ZIP и перетащите «VoxPaperAi Pro.app» в папку «Программы».")}</li>
-              <li>{t("Первый запуск: правый клик по программе → «Открыть» (приложение без подписи Apple; в Терминале можно снять карантин: xattr -cr \"/Applications/VoxPaperAi Pro.app\").")}</li>
-              <li>{t("При первом запуске программа сама попросит согласие с политикой и отказом от ответственности — это обязательно и всегда бывает в начале.")}</li>
-            </ol>
-          )}
-          {target.os === "linux" && (
-            <ol className="space-y-2 text-sm text-muted-foreground list-decimal list-inside">
-              <li>{t("Распакуйте архив: tar -xzf <файл>.tar.gz — появится папка «VoxPaperAi Pro».")}</li>
-              <li>{t("Запустите исполняемый файл «VoxPaperAi Pro» внутри папки (при необходимости установите системные библиотеки libxcb).")}</li>
-              <li>{t("При первом запуске программа сама попросит согласие с политикой и отказом от ответственности — это обязательно и всегда бывает в начале.")}</li>
-            </ol>
-          )}
+          <div className="space-y-3">
+            {INSTALL_STEPS[target.os].map((s, i) => (
+              <InstallRow key={i} n={i + 1} step={s} />
+            ))}
+          </div>
         </div>
       )}
 
