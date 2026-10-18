@@ -83,22 +83,18 @@ class TranscriptionTab(QWidget):
         list_actions_layout = QHBoxLayout()
         
         self.btn_paste = QPushButton("📋 Вставить ссылку")
-        self.btn_paste.setObjectName("ghostButton")
         self.btn_paste.clicked.connect(lambda: self.file_list.paste_from_clipboard())
         list_actions_layout.addWidget(self.btn_paste)
 
         self.btn_import_links = QPushButton("📄 Импорт ссылок (.txt)")
-        self.btn_import_links.setObjectName("ghostButton")
         self.btn_import_links.clicked.connect(self.import_links_from_txt)
         list_actions_layout.addWidget(self.btn_import_links)
         
         self.btn_clear = QPushButton("🗑 Очистить список")
-        self.btn_clear.setObjectName("ghostButton")
         self.btn_clear.clicked.connect(lambda: self.file_list.clear())
         list_actions_layout.addWidget(self.btn_clear)
 
         self.btn_clear_logs = QPushButton("🗑 Очистить логи")
-        self.btn_clear_logs.setObjectName("ghostButton")
         self.btn_clear_logs.clicked.connect(self.clear_logs)
         list_actions_layout.addWidget(self.btn_clear_logs)
         
@@ -119,12 +115,12 @@ class TranscriptionTab(QWidget):
         # --- Buttons ---
         btn_layout = QHBoxLayout()
         self.btn_start = QPushButton("НАЧАТЬ ОБРАБОТКУ")
-        self.btn_start.setObjectName("successButton")
+        self.btn_start.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold; padding: 10px;")
         self.btn_start.clicked.connect(self.start_processing)
         btn_layout.addWidget(self.btn_start)
         
         self.btn_stop = QPushButton("СТОП")
-        self.btn_stop.setObjectName("dangerButton")
+        self.btn_stop.setStyleSheet("background-color: #f44336; color: white; font-weight: bold; padding: 10px;")
         self.btn_stop.clicked.connect(self.stop_processing)
         self.btn_stop.setEnabled(False)
         btn_layout.addWidget(self.btn_stop)
@@ -132,7 +128,7 @@ class TranscriptionTab(QWidget):
         layout.addLayout(btn_layout)
 
         self.queue_status_label = QLabel("Готов к работе")
-        self.queue_status_label.setObjectName("statusLabel")
+        self.queue_status_label.setStyleSheet("color: #6B7280;")
         layout.addWidget(self.queue_status_label)
         
         # --- Log & Progress ---

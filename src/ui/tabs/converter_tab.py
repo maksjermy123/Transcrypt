@@ -24,7 +24,7 @@ class ConverterTab(QWidget):
         # Buttons
         btn_layout = QHBoxLayout()
         self.btn_start = QPushButton("НАЧАТЬ КОНВЕРТАЦИЮ")
-        self.btn_start.setObjectName("successButton")
+        self.btn_start.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold; padding: 10px;")
         self.btn_start.clicked.connect(self.start_processing)
         btn_layout.addWidget(self.btn_start)
         

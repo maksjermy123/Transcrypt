@@ -38,14 +38,9 @@ class FileListWidget(QWidget):
         self.table.setColumnWidth(2, 110)
         self.table.setColumnWidth(3, 110)
         self.table.setColumnWidth(5, 280)
-        self.table.verticalHeader().setDefaultSectionSize(40)
-        self.table.verticalHeader().setVisible(False)
-        self.table.setShowGrid(False)
-        self.table.setAlternatingRowColors(True)
+        self.table.verticalHeader().setDefaultSectionSize(36)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        self.table.setWordWrap(False)
         
         # Hide Language column by default
         self.table.setColumnHidden(2, True)

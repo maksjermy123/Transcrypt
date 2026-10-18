@@ -220,7 +220,6 @@ class TranslationTab(QWidget):
         
         # Translate Button
         self.btn_trans_text = QPushButton("▶️ ПЕРЕВЕСТИ ТЕКСТ")
-        self.btn_trans_text.setObjectName("primaryButton")
         self.btn_trans_text.clicked.connect(self.translate_text)
         text_layout.addWidget(self.btn_trans_text)
         
@@ -244,7 +243,8 @@ class TranslationTab(QWidget):
         f_controls.addWidget(self.out_dir_display)
         
         btn_browse = QPushButton("📁 Папка сохранения")
-        btn_browse.setObjectName("ghostButton")
+        btn_browse.setMinimumWidth(150)
+        btn_browse.setStyleSheet("padding: 5px; font-weight: bold;")
         btn_browse.clicked.connect(self.browse_output)
         f_controls.addWidget(btn_browse)
         
