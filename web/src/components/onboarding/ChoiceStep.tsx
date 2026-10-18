@@ -10,6 +10,7 @@ import {
   MonitorSmartphone,
   ArrowRight,
   ShieldCheck,
+  CheckCircle2,
 } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
 
@@ -139,7 +140,16 @@ const COMPARISON: Array<{
   },
 ];
 
-export function ChoiceStep({ onSelect }: { onSelect: (mode: Mode) => void }) {
+export function ChoiceStep({
+  onSelect,
+  welcomeBack,
+  onReturnToWork,
+}: {
+  onSelect: (mode: Mode) => void;
+  /** Пользователь уже завершил настройку — показываем быстрый возврат к работе */
+  welcomeBack?: boolean;
+  onReturnToWork?: () => void;
+}) {
   const { t } = useI18n();
   return (
     <motion.div
@@ -149,6 +159,28 @@ export function ChoiceStep({ onSelect }: { onSelect: (mode: Mode) => void }) {
       transition={{ duration: 0.45 }}
       className="max-w-5xl mx-auto px-6 py-10"
     >
+      {/* Быстрый возврат: настройка уже пройдена, ничего заново проходить не нужно */}
+      {welcomeBack && onReturnToWork && (
+        <div className="glass-card rounded-2xl p-5 mb-8 flex flex-wrap items-center gap-4 border-[#7c5bf5]/40">
+          <div className="w-10 h-10 rounded-xl bg-emerald-500/15 flex items-center justify-center flex-shrink-0">
+            <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="font-semibold text-sm">{t("Вы уже настроили VoxPaperAi")}</div>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {t("Модель, режим и согласие сохранены — проходить настройку заново не нужно.")}
+            </p>
+          </div>
+          <button
+            onClick={onReturnToWork}
+            className="bg-gradient-primary text-white px-5 py-2.5 rounded-xl text-sm font-semibold hover:opacity-90 inline-flex items-center gap-2 flex-shrink-0"
+          >
+            {t("Перейти к работе")}
+            <ArrowRight className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
       {/* Hero — что это и зачем выбор */}
       <div className="text-center mb-10">
         <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-primary mb-5">

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { useOnboarding } from "@/lib/onboarding-store";
 import { OnboardingWizard } from "@/components/onboarding/OnboardingWizard";
 import { Workbench } from "@/components/workbench/Workbench";
@@ -26,12 +26,19 @@ export default function Home() {
     () => false
   );
 
+  /* Стартовая страница как режим просмотра, а не сброс: showHome лишь показывает
+     стартовый экран ПОВЕРХ сохранённой настройки. completed остаётся true — настройки,
+     модель и согласие не трогаются, а онбординг с нуля начинается только по явному
+     сбросу (Настройки → Сброс / Очистка данных). Перезагрузка страницы возвращает
+     на рабочую страницу, а не в мастер настройки. */
+  const [showHome, setShowHome] = useState(false);
+
   // Решаем, что показывать: если онбординг завершён — рабочая страница.
   // Движок подтягивается сам: Workbench автоматически пингует 127.0.0.1:8765,
   // браузерная модель загружается лениво при первом использовании.
   // Режим desktop не требует модели (программа ставится отдельно) — модель не обязательна.
   const ready = mounted && completed && (!!selectedModel || mode === "desktop");
-  const view = ready ? "workbench" : "onboarding";
+  const view = ready && !showHome ? "workbench" : "onboarding";
 
   // Тема везде одна (включая онбординг): auto следует настройке компьютера
   // (prefers-color-scheme — ОС меняет оформление по времени суток), иначе
@@ -52,8 +59,14 @@ export default function Home() {
   if (view === "workbench") {
     return (
       <Workbench
-        onExit={() => {
-          setCompleted(false);
+        /* Установка движка: мастер открывается на шаге engine, настройка не сбрасывается.
+           После установки DoneStep → onStart вернёт на рабочую страницу. */
+        onExit={() => setShowHome(true)}
+        /* «На стартовую страницу» из Настроек: показываем стартовый экран с быстрым
+           возвратом («Перейти к работе»), без повторного прохождения онбординга. */
+        onGoHome={() => {
+          useOnboarding.getState().setStep("choice");
+          setShowHome(true);
         }}
       />
     );
@@ -63,7 +76,9 @@ export default function Home() {
     <OnboardingWizard
       onStart={() => {
         setCompleted(true);
+        setShowHome(false);
       }}
+      onReturnToWork={() => setShowHome(false)}
     />
   );
 }

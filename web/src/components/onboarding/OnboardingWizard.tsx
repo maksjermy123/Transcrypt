@@ -83,8 +83,16 @@ function getPrevStep(current: OnboardingStep, mode: "browser" | "engine" | "desk
   }
 }
 
-export function OnboardingWizard({ onStart }: { onStart: () => void }) {
-  const { step, setStep, mode } = useOnboarding();
+export function OnboardingWizard({
+  onStart,
+  onReturnToWork,
+}: {
+  onStart: () => void;
+  /** Вернуться на рабочую страницу без повторной настройки — доступно,
+   *  когда онбординг уже был завершён (бренд в шапке и баннер на первом шаге). */
+  onReturnToWork?: () => void;
+}) {
+  const { step, setStep, mode, completed, selectedModel } = useOnboarding();
   const { t } = useI18n();
   const idx = STEP_ORDER.indexOf(step);
   const prevStep = getPrevStep(step, mode);
@@ -94,6 +102,11 @@ export function OnboardingWizard({ onStart }: { onStart: () => void }) {
 
   // На шаге welcome кнопки назад нет (это первый шаг)
   const canGoBack = prevStep !== null;
+
+  /* Состояние «уже настроен»: онбординг завершён и есть всё нужное для работы.
+     Такой пользователь не должен проходить мастер заново: бренд в шапке и баннер
+     на первом шаге возвращают на рабочую страницу, а шаг согласия пропускается. */
+  const configured = completed && (!!selectedModel || mode === "desktop");
 
   // Сброс онбординга в начало (из шапки)
   function resetToStart() {
@@ -115,6 +128,18 @@ export function OnboardingWizard({ onStart }: { onStart: () => void }) {
               >
                 <ArrowLeft className="w-4 h-4" />
                 <span className="text-xs hidden sm:inline">{t("Назад")}</span>
+              </button>
+            ) : configured && onReturnToWork ? (
+              /* Бренд кликабелен для уже настроенного пользователя — быстрый возврат к работе */
+              <button
+                onClick={onReturnToWork}
+                className="flex items-center gap-2.5 rounded-xl px-1.5 py-1 -mx-1.5 -my-1 hover:bg-[#1b2334] transition-colors"
+                title={t("Вернуться к работе — настройки сохранены")}
+              >
+                <div className="w-8 h-8 rounded-xl bg-gradient-primary flex items-center justify-center">
+                  <span className="text-white font-bold text-sm">V</span>
+                </div>
+                <span className="font-semibold hidden sm:inline">VoxPaperAi</span>
               </button>
             ) : (
               <div className="flex items-center gap-2.5">
@@ -174,18 +199,27 @@ export function OnboardingWizard({ onStart }: { onStart: () => void }) {
           {step === "choice" && (
             <ChoiceStep
               key="choice"
+              welcomeBack={configured}
+              onReturnToWork={onReturnToWork}
               onSelect={(selectedMode) => {
                 useOnboarding.getState().setMode(selectedMode);
-                // Оба «установочных» пути проходят согласие в начале:
-                // движок — перед установкой, программа — перед скачиванием.
-                setStep(selectedMode === "browser" ? "resources" : "consent");
+                /* Согласие с политикой запрашивается один раз: если пользователь уже
+                   соглашался — шаг consent пропускается, идём сразу к делу. */
+                if (!useOnboarding.getState().consented) {
+                  setStep("consent");
+                  return;
+                }
+                setStep(selectedMode === "desktop" ? "desktop" : "resources");
               }}
             />
           )}
           {step === "consent" && (
             <ConsentStep
               key="consent"
-              onAgree={() => setStep(mode === "desktop" ? "desktop" : "resources")}
+              onAgree={() => {
+                useOnboarding.getState().setConsented(true);
+                setStep(mode === "desktop" ? "desktop" : "resources");
+              }}
               onBack={() => setStep("choice")}
             />
           )}

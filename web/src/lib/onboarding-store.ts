@@ -78,6 +78,8 @@ interface OnboardingState {
   modelProgress: number; // 0..100
   modelProgressText: string;
   completed: boolean;
+  /** Пользователь уже согласился с политикой — при повторном онбординге шаг согласия пропускается */
+  consented: boolean;
 
   // Гибридный движок: локальный engine_server.py (Python на 127.0.0.1:8765)
   engineServerOnline: boolean; // запущен ли локальный Python-движок
@@ -95,6 +97,7 @@ interface OnboardingState {
   setModelProgress: (p: number) => void;
   setModelProgressText: (t: string) => void;
   setCompleted: (c: boolean) => void;
+  setConsented: (c: boolean) => void;
   setEngineServerOnline: (v: boolean) => void;
   setEngineServerHealth: (h: EngineHealth | null) => void;
   reset: () => void;
@@ -113,6 +116,7 @@ const initialState = {
   modelProgress: 0,
   modelProgressText: "",
   completed: false,
+  consented: false,
   engineServerOnline: false,
   engineServerHealth: null,
 };
@@ -133,6 +137,7 @@ export const useOnboarding = create<OnboardingState>()(
       setModelProgress: (modelProgress) => set({ modelProgress }),
       setModelProgressText: (modelProgressText) => set({ modelProgressText }),
       setCompleted: (completed) => set({ completed }),
+      setConsented: (consented) => set({ consented }),
       setEngineServerOnline: (engineServerOnline) => set({ engineServerOnline }),
       setEngineServerHealth: (engineServerHealth) => set({ engineServerHealth }),
       reset: () => set({ ...initialState }),
@@ -141,6 +146,7 @@ export const useOnboarding = create<OnboardingState>()(
       name: "transcrypt-onboarding",
       partialize: (state) => ({
         completed: state.completed,
+        consented: state.consented,
         selectedModel: state.selectedModel,
         step: state.completed ? "done" : state.step,
         mode: state.mode,

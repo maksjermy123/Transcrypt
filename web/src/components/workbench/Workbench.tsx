@@ -27,7 +27,15 @@ const TABS: { id: WorkTab; label: string; icon: React.ComponentType<{ className?
   { id: "about", label: "О программе", icon: Info, hint: "Возможности, архитектура и ограничения" },
 ];
 
-export function Workbench({ onExit }: { onExit: () => void }) {
+export function Workbench({
+  onExit,
+  onGoHome,
+}: {
+  /** Открыть стартовый экран (например, перед установкой движка) — настройку не сбрасывает */
+  onExit: () => void;
+  /** «На стартовую страницу» из Настроек — показать стартовый экран с быстрым возвратом */
+  onGoHome?: () => void;
+}) {
   const { selectedModel, reset, engineServerOnline, setEngineServerOnline, setEngineServerHealth, setStep } = useOnboarding();
   const { t } = useI18n();
   const [tab, setTab] = useState<WorkTab>("transcribe");
@@ -241,7 +249,7 @@ export function Workbench({ onExit }: { onExit: () => void }) {
             {tab === "media" && <MediaTab />}
             {tab === "convert" && <ConvertTab />}
             {tab === "translate" && <TranslateTab />}
-            {tab === "settings" && <SettingsTab onInstallEngine={goToEngineInstall} onGoHome={onExit} />}
+            {tab === "settings" && <SettingsTab onInstallEngine={goToEngineInstall} onGoHome={onGoHome} />}
             {tab === "about" && <AboutTab />}
           </motion.div>
         </AnimatePresence>

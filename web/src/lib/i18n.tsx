@@ -133,6 +133,10 @@ export const EN: Record<string, string> = {
   "Вернуться на стартовую страницу — приветствие и выбор режима": "Back to the start page — welcome and mode selection",
   "VoxPaperAi — на страницу Транскрипции": "VoxPaperAi — go to Transcription",
   "На страницу Транскрипции": "Go to the Transcription page",
+  "Вы уже настроили VoxPaperAi": "You've already set up VoxPaperAi",
+  "Модель, режим и согласие сохранены — проходить настройку заново не нужно.": "Your model, mode and consent are saved — no need to go through setup again.",
+  "Перейти к работе": "Start working",
+  "Вернуться к работе — настройки сохранены": "Back to work — your settings are saved",
   "О программе": "About",
   "Возможности, архитектура и ограничения": "Features, architecture and limitations",
 
