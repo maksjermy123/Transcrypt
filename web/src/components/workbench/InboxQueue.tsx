@@ -567,6 +567,9 @@ export interface InboxQueueProps {
   /** Надпись кнопки запуска (со счётчиком добавится автоматически) */
   startLabel: string;
   runningLabel?: string;
+  /** Параметры очереди (селекты, слайдеры) — в шапке справа, напротив названия.
+   *  Унификация: у всех вкладок настройки конкретной очереди стоят в одном месте. */
+  headerExtra?: ReactNode;
   /** Не-null — Старт заблокирован с этим объяснением (title кнопки) */
   startDisabledReason?: string | null;
   /** Дополнительные действия над готовой записью (Скачать/Открыть…) */
@@ -602,6 +605,7 @@ export function InboxQueue({
   onDeleteJobFiles,
   startLabel,
   runningLabel,
+  headerExtra,
   startDisabledReason,
   resultActions,
   onOpenResult,
@@ -1075,12 +1079,15 @@ export function InboxQueue({
   return (
     <div className="glass-card rounded-2xl p-5 mb-5">
       {(title || intro) && (
-        <div className="flex items-start gap-2 mb-4">
+        <div className="flex flex-wrap items-start gap-2 mb-4">
           <Inbox className="w-4 h-4 text-[#7c5bf5] mt-0.5 flex-shrink-0" />
-          <div>
+          <div className="min-w-0">
             {title && <h3 className="font-semibold text-sm">{title}</h3>}
             {intro && <p className="text-xs text-muted-foreground mt-0.5">{intro}</p>}
           </div>
+          {headerExtra && (
+            <div className="ml-auto flex-shrink-0 flex items-center gap-2">{headerExtra}</div>
+          )}
         </div>
       )}
 

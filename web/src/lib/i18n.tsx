@@ -129,6 +129,10 @@ export const EN: Record<string, string> = {
   "Текст и файлы TXT/DOCX/PDF, включая LAYOUT с разметкой": "Text and TXT/DOCX/PDF files, including LAYOUT",
   "Настройки": "Settings",
   "Железо, движок, модели Whisper, переводчик": "Hardware, engine, Whisper models, translator",
+  "На стартовую страницу": "Back to start page",
+  "Вернуться на стартовую страницу — приветствие и выбор режима": "Back to the start page — welcome and mode selection",
+  "VoxPaperAi — на страницу Транскрипции": "VoxPaperAi — go to Transcription",
+  "На страницу Транскрипции": "Go to the Transcription page",
   "О программе": "About",
   "Возможности, архитектура и ограничения": "Features, architecture and limitations",
 

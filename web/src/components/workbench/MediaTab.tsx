@@ -9,6 +9,7 @@ import {
   X,
   Square,
   AlertTriangle,
+  FileAudio,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useOnboarding } from "@/lib/onboarding-store";
@@ -291,10 +292,15 @@ export function MediaTab() {
   if (!engineServerOnline) {
     return (
       <div className="max-w-4xl mx-auto px-6 py-8">
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold mb-1">{t("Медиа операции")}</h1>
-          <p className="text-sm text-muted-foreground">
-            {t("Скачать видео/аудио с YouTube, TikTok и других площадок — через локальный движок с yt-dlp.")} </p>
+        <div className="flex items-start gap-3 mb-6">
+          <div className="w-10 h-10 rounded-xl bg-[#7c5bf5]/15 flex items-center justify-center flex-shrink-0">
+            <FileAudio className="w-5 h-5 text-[#7c5bf5]" />
+          </div>
+          <div className="min-w-0">
+            <h1 className="text-xl font-bold mb-1">{t("Медиа операции")}</h1>
+            <p className="text-sm text-muted-foreground">
+              {t("Скачать видео/аудио с YouTube, TikTok и других площадок — через локальный движок с yt-dlp.")} </p>
+          </div>
         </div>
 
         <div className="glass-card rounded-2xl p-8 text-center">
@@ -326,10 +332,15 @@ export function MediaTab() {
 
   return (
     <div className="max-w-4xl mx-auto px-6 py-8">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold mb-1">{t("Медиа операции")}</h1>
-        <p className="text-sm text-muted-foreground">
-          {t("Скачивание видео (MP4) и аудио (MP3 192k) по ссылкам — через локальный движок с yt-dlp (обходит блокировки YouTube). Формат выбирается для каждой ссылки в очереди.")} </p>
+      <div className="flex items-start gap-3 mb-6">
+        <div className="w-10 h-10 rounded-xl bg-[#7c5bf5]/15 flex items-center justify-center flex-shrink-0">
+          <FileAudio className="w-5 h-5 text-[#7c5bf5]" />
+        </div>
+        <div className="min-w-0">
+          <h1 className="text-xl font-bold mb-1">{t("Медиа операции")}</h1>
+          <p className="text-sm text-muted-foreground">
+            {t("Скачивание видео (MP4) и аудио (MP3 192k) по ссылкам — через локальный движок с yt-dlp (обходит блокировки YouTube). Формат выбирается для каждой ссылки в очереди.")} </p>
+        </div>
       </div>
 
       {/* Баннер обновления движка перенесён в Настройки — вкладки не засоряем сообщениями:

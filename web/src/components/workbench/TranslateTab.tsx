@@ -326,8 +326,8 @@ export function TranslateTab() {
         <div className="w-10 h-10 rounded-xl bg-[#7c5bf5]/15 flex items-center justify-center flex-shrink-0">
           <Languages className="w-5 h-5 text-[#7c5bf5]" />
         </div>
-        <div>
-          <h2 className="text-xl font-bold">{t("Перевод")}</h2>
+        <div className="min-w-0">
+          <h1 className="text-xl font-bold">{t("Перевод")}</h1>
           <p className="text-sm text-muted-foreground">
             {t("Текст и файлы (TXT / DOCX / PDF). PDF обрабатывается прямо в браузере — Word и LibreOffice не нужны.")} </p>
         </div>
@@ -417,19 +417,20 @@ export function TranslateTab() {
           </div>
         </div>
 
-        <div className="px-4 py-3 border-t border-[#263147]/60">
+        <div className="px-4 py-3 border-t border-[#263147]/60 flex flex-wrap items-center gap-3">
+          {/* Унификация: подсказка слева, главная кнопка действия — справа, как во всех очередях */}
+          {provider === "deepl" && !deeplKey && (
+            <span className="text-xs text-amber-400 inline-flex items-center gap-1">
+              <Info className="w-3 h-3" />  {t("Для DeepL добавьте API-ключ во вкладке «Настройки»")} </span>
+          )}
           <button
             onClick={translateTextInput}
             disabled={textBusy || !textIn.trim()}
-            className="bg-gradient-primary text-white px-5 py-2.5 rounded-xl text-sm font-semibold hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center gap-2"
+            className="ml-auto bg-gradient-primary text-white px-5 py-2.5 rounded-xl text-sm font-semibold hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center gap-2"
           >
             {textBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Languages className="w-4 h-4" />}
             {textBusy ? t("Переводим…") : t("Перевести текст")}
           </button>
-          {provider === "deepl" && !deeplKey && (
-            <span className="text-xs text-amber-400 ml-3 inline-flex items-center gap-1">
-              <Info className="w-3 h-3" />  {t("Для DeepL добавьте API-ключ во вкладке «Настройки»")} </span>
-          )}
         </div>
       </section>
 
@@ -490,7 +491,8 @@ export function TranslateTab() {
         )}
 
         <div className="p-4 space-y-3">
-          {/* Кнопки */}
+          {/* Кнопки приёма: только «Добавить файл(ы)» — «Очистить список» стоит внизу,
+              рядом с кнопкой запуска (как во всех очередях) */}
           <div className="flex flex-wrap items-center gap-2">
             <label className="inline-flex items-center gap-2 bg-[#1b2334] hover:bg-[#232c40] border border-[#263147] px-4 py-2.5 rounded-xl text-sm cursor-pointer transition-colors">
               <FilePlus2 className="w-4 h-4 text-[#7c5bf5]" />
@@ -504,15 +506,6 @@ export function TranslateTab() {
                 className="hidden"
               />
             </label>
-            {items.length > 0 && (
-              <button
-                onClick={() => !batchBusy && setItems([])}
-                disabled={batchBusy}
-                className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-red-400 px-3 py-2.5 disabled:opacity-40"
-              >
-                <Trash2 className="w-4 h-4" />
-                {t("Очистить список")} </button>
-            )}
             <span className="text-xs text-muted-foreground ml-auto">
               {t("Файлы обрабатываются локально в браузере, в сеть уходит только текст для перевода")}
             </span>
@@ -621,22 +614,36 @@ export function TranslateTab() {
               </div>
             )}
 
-            <button
-              onClick={startFileTranslation}
-              disabled={batchBusy || !items.some((i) => i.status === "pending" || i.status === "error")}
-              className="w-full bg-gradient-primary text-white px-5 py-3 rounded-xl text-sm font-semibold hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2"
-            >
-              {batchBusy ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  {t("Переводим файлы…")} {batchProgress}%
-                </>
-              ) : (
-                <>
-                  <Languages className="w-4 h-4" />
-                  {t("Начать перевод файлов")} </>
+            {/* Унификация с очередями: слева «Очистить список», справа — кнопка запуска */}
+            <div className="flex flex-wrap items-center gap-2">
+              {items.length > 0 && (
+                <button
+                  onClick={() => !batchBusy && setItems([])}
+                  disabled={batchBusy}
+                  className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-red-400 px-2.5 py-1.5 rounded-lg hover:bg-red-500/10 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  {t("Очистить список")}
+                </button>
               )}
-            </button>
+              <button
+                onClick={startFileTranslation}
+                disabled={batchBusy || !items.some((i) => i.status === "pending" || i.status === "error")}
+                className="ml-auto bg-gradient-primary text-white px-5 py-2.5 rounded-xl text-sm font-semibold hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center gap-2"
+              >
+                {batchBusy ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    {t("Переводим файлы…")} {batchProgress}%
+                  </>
+                ) : (
+                  <>
+                    <Languages className="w-4 h-4" />
+                    {t("Начать перевод файлов")}
+                  </>
+                )}
+              </button>
+            </div>
           </div>
 
           {/* Лог */}

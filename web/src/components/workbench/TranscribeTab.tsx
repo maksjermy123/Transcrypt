@@ -10,6 +10,7 @@ import {
   Server,
   AlertTriangle,
   Languages,
+  Mic,
   Copy,
   Check,
   History,
@@ -1112,34 +1113,16 @@ export function TranscribeTab({
 
   return (
     <div className="max-w-5xl mx-auto px-6 py-8">
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-6">
-        <div>
-          <h1 className="text-2xl font-bold mb-1">{t("Транскрипция аудио и видео")}</h1>
+      {/* Шапка вкладки — единый формат на всех вкладках: иконка в квадрате + заголовок + описание.
+          Параметр «Модель» стоит в шапке очереди (headerExtra) — как у всех вкладок. */}
+      <div className="flex items-start gap-3 mb-6">
+        <div className="w-10 h-10 rounded-xl bg-[#7c5bf5]/15 flex items-center justify-center flex-shrink-0">
+          <Mic className="w-5 h-5 text-[#7c5bf5]" />
+        </div>
+        <div className="min-w-0">
+          <h1 className="text-xl font-bold mb-1">{t("Транскрипция аудио и видео")}</h1>
           <p className="text-sm text-muted-foreground">
             {t("Whisper превратит голос в текст с таймкодами. URL-задачи (YouTube и др.) — через локальный движок со стратегией «сначала субтитры».")} </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Settings2 className="w-4 h-4 text-muted-foreground" />
-          <span className="text-xs text-muted-foreground">{t("Модель:")}</span>
-          <select
-            value={engineServerOnline ? (selectedModel ?? "base") : browserSafeModel(selectedModel)}
-            onChange={(e) => setSelectedModel(e.target.value as WhisperModelId)}
-            className="bg-[#1b2334] border border-[#263147] rounded-lg px-3 py-1.5 text-sm font-medium hover:border-[#7c5bf5]/50"
-          >
-            {(engineServerOnline
-              ? (["tiny", "base", "small", "medium", "large-v3"] as const)
-              : (["tiny", "base", "small"] as const)
-            ).map((id) => {
-              const mi = MODEL_INFO[id];
-              const size = engineServerOnline ? mi.engineSizeMB : mi.sizeMB;
-              const sizeLabel = size >= 1000 ? t("{n} ГБ", { n: (size / 1000).toFixed(1) }) : t("{n} МБ", { n: size });
-              return (
-                <option key={id} value={id}>
-                  {mi.name.replace("Whisper ", "")} — {sizeLabel}
-                </option>
-              );
-            })}
-          </select>
         </div>
       </div>
 
@@ -1201,6 +1184,31 @@ export function TranscribeTab({
       <InboxQueue
         title={t("Очередь транскрибации")}
         intro={t("Перетащите файлы, вставьте ссылки или бросьте любой текстовый файл со ссылками — всё соберётся в список. Отредактируйте его и нажмите «Транскрибировать»: без нажатия ничего не запустится.")}
+        headerExtra={
+          <label className="flex items-center gap-2 text-xs text-muted-foreground">
+            <Settings2 className="w-3.5 h-3.5" />
+            {t("Модель:")}
+            <select
+              value={engineServerOnline ? (selectedModel ?? "base") : browserSafeModel(selectedModel)}
+              onChange={(e) => setSelectedModel(e.target.value as WhisperModelId)}
+              className="bg-[#1b2334] border border-[#263147] rounded-lg px-2.5 py-1.5 text-xs font-medium hover:border-[#7c5bf5]/50"
+            >
+              {(engineServerOnline
+                ? (["tiny", "base", "small", "medium", "large-v3"] as const)
+                : (["tiny", "base", "small"] as const)
+              ).map((id) => {
+                const mi = MODEL_INFO[id];
+                const size = engineServerOnline ? mi.engineSizeMB : mi.sizeMB;
+                const sizeLabel = size >= 1000 ? t("{n} ГБ", { n: (size / 1000).toFixed(1) }) : t("{n} МБ", { n: size });
+                return (
+                  <option key={id} value={id}>
+                    {mi.name.replace("Whisper ", "")} — {sizeLabel}
+                  </option>
+                );
+              })}
+            </select>
+          </label>
+        }
         acceptAttr="audio/*,video/*,.txt,.md,.markdown,.csv,.tsv,.log,.json,.xml,.html,.htm,.srt,.vtt,.ass,.yml,.yaml,.rtf,.list,.url,.pdf,.docx"
         fileFilter={(f) => {
           const mime = (f.type || "").toLowerCase();
@@ -1303,7 +1311,7 @@ function DownloadMenu({
       <button
         onClick={() => setOpen((v) => !v)}
         title={title || t("Выбрать формат и скачать")}
-        className={`rounded-lg bg-[#1b2334] hover:bg-[#263147] font-medium inline-flex items-center gap-1.5 transition-colors ${
+        className={`rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 font-medium inline-flex items-center gap-1.5 transition-colors ${
           small ? "px-2.5 py-1.5 text-xs" : "px-3 py-1.5 text-sm"
         }`}
       >

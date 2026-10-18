@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Mic, FileAudio, FileArchive, Home, Server, ServerOff, Zap, X, Languages, Wrench, Info, ShieldCheck } from "lucide-react";
+import { Mic, FileAudio, FileArchive, Server, ServerOff, Zap, X, Languages, Wrench, Info, ShieldCheck } from "lucide-react";
 import { useOnboarding } from "@/lib/onboarding-store";
 import { checkEngineHealth } from "@/lib/engine-bridge";
 import { useI18n } from "@/lib/i18n";
@@ -116,12 +116,19 @@ export function Workbench({ onExit }: { onExit: () => void }) {
       {/* Шапка */}
       <header className="sticky top-0 z-50 bg-[#0b0f19]/85 backdrop-blur-xl border-b border-[#263147]/60">
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-2.5">
+          {/* Бренд — кликабельный: ведёт на страницу Транскрипции (главную вкладку).
+              Кнопка «На стартовую страницу» живёт в Настройках. */}
+          <button
+            onClick={() => switchTab("transcribe")}
+            className="flex items-center gap-2.5 rounded-xl px-1.5 py-1 -mx-1.5 -my-1 hover:bg-[#1b2334] transition-colors flex-shrink-0"
+            title={t("VoxPaperAi — на страницу Транскрипции")}
+            aria-label={t("На страницу Транскрипции")}
+          >
             <div className="w-8 h-8 rounded-xl bg-gradient-primary flex items-center justify-center">
               <span className="text-white font-bold text-sm">V</span>
             </div>
             <span className="font-semibold">VoxPaperAi</span>
-          </div>
+          </button>
 
           {/* Tabs */}
           <nav className="flex items-center gap-1 bg-[#1b2334] rounded-xl p-1 overflow-x-auto max-w-full">
@@ -189,14 +196,6 @@ export function Workbench({ onExit }: { onExit: () => void }) {
             <LangToggle />
 
             <ThemeToggle />
-
-            <button
-              onClick={onExit}
-              className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-[#1b2334]"
-              title={t("В начало / пройти онбординг заново")}
-            >
-              <Home className="w-5 h-5" />
-            </button>
           </div>
         </div>
       </header>
@@ -242,7 +241,7 @@ export function Workbench({ onExit }: { onExit: () => void }) {
             {tab === "media" && <MediaTab />}
             {tab === "convert" && <ConvertTab />}
             {tab === "translate" && <TranslateTab />}
-            {tab === "settings" && <SettingsTab onInstallEngine={goToEngineInstall} />}
+            {tab === "settings" && <SettingsTab onInstallEngine={goToEngineInstall} onGoHome={onExit} />}
             {tab === "about" && <AboutTab />}
           </motion.div>
         </AnimatePresence>

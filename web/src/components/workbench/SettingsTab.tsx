@@ -35,6 +35,7 @@ import {
   Copy,
   Check,
   Globe,
+  Home,
 } from "lucide-react";
 import { useOnboarding, MODEL_INFO, isBrowserModel, type WhisperModelId } from "@/lib/onboarding-store";
 import { useSettings } from "@/lib/settings-store";
@@ -46,7 +47,14 @@ import { useI18n } from "@/lib/i18n";
 
 const ALL_MODELS: WhisperModelId[] = ["tiny", "base", "small", "medium", "large-v3"];
 
-export function SettingsTab({ onInstallEngine }: { onInstallEngine: () => void }) {
+export function SettingsTab({
+  onInstallEngine,
+  onGoHome,
+}: {
+  onInstallEngine: () => void;
+  /** Кнопка «На стартовую страницу» — переход к приветствию/онбордингу. */
+  onGoHome?: () => void;
+}) {
   const { t } = useI18n();
   const {
     selectedModel,
@@ -234,11 +242,22 @@ export function SettingsTab({ onInstallEngine }: { onInstallEngine: () => void }
         <div className="w-10 h-10 rounded-xl bg-[#7c5bf5]/15 flex items-center justify-center flex-shrink-0">
           <Wrench className="w-5 h-5 text-[#7c5bf5]" />
         </div>
-        <div>
-          <h2 className="text-xl font-bold">{t("Настройки")}</h2>
+        <div className="flex-1 min-w-0">
+          <h1 className="text-xl font-bold">{t("Настройки")}</h1>
           <p className="text-sm text-muted-foreground">
             {t("Железо, движок, модели и переводчик — всё под вашим контролем.")} </p>
         </div>
+        {/* Кнопка возврата на стартовую страницу (раньше был домик в шапке сайта) */}
+        {onGoHome && (
+          <button
+            onClick={onGoHome}
+            className="flex-shrink-0 text-xs px-4 py-2 rounded-xl bg-[#1b2334] hover:bg-[#232c40] border border-[#263147] text-muted-foreground hover:text-foreground inline-flex items-center gap-2 transition-colors"
+            title={t("Вернуться на стартовую страницу — приветствие и выбор режима")}
+          >
+            <Home className="w-4 h-4" />
+            {t("На стартовую страницу")}
+          </button>
+        )}
       </div>
 
       {/* ─── Железо браузера ─── */}

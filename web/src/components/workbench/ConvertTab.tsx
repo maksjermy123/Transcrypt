@@ -7,6 +7,7 @@ import {
   FileText,
   Image as ImageIcon,
   FileAudio,
+  FileArchive,
   History,
   AlertTriangle,
   X,
@@ -50,13 +51,20 @@ export function ConvertTab() {
   const [mode, setMode] = useState<Mode>("media");
   return (
     <div className="max-w-4xl mx-auto px-6 py-8">
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold mb-1">{t("Конвертер")}</h1>
-        <p className="text-sm text-muted-foreground">
-          {t("Медиа (через локальный ffmpeg, если движок запущен — иначе ffmpeg.wasm), изображения (Canvas), документы Word ↔ PDF ↔ TXT.")} </p>
+      {/* Шапка вкладки — единый формат на всех вкладках */}
+      <div className="flex items-start gap-3 mb-6">
+        <div className="w-10 h-10 rounded-xl bg-[#7c5bf5]/15 flex items-center justify-center flex-shrink-0">
+          <FileArchive className="w-5 h-5 text-[#7c5bf5]" />
+        </div>
+        <div className="min-w-0">
+          <h1 className="text-xl font-bold mb-1">{t("Конвертер")}</h1>
+          <p className="text-sm text-muted-foreground">
+            {t("Медиа (через локальный ffmpeg, если движок запущен — иначе ffmpeg.wasm), изображения (Canvas), документы Word ↔ PDF ↔ TXT.")} </p>
+        </div>
       </div>
 
-      <div className="flex gap-2 mb-6 flex-wrap">
+      {/* Переключатель разделов — тот же пилюльный стиль, что вкладки в шапке сайта */}
+      <div className="inline-flex gap-1 bg-[#1b2334] rounded-xl p-1 mb-6 flex-wrap">
         <ModeBtn active={mode === "media"} onClick={() => setMode("media")} icon={FileAudio} label={t("Медиа")} />
         <ModeBtn active={mode === "image"} onClick={() => setMode("image")} icon={ImageIcon} label={t("Изображения")} />
         <ModeBtn active={mode === "text"} onClick={() => setMode("text")} icon={FileText} label={t("Документы")} />
@@ -83,10 +91,10 @@ function ModeBtn({
   return (
     <button
       onClick={onClick}
-      className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors inline-flex items-center gap-2 ${
+      className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors inline-flex items-center gap-2 ${
         active
           ? "bg-gradient-primary text-white"
-          : "bg-[#1b2334] hover:bg-[#263147] text-muted-foreground hover:text-foreground"
+          : "text-muted-foreground hover:text-foreground"
       }`}
     >
       <Icon className="w-4 h-4" />
@@ -361,27 +369,26 @@ function MediaConverter() {
         )}
       </div>
 
-      {/* Глобальные параметры: применяются ко всем записям при запуске */}
-      <div className="glass-card rounded-2xl px-4 py-3 flex flex-wrap items-center gap-3">
-        <label className="text-xs text-muted-foreground flex items-center gap-2 min-w-56 flex-1">
-          {t("Битрейт MP3:")} <span className="text-foreground font-medium">{bitrate} kbps</span>
-          <input
-            type="range"
-            min={64}
-            max={320}
-            step={32}
-            value={bitrate}
-            onChange={(e) => setBitrate(Number(e.target.value))}
-            className="w-full ml-2"
-          />
-        </label>
-      </div>
-
       {/* ЕДИНОЕ ПРИНИМАЮЩЕЕ ОКНО-ОЧЕРЕДЬ: файлы собираются в список, редактируются,
-          и только кнопка «Сконвертировать» запускает обработку по очереди. */}
+          и только кнопка «Сконвертировать» запускает обработку по очереди.
+          Глобальный параметр «Битрейт MP3» — в шапке очереди (headerExtra). */}
       <InboxQueue
         title={t("Очередь конвертации")}
         intro={t("Перетащите аудио/видео файлы — можно несколько сразу. Выберите конечный формат напротив каждой записи и нажмите «Сконвертировать»: без нажатия ничего не запустится.")}
+        headerExtra={
+          <label className="flex items-center gap-2 text-xs text-muted-foreground">
+            {t("Битрейт MP3:")} <span className="text-foreground font-medium">{bitrate} kbps</span>
+            <input
+              type="range"
+              min={64}
+              max={320}
+              step={32}
+              value={bitrate}
+              onChange={(e) => setBitrate(Number(e.target.value))}
+              className="w-28 ml-1"
+            />
+          </label>
+        }
         acceptAttr="audio/*,video/*"
         fileFilter={(f) => {
           const mime = (f.type || "").toLowerCase();
