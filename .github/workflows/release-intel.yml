@@ -52,10 +52,14 @@ jobs:
       - name: Build with PyInstaller
         run: python -m PyInstaller --noconfirm --clean "VoxPaperAi_Pro.spec"
 
-      - name: Package (macOS)
+      - name: Package (macOS DMG)
         run: |
-          cd dist
-          zip -qry "../VoxPaperAi-Pro-macos-intel.zip" "VoxPaperAi Pro.app"
+          mkdir -p dmg-staging
+          cp -R "dist/VoxPaperAi Pro.app" dmg-staging/
+          ln -s /Applications dmg-staging/Applications
+          cp INSTALL_FREE_MACOS.txt dmg-staging/
+          cp DISCLAIMER.txt dmg-staging/
+          hdiutil create -volname "VoxPaperAi Pro" -srcfolder dmg-staging -ov -format UDZO "VoxPaperAi-Pro-macos-intel.dmg"
 
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2
@@ -63,4 +67,4 @@ jobs:
           tag_name: ${{ github.event_name == 'push' && github.ref_name || github.event.inputs.tag }}
           draft: false
           prerelease: false
-          files: VoxPaperAi-Pro-macos-intel.zip
+          files: VoxPaperAi-Pro-macos-intel.dmg

@@ -32,7 +32,7 @@ jobs:
           - os: windows-latest
             asset: VoxPaperAi-Pro-windows-x64.zip
           - os: macos-14 # Apple Silicon (arm64)
-            asset: VoxPaperAi-Pro-macos-apple-silicon.zip
+            asset: VoxPaperAi-Pro-macos-apple-silicon.dmg
           # macOS Intel собирается отдельно: .github/workflows/release-intel.yml —
           # раннеры macos-13 (Intel) подолгу стоят в очереди, поэтому x86_64-сборка
           # идёт на macos-14 под Rosetta (x64-Python) и загружается в тот же релиз.
@@ -72,11 +72,19 @@ jobs:
         shell: pwsh
         run: Compress-Archive -Path "dist/VoxPaperAi Pro" -DestinationPath "${{ matrix.asset }}" -Force
 
-      - name: Package (macOS)
+      # macOS-артефакт — классический DMG-образ: пользователь открывает его и
+      # перетаскивает приложение на ярлык Applications (привычная установка).
+      # Состав образа повторяет структуру из INSTALL_FREE_MACOS.txt:
+      # приложение + ярлык Applications + инструкция + DISCLAIMER.
+      - name: Package (macOS DMG)
         if: runner.os == 'macOS'
         run: |
-          cd dist
-          zip -qry "../${{ matrix.asset }}" "VoxPaperAi Pro.app"
+          mkdir -p dmg-staging
+          cp -R "dist/VoxPaperAi Pro.app" dmg-staging/
+          ln -s /Applications dmg-staging/Applications
+          cp INSTALL_FREE_MACOS.txt dmg-staging/
+          cp DISCLAIMER.txt dmg-staging/
+          hdiutil create -volname "VoxPaperAi Pro" -srcfolder dmg-staging -ov -format UDZO "${{ matrix.asset }}"
 
       - name: Package (Linux)
         if: runner.os == 'Linux'
@@ -109,13 +117,13 @@ jobs:
 
             ## Загрузки
             - **Windows 64-bit:** VoxPaperAi-Pro-windows-x64.zip
-            - **macOS Apple Silicon (M1–M4):** VoxPaperAi-Pro-macos-apple-silicon.zip
-            - **macOS Intel:** VoxPaperAi-Pro-macos-intel.zip
+            - **macOS Apple Silicon (M1–M4):** VoxPaperAi-Pro-macos-apple-silicon.dmg
+            - **macOS Intel:** VoxPaperAi-Pro-macos-intel.dmg
             - **Linux x64:** VoxPaperAi-Pro-linux-x64.tar.gz
 
             ## Первый запуск
             - **Windows:** распакуйте ZIP (правый клик → «Извлечь всё…»), откройте папку и запустите «VoxPaperAi Pro». Если появится SmartScreen — «Подробнее» → «Выполнить в любом случае» (сборка без платной цифровой подписи, исходники открыты).
-            - **macOS:** распакуйте ZIP, перетащите «VoxPaperAi Pro.app» в «Программы». При окне «Apple не удалось подтвердить…» снимите карантин командой в Терминале: `xattr -cr "/Applications/VoxPaperAi Pro.app"` (вставьте целиком, без лишних символов) — затем откройте приложение обычным двойным кликом. Без Терминала: Системные настройки → «Конфиденциальность и безопасность» → «Открыть всё равно». В macOS 15+ правый клик → «Открыть» обход не предлагает.
+            - **macOS:** откройте DMG и перетащите «VoxPaperAi Pro.app» на ярлык «Applications» в открывшемся окне, затем извлеките образ. При окне «Apple не удалось подтвердить…» снимите карантин командой в Терминале: `xattr -cr "/Applications/VoxPaperAi Pro.app"` (вставьте целиком, без лишних символов) — затем откройте приложение обычным двойным кликом. Без Терминала: Системные настройки → «Конфиденциальность и безопасность» → «Открыть всё равно». В macOS 15+ правый клик → «Открыть» обход не предлагает.
             - **Linux:** `tar -xzf VoxPaperAi-Pro-linux-x64.tar.gz -C ~/Downloads`, затем запустите `~/Downloads/"VoxPaperAi Pro"/"VoxPaperAi Pro"`.
 
             При первом запуске программа попросит согласие с Политикой конфиденциальности и Отказом от ответственности. Программа бесплатна.

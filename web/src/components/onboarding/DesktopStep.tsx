@@ -34,8 +34,8 @@ const RELEASES_PAGE = "https://github.com/maksjermy123/Transcrypt/releases";
 
 const ASSETS: Record<string, string> = {
   "windows:x64": "VoxPaperAi-Pro-windows-x64.zip",
-  "macos:arm64": "VoxPaperAi-Pro-macos-apple-silicon.zip",
-  "macos:x64": "VoxPaperAi-Pro-macos-intel.zip",
+  "macos:arm64": "VoxPaperAi-Pro-macos-apple-silicon.dmg",
+  "macos:x64": "VoxPaperAi-Pro-macos-intel.dmg",
   "linux:x64": "VoxPaperAi-Pro-linux-x64.tar.gz",
 };
 
@@ -123,13 +123,16 @@ const INSTALL_STEPS: Record<DesktopOs, InstallStep[]> = {
   ],
   macos: [
     {
-      text: "Распакуйте ZIP: двойной клик по скачанному файлу — появится «VoxPaperAi Pro.app».",
+      text: "Откройте скачанный DMG двойным кликом — откроется окно с программой и ярлыком «Applications».",
     },
     {
-      text: "Перетащите «VoxPaperAi Pro.app» в папку «Программы» в боковой панели Finder.",
+      text: "Перетащите «VoxPaperAi Pro.app» на ярлык «Applications» в этом окне (или в папку «Программы» в боковой панели Finder) и дождитесь копирования.",
     },
     {
-      text: "Откройте приложение двойным кликом. Появится окно «Apple не удалось подтвердить, что файл „VoxPaperAi Pro“ не содержит вредоносного ПО» — это ожидаемо: приложение не подписано платным сертификатом Apple. Снимите карантин (шаг 4) — делается один раз.",
+      text: "Извлеките образ: правый клик по «VoxPaperAi Pro» в боковой панели Finder → «Извлечь».",
+    },
+    {
+      text: "Откройте приложение из «Программ» двойным кликом. Появится окно «Apple не удалось подтвердить, что файл „VoxPaperAi Pro“ не содержит вредоносного ПО» — это ожидаемо: приложение не подписано платным сертификатом Apple. Снимите карантин (шаг 5) — делается один раз.",
     },
     {
       text: "Снимите карантин одной командой — самый надёжный способ на любой версии macOS:",
@@ -142,7 +145,7 @@ const INSTALL_STEPS: Record<DesktopOs, InstallStep[]> = {
       detail: "В macOS 15 и новее правый клик → «Открыть» больше не предлагает запуск неподписанных приложений — работает только этот раздел настроек.",
     },
     {
-      text: "Готово: теперь «VoxPaperAi Pro» открывается обычным двойным кликом. Шаги 3–5 нужны только один раз.",
+      text: "Готово: теперь «VoxPaperAi Pro» открывается обычным двойным кликом. Шаги 4–6 нужны только один раз.",
     },
     { text: CONSENT_KEY },
   ],
