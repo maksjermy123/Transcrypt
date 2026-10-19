@@ -63,7 +63,9 @@ updates:
     open-pull-requests-limit: 5
 
   # Python-движок (корневой requirements.txt) — раз в месяц из-за строгих пинов.
-  # Python engine (root requirements.txt) — monthly due to strict pins.
+  # pdf2docx игнорируется целиком: его транзитивная зависимость PyMuPDF уже
+  # ломала сборку (инцидент 2026-10-19) — поднимать только вручную с полной
+  # проверкой цепочки. Python engine (root requirements.txt) — monthly.
   - package-ecosystem: "pip"
     directory: "/"
     schedule:
@@ -71,4 +73,17 @@ updates:
     ignore:
       - update-types:
           - "version-update:semver-major"
+      - dependency-name: "pdf2docx"
     open-pull-requests-limit: 3
+
+  # Ishodnik/ — замороженный архив оригинальных исходников (историческая
+  # справка). Dependabot рекурсивно нашёл Ishodnik/requirements.txt и
+  # предлагал апдейты (#4, #12) — архив не должен меняться, полностью
+  # исключаем его из обновлений. / Ishodnik/ is a FROZEN archive of the
+  # original sources (historical reference) — exclude from all updates.
+  - package-ecosystem: "pip"
+    directory: "/Ishodnik"
+    schedule:
+      interval: "monthly"
+    ignore:
+      - dependency-name: "*"
