@@ -432,6 +432,29 @@ class Downloader:
         )
         if hint:
             text += f"\n{hint}"
+        if kind == "no_formats":
+            # Фактический статус решателя в сообщении: вместо общего совета
+            # «проверьте deno» пользователь сразу видит, жив ли он у него.
+            try:
+                from src.utils.fs import deno_version, find_deno_executable
+
+                deno_path = find_deno_executable()
+            except Exception:
+                deno_path = None
+            if deno_path:
+                dv = deno_version(deno_path)
+                text += (
+                    f"\nСамопроверка решателя: deno найден"
+                    f"{f' ({dv})' if dv else ''} — {deno_path}. Значит, причина "
+                    "скорее в сети/IP — помогает VPN (сменить IP)."
+                )
+            else:
+                text += (
+                    "\nСамопроверка решателя: deno НЕ найден ни в PATH, ни рядом "
+                    "с программой — антивирус мог удалить его из папки. "
+                    "Переустановите программу из свежей сборки (или верните файл "
+                    "deno.exe из карантина антивируса в папку программы)."
+                )
         note = cls._ytdlp_note()
         if note:
             text += f"\n{note}"

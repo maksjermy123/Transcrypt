@@ -13,11 +13,18 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import QThread, pyqtSignal
 import os
+import platform
 import shlex
 import sys
 
 from src.utils.runtime import recommended_cpu_threads, resolve_whisper_device
-from src.utils.fs import find_ffmpeg_executable, find_ffprobe_executable, find_soffice_executable
+from src.utils.fs import (
+    deno_version,
+    find_deno_executable,
+    find_ffmpeg_executable,
+    find_ffprobe_executable,
+    find_soffice_executable,
+)
 from src.utils.config import CONFIG_FILE
 from src.utils.app_paths import app_support_dir, is_windows, models_dir
 
@@ -283,6 +290,30 @@ class SettingsTab(QWidget):
         diagnostics_layout.addWidget(QLabel("Потоки Whisper:"), 2, 0)
         self.lbl_diag_threads = QLabel("Проверка...")
         diagnostics_layout.addWidget(self.lbl_diag_threads, 2, 1, 1, 3)
+        diagnostics_layout.addWidget(QLabel("Загрузчик (yt-dlp):"), 3, 0)
+        self.lbl_diag_ytdlp = QLabel("Проверка...")
+        diagnostics_layout.addWidget(self.lbl_diag_ytdlp, 3, 1)
+        diagnostics_layout.addWidget(QLabel("PyTorch:"), 3, 2)
+        self.lbl_diag_torch = QLabel("Проверка...")
+        diagnostics_layout.addWidget(self.lbl_diag_torch, 3, 3)
+        diagnostics_layout.addWidget(QLabel("Решатель (deno):"), 4, 0)
+        self.lbl_diag_deno = QLabel("Проверка...")
+        self.lbl_diag_deno.setToolTip(
+            "JS-рантайм решателя проверки YouTube (PO Token). "
+            "Если «не найден» — скачивание с YouTube может падать "
+            "с ошибкой «Requested format is not available»."
+        )
+        diagnostics_layout.addWidget(self.lbl_diag_deno, 4, 1)
+        diagnostics_layout.addWidget(QLabel("Whisper:"), 4, 2)
+        self.lbl_diag_whisper = QLabel("Проверка...")
+        diagnostics_layout.addWidget(self.lbl_diag_whisper, 4, 3)
+        self.btn_copy_report = QPushButton("Копировать отчёт о среде")
+        self.btn_copy_report.setToolTip(
+            "Скопировать версии компонентов в буфер обмена — "
+            "вставьте их в сообщение разработчику при обращении."
+        )
+        self.btn_copy_report.clicked.connect(self.copy_diagnostics_report)
+        diagnostics_layout.addWidget(self.btn_copy_report, 5, 0, 1, 4)
         layout.addWidget(diagnostics_group)
 
         update_group = QGroupBox("Обновления")
@@ -397,6 +428,112 @@ class SettingsTab(QWidget):
         self._set_diag_label(self.lbl_diag_soffice, bool(soffice_path), "найден" if soffice_path else "не найден")
         self._set_diag_label(self.lbl_diag_device, True, f"{device} -> {resolved_device}")
         self._set_diag_label(self.lbl_diag_threads, True, threads_text)
+
+        # yt-dlp: версия пакета (повторный import мгновенен — модуль уже загружен)
+        try:
+            import yt_dlp
+
+            self._set_diag_label(self.lbl_diag_ytdlp, True, str(yt_dlp.version.__version__))
+        except Exception as exc:
+            self._set_diag_label(self.lbl_diag_ytdlp, False, f"не найден ({type(exc).__name__})")
+
+        # deno: JS-рантайм решателя PO Token — главный подозреваемый при
+        # «Requested format is not available»
+        deno_path = find_deno_executable()
+        if deno_path:
+            dv = deno_version(deno_path)
+            self._set_diag_label(self.lbl_diag_deno, True, f"найден ({dv})" if dv else "найден")
+        else:
+            self._set_diag_label(
+                self.lbl_diag_deno, False,
+                "не найден — см. подсказку",
+            )
+
+        # PyTorch: если загрузка упала (WinError 1114 и т.п.) — честно покажем
+        try:
+            import torch
+
+            self._set_diag_label(self.lbl_diag_torch, True, str(torch.__version__))
+        except Exception as exc:
+            self._set_diag_label(self.lbl_diag_torch, False, f"не загружен ({type(exc).__name__})")
+
+        try:
+            import whisper
+
+            wv = getattr(whisper, "__version__", "")
+            self._set_diag_label(self.lbl_diag_whisper, True, wv or "установлен")
+        except Exception as exc:
+            self._set_diag_label(self.lbl_diag_whisper, False, f"не найден ({type(exc).__name__})")
+
+    def _app_version(self) -> str:
+        """Версия приложения из файла VERSION (тот же механизм, что в AboutTab)."""
+        if getattr(sys, "frozen", False):
+            resource_root = getattr(sys, "_MEIPASS", None) or os.path.abspath(
+                os.path.join(os.path.dirname(sys.executable), "..", "Resources")
+            )
+            version_file = os.path.join(resource_root, "VERSION")
+        else:
+            version_file = os.path.abspath(
+                os.path.join(os.path.dirname(__file__), "..", "..", "..", "VERSION")
+            )
+        try:
+            if os.path.exists(version_file):
+                with open(version_file, "r", encoding="utf-8") as f:
+                    return f.read().strip() or "Unknown"
+        except Exception:
+            pass
+        return "Unknown"
+
+    def copy_diagnostics_report(self):
+        """Компактный отчёт о среде в буфер обмена — для багрепортов одним
+        сообщением: без него пользователь присылает только трейсбек, и
+        диагностика (deno/yt-dlp/torch) занимает по несколько итераций."""
+        try:
+            from PyQt6.QtWidgets import QApplication
+
+            ffmpeg_path = find_ffmpeg_executable()
+            ffprobe_path = find_ffprobe_executable()
+            soffice_path = find_soffice_executable()
+            deno_path = find_deno_executable()
+
+            def _ver(module_name: str) -> str:
+                try:
+                    module = __import__(module_name)
+                    return str(getattr(module, "__version__", "установлен"))
+                except Exception as exc:
+                    return f"не найден ({type(exc).__name__})"
+
+            try:
+                import yt_dlp
+
+                ytdlp_text = str(yt_dlp.version.__version__)
+            except Exception as exc:
+                ytdlp_text = f"не найден ({type(exc).__name__})"
+
+            lines = [
+                "VoxPaperAi Pro — отчёт о среде",
+                f"Версия программы: {self._app_version()}",
+                f"ОС: {platform.system()} {platform.release()} ({platform.machine()})",
+                f"Python: {platform.python_version()}; portable-сборка: {bool(getattr(sys, 'frozen', False))}",
+                f"FFmpeg: {ffmpeg_path or 'не найден'}",
+                f"FFprobe: {ffprobe_path or 'не найден'}",
+                f"LibreOffice: {soffice_path or 'не найден'}",
+                f"Загрузчик (yt-dlp): {ytdlp_text}",
+                f"Решатель (deno): {deno_path or 'не найден'}",
+                f"PyTorch: {_ver('torch')}",
+                f"Whisper: {_ver('whisper')}",
+            ]
+            device = self.combo_device.currentText() if hasattr(self, "combo_device") else "Auto"
+            lines.append(f"Устройство Whisper: {device} -> {resolve_whisper_device(device)}")
+            QApplication.clipboard().setText("\n".join(lines))
+            QMessageBox.information(
+                self,
+                "Отчёт скопирован",
+                "Отчёт о среде скопирован в буфер обмена.\n\n"
+                "Вставьте его (Ctrl+V) в сообщение разработчику — это ускорит диагностику.",
+            )
+        except Exception as exc:
+            QMessageBox.critical(self, "Ошибка", f"Не удалось собрать отчёт: {exc}")
 
     def on_translation_provider_changed(self, provider: str):
         is_deepl = provider == "DeepL"

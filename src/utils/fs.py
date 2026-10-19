@@ -218,6 +218,94 @@ def _find_ffprobe_uncached() -> str | None:
                 pass
     return None
 
+def find_deno_executable() -> str | None:
+    """Finds deno binary — JS-рантайм решателя EJS в yt-dlp (нужен для PO Token).
+
+    В portable-сборке deno лежит РЯДОМ с exe приложения (release.yml, шаг
+    «Bundle deno»); yt-dlp ищет его в dirname(sys.executable) и в PATH.
+    Здесь тот же порядок (+ venv-пути для dev-режима). С кэшем: проба
+    «deno --version» — запуск процесса, при каждом вызове недёшев.
+    """
+    return _cached_executable("deno", _find_deno_uncached)
+
+
+def parse_deno_version(output: str) -> str:
+    """'deno 2.9.7 (release, x86_64-pc-windows-msvc)' → '2.9.7'.
+
+    Пустая строка — если версию разобрать не удалось.
+    """
+    try:
+        first = (output or "").strip().splitlines()
+        if not first:
+            return ""
+        parts = first[0].strip().split()
+        # Ожидаем: ["deno", "2.9.7", "(release, ..."]
+        if len(parts) >= 2 and parts[0].lower().startswith("deno"):
+            return parts[1]
+        return ""
+    except Exception:
+        return ""
+
+
+def _deno_binary_works(path: str) -> bool:
+    try:
+        result = subprocess.run(
+            [path, "--version"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=4,
+            **no_window_kwargs(),  # без этого — чёрное окно при каждой пробе
+        )
+        return result.returncode == 0 and "deno" in (result.stdout or "").lower()
+    except Exception:
+        return False
+
+
+def _find_deno_uncached() -> str | None:
+    import shutil
+    import sys
+
+    exe_name = "deno.exe" if is_windows() else "deno"
+    candidates: list[str | None] = [
+        shutil.which("deno"),
+        shutil.which(exe_name),
+    ]
+    try:
+        # Корень portable-сборки: рядом с исполняемым файлом приложения
+        exe_dir = os.path.dirname(os.path.abspath(sys.executable))
+        candidates.append(os.path.join(exe_dir, exe_name))
+    except Exception:
+        pass
+    try:
+        # Dev-режим: deno из pip-пакета живёт в venv (Scripts/bin)
+        venv_root = os.path.dirname(os.path.dirname(os.path.abspath(sys.executable)))
+        candidates.append(os.path.join(venv_root, "Scripts", exe_name))
+        candidates.append(os.path.join(venv_root, "bin", exe_name))
+    except Exception:
+        pass
+
+    for path in candidates:
+        if path and os.path.isfile(path) and _deno_binary_works(path):
+            return path
+    return None
+
+
+def deno_version(path: str) -> str:
+    """Версия deno по пути ('2.9.7') или '' — если определить не удалось."""
+    try:
+        result = subprocess.run(
+            [path, "--version"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=4,
+            **no_window_kwargs(),
+        )
+        return parse_deno_version(result.stdout or "")
+    except Exception:
+        return ""
+
 def get_audio_duration(file_path: str) -> float | None:
     """Returns media duration in seconds via ffprobe (reliable JSON output).
 
