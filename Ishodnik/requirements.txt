@@ -2,7 +2,7 @@ PyQt6==6.6.1
 PyQt6-Qt6==6.6.1
 PyQt6-sip==13.6.0
 openai-whisper==20231117
-yt-dlp==2026.7.4
+yt-dlp==2026.8.19
 deep-translator==1.11.4
 ffmpeg-python==0.2.0
 pdf2docx==0.5.8
