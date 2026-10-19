@@ -13,6 +13,18 @@
 # pdf2docx↔pymupdf, numpy, torch). Never bump a pin without validating the
 # whole build chain (Windows/macOS ARM/macOS Intel/Linux, PyInstaller). Hence
 # pip is monthly with a low PR limit. Security PRs arrive separately on CVEs.
+#
+# ПОЛИТИКА МАЖОРОВ / MAJOR POLICY: ignore-правила ниже запрещают автоматические
+# МАЖОРНЫЕ обновления (x.y.z → (x+1).0.0). Минорные и патч-обновления приходят
+# автоматически и проверяются CI. Мажоры поднимаем вручную в плановом цикле
+# (отдельная задача, с полной проверкой сборки/релиза). Примеры, почему:
+# TypeScript 7 (новый компилятор), pypdf 6, pyqt6 6.11, framer-motion 14,
+# lucide-react 1.x, action-gh-release v3 (проверка на реальном релизе).
+# Если появится CVE с фиксом только в мажоре — снимаем ignore точечно.
+# MAJOR POLICY: ignore rules below block automatic MAJOR bumps; minor and
+# patch updates keep flowing and are validated by CI. Majors are lifted
+# manually in a planned cycle with a full build/release check. If a CVE fix
+# lands only in a major, lift the ignore for that dependency specifically.
 version: 2
 updates:
   # Действия в workflow-файлах — еженедельно, одним PR.
@@ -25,6 +37,9 @@ updates:
       actions:
         patterns:
           - "*"
+    ignore:
+      - update-types:
+          - "version-update:semver-major"
     open-pull-requests-limit: 3
 
   # Веб-фронт (web/package.json + web/bun.lock) — еженедельно; major —
@@ -42,6 +57,9 @@ updates:
         update-types:
           - "minor"
           - "patch"
+    ignore:
+      - update-types:
+          - "version-update:semver-major"
     open-pull-requests-limit: 5
 
   # Python-движок (корневой requirements.txt) — раз в месяц из-за строгих пинов.
@@ -50,4 +68,7 @@ updates:
     directory: "/"
     schedule:
       interval: "monthly"
+    ignore:
+      - update-types:
+          - "version-update:semver-major"
     open-pull-requests-limit: 3
