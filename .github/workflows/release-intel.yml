@@ -32,9 +32,9 @@ jobs:
     timeout-minutes: 90
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           architecture: "x64" # x86_64-Python → PyInstaller соберёт x86_64-приложение
@@ -74,7 +74,7 @@ jobs:
           shasum -a 256 "VoxPaperAi-Pro-macos-intel.dmg" > "VoxPaperAi-Pro-macos-intel.dmg.sha256"
 
       - name: Upload to GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ github.event_name == 'push' && github.ref_name || github.event.inputs.tag }}
           draft: false

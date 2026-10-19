@@ -28,7 +28,7 @@ jobs:
     timeout-minutes: 45
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Установщик движка (реальный путь пользователя, PowerShell 5.1)
         shell: pwsh
