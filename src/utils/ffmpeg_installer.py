@@ -58,7 +58,7 @@ def _is_usable_binary(path: str) -> bool:
             [path, "-version"],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True,
+            encoding="utf-8", errors="replace",  # без encoding Windows читает CP1251 ('charmap')
             timeout=5,
             **no_window_kwargs(),
         )

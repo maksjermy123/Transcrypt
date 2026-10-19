@@ -29,7 +29,7 @@ class Translator:
                     check=True,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
-                    text=True,
+                    encoding="utf-8", errors="replace",  # без encoding Windows читает CP1251 ('charmap')
                     **no_window_kwargs(),
                 )
                 converted = os.path.join(tmpdir, os.path.splitext(os.path.basename(path))[0] + ".txt")
@@ -45,7 +45,7 @@ class Translator:
                     check=True,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
-                    text=True,
+                    encoding="utf-8", errors="replace",
                     **no_window_kwargs(),
                 )
                 if os.path.exists(converted):
@@ -419,7 +419,7 @@ class Translator:
                     check=True,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
-                    text=True,
+                    encoding="utf-8", errors="replace",  # без encoding Windows читает CP1251 ('charmap')
                     **no_window_kwargs(),
                 )
                 expected = os.path.join(out_dir, os.path.splitext(os.path.basename(input_docx))[0] + ".pdf")

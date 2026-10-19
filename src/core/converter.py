@@ -159,7 +159,7 @@ class Converter:
                 check=True,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                text=True,
+                encoding="utf-8", errors="replace",  # иначе на Windows 'charmap' падает на кириллице
                 **no_window_kwargs(),
             )
             expected = os.path.join(tmpdir, os.path.splitext(os.path.basename(input_path))[0] + output_ext)
@@ -190,7 +190,7 @@ class Converter:
                 check=True,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                text=True,
+                encoding="utf-8", errors="replace",  # иначе на Windows 'charmap' падает на кириллице
                 **no_window_kwargs(),
             )
             expected = os.path.join(out_dir, os.path.splitext(os.path.basename(input_docx))[0] + ".pdf")
@@ -223,6 +223,62 @@ class Converter:
         """Returns full path to ffprobe binary (falls back to bare name)."""
         from src.utils.fs import find_ffprobe_executable
         return find_ffprobe_executable() or "ffprobe"
+
+    # ─────────────────────────────────────────────────────────────
+    #  Запуск ffmpeg без прогресса: безопасно на любой ОС и любом имени файла
+    # ─────────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _stderr_text(data) -> str:
+        """Декодирует вывод процесса как UTF-8 без падений.
+
+        На Windows чтение вывода ffmpeg в text=True без явной encoding
+        использовало системную CP1251 ('charmap' codec) — кириллическое
+        имя файла в выводе (байты UTF-8 вроде 0x98 у «И») роняло декодер:
+        UnicodeDecodeError: 'charmap' codec can't decode byte 0x98."""
+        if not data:
+            return ""
+        if isinstance(data, bytes):
+            return data.decode("utf-8", errors="replace")
+        return str(data)
+
+    def _run_ffmpeg_no_progress(self, cmd, worker_obj=None):
+        """Запускает ffmpeg и ВЫЧИТЫВАЕТ stderr до конца.
+
+        Закрывает два регрессиона:
+        1. «Вечное зависание» конвертации на движке (сайт висел десятки минут):
+           старый код не вычитывал stderr вообще — ffmpeg постоянно пишет туда
+           статистику, буфер канала (~64 КБ) переполнялся на длинных файлах,
+           ffmpeg замирал на записи, а process.wait() никогда не возвращался.
+        2. «charmap codec» — здесь stderr декодируется как UTF-8 с заменой
+           ошибок, а не в CP1251 (см. _stderr_text).
+
+        stdout уходит в DEVNULL: ffmpeg пишет всё в stderr, а непрочитанный
+        PIPE — второй кандидат на такой же дедлок. Хвост stderr сохраняется
+        для понятного сообщения об ошибке."""
+        process = subprocess.Popen(
+            cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, **no_window_kwargs()
+        )
+        if worker_obj:
+            worker_obj.active_process = process
+        stderr_tail = b""
+        try:
+            if process.stderr:
+                # read() блокируется до 8 КБ или EOF — ждать всё равно нужно
+                # до конца процесса; главное, что канал НЕ переполняется
+                for chunk in iter(lambda: process.stderr.read(8192), b""):
+                    stderr_tail = (stderr_tail + chunk)[-65536:]
+            process.wait()
+        finally:
+            if worker_obj:
+                worker_obj.active_process = None
+        if process.returncode != 0 and (not worker_obj or not worker_obj.is_stop_requested()):
+            tail = self._stderr_text(stderr_tail).strip()
+            raise RuntimeError(
+                f"ffmpeg завершился с кодом {process.returncode}"
+                + (f". Ответ ffmpeg: {tail[-1200:]}" if tail else "")
+            )
+        return process.returncode
 
     def convert_media(self, input_path, output_format, output_dir=None, progress_callback=None, worker_obj=None):
         """Converts media using ffmpeg."""
@@ -264,7 +320,7 @@ class Converter:
         if progress_callback:
             try:
                 probe_cmd = [self._ffprobe(), "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", input_path]
-                res = subprocess.run(probe_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, **no_window_kwargs())
+                res = subprocess.run(probe_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding="utf-8", errors="replace", **no_window_kwargs())
                 duration = float(res.stdout.strip())
             except Exception:
                 duration = None
@@ -276,7 +332,10 @@ class Converter:
                 
                 # Use subprocess.Popen to read stderr dynamically
                 # ffmpeg prints to stderr, not stdout typically
-                process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, universal_newlines=True, **no_window_kwargs())
+                # UTF-8 обязателен: дефолтная CP1251 на Windows падала на
+                # кириллическом имени файла в выводе ffmpeg ('charmap' codec).
+                # stdout → DEVNULL: непрочитанный PIPE — тот же дедлок, что и stderr.
+                process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, encoding="utf-8", errors="replace", **no_window_kwargs())
                 if worker_obj:
                     worker_obj.active_process = process
                 start_time = time.time()
@@ -318,18 +377,11 @@ class Converter:
                 if process.returncode != 0 and (not worker_obj or not worker_obj.is_stop_requested()):
                     raise subprocess.CalledProcessError(process.returncode, cmd)
             else:
-                process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, **no_window_kwargs())
-                if worker_obj:
-                    worker_obj.active_process = process
-                process.wait()
-                if worker_obj:
-                    worker_obj.active_process = None
-                if process.returncode != 0 and (not worker_obj or not worker_obj.is_stop_requested()):
-                    raise subprocess.CalledProcessError(process.returncode, cmd)
+                self._run_ffmpeg_no_progress(cmd, worker_obj)
                 
             return output_path
         except subprocess.CalledProcessError as e:
-            err_msg = e.stderr.decode() if hasattr(e, 'stderr') and e.stderr else str(e)
+            err_msg = self._stderr_text(e.stderr) if hasattr(e, 'stderr') and e.stderr else str(e)
             self.logger.error(f"FFmpeg conversion failed: {err_msg}")
             raise e
 
@@ -605,14 +657,14 @@ class Converter:
         if progress_callback:
             try:
                 probe_cmd = [self._ffprobe(), "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", input_path]
-                res = subprocess.run(probe_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, **no_window_kwargs())
+                res = subprocess.run(probe_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding="utf-8", errors="replace", **no_window_kwargs())
                 duration = float(res.stdout.strip())
             except Exception:
                 duration = None
         
         try:
             if progress_callback and duration:
-                process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, universal_newlines=True, **no_window_kwargs())
+                process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, encoding="utf-8", errors="replace", **no_window_kwargs())
                 if worker_obj: worker_obj.active_process = process
                 start_time = time.time()
                 
@@ -649,16 +701,11 @@ class Converter:
                 if process.returncode != 0 and (not worker_obj or not worker_obj.is_stop_requested()):
                     raise subprocess.CalledProcessError(process.returncode, cmd)
             else:
-                process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, **no_window_kwargs())
-                if worker_obj: worker_obj.active_process = process
-                process.wait()
-                if worker_obj: worker_obj.active_process = None
-                if process.returncode != 0 and (not worker_obj or not worker_obj.is_stop_requested()):
-                    raise subprocess.CalledProcessError(process.returncode, cmd)
+                self._run_ffmpeg_no_progress(cmd, worker_obj)
             
             return output_path
         except subprocess.CalledProcessError as e:
-            err_msg = e.stderr.decode() if hasattr(e, 'stderr') and e.stderr else str(e)
+            err_msg = self._stderr_text(e.stderr) if hasattr(e, 'stderr') and e.stderr else str(e)
             self.logger.error(f"Audio enhancement failed: {err_msg}")
             raise e
 
@@ -695,7 +742,7 @@ class Converter:
                 "-of", "default=noprint_wrappers=1:nokey=1",
                 video_path,
             ]
-            res = subprocess.run(probe_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=10, **no_window_kwargs())
+            res = subprocess.run(probe_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding="utf-8", errors="replace", timeout=10, **no_window_kwargs())
             h = int(float(res.stdout.strip()))
             return h if h > 0 else None
         except Exception:
@@ -759,14 +806,14 @@ class Converter:
         if progress_callback:
             try:
                 probe_cmd = [self._ffprobe(), "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", video_path]
-                res = subprocess.run(probe_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, **no_window_kwargs())
+                res = subprocess.run(probe_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding="utf-8", errors="replace", **no_window_kwargs())
                 duration = float(res.stdout.strip())
             except Exception:
                 duration = None
         
         try:
             if progress_callback and duration:
-                process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, universal_newlines=True, **no_window_kwargs())
+                process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, encoding="utf-8", errors="replace", **no_window_kwargs())
                 if worker_obj: worker_obj.active_process = process
                 start_time = time.time()
                 
@@ -803,16 +850,11 @@ class Converter:
                 if process.returncode != 0 and (not worker_obj or not worker_obj.is_stop_requested()):
                     raise subprocess.CalledProcessError(process.returncode, cmd)
             else:
-                process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, **no_window_kwargs())
-                if worker_obj: worker_obj.active_process = process
-                process.wait()
-                if worker_obj: worker_obj.active_process = None
-                if process.returncode != 0 and (not worker_obj or not worker_obj.is_stop_requested()):
-                    raise subprocess.CalledProcessError(process.returncode, cmd)
+                self._run_ffmpeg_no_progress(cmd, worker_obj)
             
             return output_path
         except subprocess.CalledProcessError as e:
-            err_msg = e.stderr.decode() if hasattr(e, 'stderr') and e.stderr else str(e)
+            err_msg = self._stderr_text(e.stderr) if hasattr(e, 'stderr') and e.stderr else str(e)
             self.logger.error(f"Hardsubbing failed: {err_msg}")
             raise e
 

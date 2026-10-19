@@ -157,7 +157,7 @@ def _find_ffmpeg_uncached() -> str | None:
                 [path, "-version"],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                text=True,
+                encoding="utf-8", errors="replace",  # без encoding Windows читает CP1251 ('charmap')
                 timeout=5,
                 **no_window_kwargs(),  # без этого — чёрное окно при каждой пробе
             )
@@ -208,7 +208,7 @@ def _find_ffprobe_uncached() -> str | None:
                     [path, "-version"],
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
-                    text=True,
+                    encoding="utf-8", errors="replace",
                     timeout=5,
                     **no_window_kwargs(),  # без этого — чёрное окно при каждой пробе
                 )
@@ -253,7 +253,7 @@ def _deno_binary_works(path: str) -> bool:
             [path, "--version"],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True,
+            encoding="utf-8", errors="replace",
             timeout=4,
             **no_window_kwargs(),  # без этого — чёрное окно при каждой пробе
         )
@@ -298,7 +298,7 @@ def deno_version(path: str) -> str:
             [path, "--version"],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True,
+            encoding="utf-8", errors="replace",
             timeout=4,
             **no_window_kwargs(),
         )
@@ -327,7 +327,7 @@ def get_audio_duration(file_path: str) -> float | None:
             ],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True,
+            encoding="utf-8", errors="replace",
             timeout=30,
             **no_window_kwargs(),
         )

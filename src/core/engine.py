@@ -240,6 +240,9 @@ class WhisperEngine:
 
         env = os.environ.copy()
         env["PYTHONPATH"] = (env.get("PYTHONPATH", "") + os.pathsep + project_root).strip(os.pathsep)
+        # UTF-8 в канале ребёнка: без этого на Windows ребёнок пишет в stderr
+        # в CP1251, а родитель читает UTF-8 — кириллица в логах ломается.
+        env["PYTHONIOENCODING"] = "utf-8"
         ffmpeg_path = find_ffmpeg_executable()
         if ffmpeg_path:
             env["PATH"] = os.path.dirname(ffmpeg_path) + os.pathsep + env.get("PATH", "")
@@ -256,11 +259,10 @@ class WhisperEngine:
             cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True,
+            encoding="utf-8", errors="replace",  # без encoding Windows читает CP1251 ('charmap') и падает на кириллице
             cwd=project_root,
             env=env,
             bufsize=1,
-            universal_newlines=True,
             **no_window_kwargs(),  # без окна: иначе на Windows чёрная консоль на всю транскрипцию
         )
 

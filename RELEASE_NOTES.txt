@@ -1,4 +1,60 @@
 ================================================================================
+  VOXPAPERAI PRO v1.0.9 - RELEASE NOTES
+================================================================================
+
+📝 VERSION: 1.0.9
+🗓️  BUILD DATE: October 19, 2026
+🐍 PYTHON: 3.12
+📦 PYQT6: 6.6.1
+📦 TORCH: 2.8.0 (pinned)
+📦 YT-DLP: 2026.08.19 + EJS solver (deno bundled)
+✅ STATUS: Production Ready
+
+================================================================================
+🆕 WHAT'S NEW IN v1.0.9
+================================================================================
+
+1. CRITICAL FIX: CONVERSION OF FILES WITH RUSSIAN / MIXED NAMES (WINDOWS)
+   • Symptom: converting a video with a Cyrillic filename (e.g. downloaded
+     from YouTube: "Уборщик ЗАРУБИЛСЯ с Бодибилдерами в Зале ｜ ANATOLY…")
+     failed with a cryptic error:
+     "'charmap' codec can't decode byte 0x98 in position 146:
+      character maps to <undefined>"
+   • Cause: ffmpeg prints the input filename into its log output; the app
+     read that log in the system Windows encoding (CP1251), while the bytes
+     are UTF-8. The byte 0x98 does not exist in CP1251, so decoding crashed
+     for ANY file whose name contains Cyrillic or symbols like "｜"
+   • Fix: ALL external-tool output (ffmpeg, ffprobe, LibreOffice, pip, deno)
+     is now read strictly as UTF-8 with error replacement - on every OS,
+     in every feature (converter, media tab, audio cleanup, hardsub,
+     transcription subprocess)
+   • Bonus: if ffmpeg itself fails, the error message now includes the real
+     ffmpeg explanation instead of "Command returned non-zero exit status 1"
+
+2. CRITICAL FIX: CONVERSION HANGING FOREVER (WEBSITE / ENGINE, LONG FILES)
+   • Symptom: on the website, converting a long video (10+ minutes) stayed
+     "running" forever - the job never finished, no error was shown
+   • Cause: in the no-progress path the engine never drained ffmpeg's log
+     pipe; ffmpeg writes progress stats to it continuously, the pipe buffer
+     (~64 KB) filled up on long files, ffmpeg blocked on writing, and the
+     engine waited for it forever (classic subprocess deadlock)
+   • Fix: the engine now always drains the tool's output to EOF (keeping the
+     tail for error messages) and redirects unused stdout to DEVNULL
+   • This also fixes the same deadlock in "save audio as mp3" during
+     transcription and in audio cleanup / hardsub for long files
+
+3. SECURITY BUMPS (from the October security audit)
+   • pypdf 5.1.0 → 6.21.1: closes 97 published CVEs (DoS via crafted PDFs)
+   • Pillow 11.x → 12.3.0: closes 34 published CVEs (image parsers)
+   • requests 2.32.3 → 2.33.0: closes 2 published CVEs
+   • Engine ≥ 1.4.0 ships the same fixes for the web version
+
+4. WEBSITE: UPDATE BANNER FOR ENGINE 1.4.0
+   • If conversion was "stuck" or failed with the charmap error, the site now
+     shows an amber "engine update available" banner with the 1.4.0 story and
+     a one-command update instruction (models and settings are kept)
+
+================================================================================
   VOXPAPERAI PRO v1.0.8 - RELEASE NOTES
 ================================================================================
 

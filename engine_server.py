@@ -848,7 +848,7 @@ class EngineHTTPRequestHandler(BaseHTTPRequestHandler):
 
         self.send_json({
             "status": "ok",
-            "version": "1.3.9",
+            "version": "1.4.0",
             "jobs": True,  # Job API: фоновые задачи, переживающие закрытие вкладки
             "queue": True,  # очереди задач + видимый статус «В очереди»
             "parallel_heavy": HEAVY_PARALLEL,  # сколько тяжёлых задач идёт одновременно
@@ -939,7 +939,7 @@ class EngineHTTPRequestHandler(BaseHTTPRequestHandler):
                 kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
             proc = subprocess.run(
                 [sys.executable, "-m", "pip", "install", "--upgrade", "--no-cache-dir", "yt-dlp"],
-                capture_output=True, text=True, timeout=300, **kwargs,
+                capture_output=True, encoding="utf-8", errors="replace", timeout=300, **kwargs,
             )
         except subprocess.TimeoutExpired:
             self.send_error_json(

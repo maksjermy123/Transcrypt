@@ -86,7 +86,7 @@ class SystemDiagnostics:
                 try:
                     output = subprocess.check_output(['ffmpeg', '-version'], 
                                                    stderr=subprocess.STDOUT, 
-                                                   text=True, timeout=5, **no_window_kwargs())
+                                                   encoding="utf-8", errors="replace", timeout=5, **no_window_kwargs())
                     version_line = output.split('\n')[0]
                     result['available'] = True
                     result['version'] = version_line
