@@ -105,7 +105,10 @@ jobs:
       - name: Package (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
-        run: Compress-Archive -Path "dist/VoxPaperAi Pro" -DestinationPath "${{ matrix.asset }}" -Force
+        run: |
+          Compress-Archive -Path "dist/VoxPaperAi Pro" -DestinationPath "${{ matrix.asset }}" -Force
+          $hash = (Get-FileHash -Algorithm SHA256 "${{ matrix.asset }}").Hash.ToLower()
+          "$hash  ${{ matrix.asset }}" | Out-File -FilePath "${{ matrix.asset }}.sha256" -Encoding ascii
 
       # macOS-артефакт — классический DMG-образ: пользователь открывает его и
       # перетаскивает приложение на ярлык Applications (привычная установка).
@@ -120,10 +123,13 @@ jobs:
           cp INSTALL_FREE_MACOS.txt dmg-staging/
           cp DISCLAIMER.txt dmg-staging/
           hdiutil create -volname "VoxPaperAi Pro" -srcfolder dmg-staging -ov -format UDZO "${{ matrix.asset }}"
+          shasum -a 256 "${{ matrix.asset }}" > "${{ matrix.asset }}.sha256"
 
       - name: Package (Linux)
         if: runner.os == 'Linux'
-        run: tar -czf "${{ matrix.asset }}" -C dist "VoxPaperAi Pro"
+        run: |
+          tar -czf "${{ matrix.asset }}" -C dist "VoxPaperAi Pro"
+          sha256sum "${{ matrix.asset }}" > "${{ matrix.asset }}.sha256"
 
       - name: Read version
         if: github.event_name == 'workflow_dispatch'
@@ -156,6 +162,8 @@ jobs:
             - **macOS Intel:** VoxPaperAi-Pro-macos-intel.dmg
             - **Linux x64:** VoxPaperAi-Pro-linux-x64.tar.gz
 
+            Рядом с каждым файлом лежит `*.sha256` — контрольная сумма для проверки целостности скачанного архива.
+
             ## Первый запуск
             - **Windows:** распакуйте ZIP (правый клик → «Извлечь всё…»). Программа портативная — устанавливать ничего не нужно: перенесите папку «VoxPaperAi Pro» в постоянное место (Документы, Рабочий стол, C:\Tools — но не C:\Program Files) и всегда запускайте из него. Запустите «VoxPaperAi Pro». Если появится SmartScreen — «Подробнее» → «Выполнить в любом случае» (сборка без платной цифровой подписи, исходники открыты).
             - **Windows, ошибка DLL:** если при запуске появляется «WinError 1114» или упоминание «c10.dll» — установите [Microsoft Visual C++ Redistributable (x64)](https://aka.ms/vs/17/release/vc_redist.x64.exe), перезагрузите ПК и запустите снова. Поддерживаются Windows 10/11 (64-бит); в сборке v1.0.6 эта ошибка исправлена — скачайте актуальный ZIP.
@@ -168,4 +176,6 @@ jobs:
             Whisper (транскрибация), yt-dlp со встроенным решателем PO Token (JS-рантайм deno внутри сборки), переводчик, конвертер медиа и документов. Согласие показывается до начала работы.
           draft: false
           prerelease: false
-          files: ${{ matrix.asset }}
+          files: |
+            ${{ matrix.asset }}
+            ${{ matrix.asset }}.sha256

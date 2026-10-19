@@ -71,6 +71,7 @@ jobs:
           cp INSTALL_FREE_MACOS.txt dmg-staging/
           cp DISCLAIMER.txt dmg-staging/
           hdiutil create -volname "VoxPaperAi Pro" -srcfolder dmg-staging -ov -format UDZO "VoxPaperAi-Pro-macos-intel.dmg"
+          shasum -a 256 "VoxPaperAi-Pro-macos-intel.dmg" > "VoxPaperAi-Pro-macos-intel.dmg.sha256"
 
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2
@@ -78,4 +79,6 @@ jobs:
           tag_name: ${{ github.event_name == 'push' && github.ref_name || github.event.inputs.tag }}
           draft: false
           prerelease: false
-          files: VoxPaperAi-Pro-macos-intel.dmg
+          files: |
+            VoxPaperAi-Pro-macos-intel.dmg
+            VoxPaperAi-Pro-macos-intel.dmg.sha256
