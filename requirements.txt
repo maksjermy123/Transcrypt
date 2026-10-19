@@ -20,6 +20,15 @@ deno>=2.6.6
 deep-translator==1.11.4
 ffmpeg-python==0.2.0
 pdf2docx==0.5.8
+# Пины ниже — ТРЕБУЕТСЯ pdf2docx 0.5.8 (его зависимость «PyMuPDF>=1.19.0»).
+# 2026-10-19: вышел PyMuPDF 2.0 (мажор) — формально проходит «>=1.19.0», но
+# pdf2docx 0.5.8 с ним несовместим: на Windows PyInstaller-сборка падает с
+# access violation (0xC0000005) при import pdf2docx, PDF-конвертация сломана.
+# 1.28.2 — последняя проверенная 1.x (собрана в v1.0.6/v1.0.7); opencv 5.0.0.93 —
+# версия, с которой сборки v1.0.7/v1.0.8 прошли на всех ОС. Не поднимать без
+# проверки всей цепочки (pymupdf4llm/onnxruntime тянутся только с PyMuPDF 2.0).
+pymupdf==1.28.2
+opencv-python-headless==5.0.0.93
 docx2pdf==0.1.8
 reportlab==4.2.5
 pyperclip==1.9.0
