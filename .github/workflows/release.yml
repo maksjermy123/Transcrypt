@@ -49,10 +49,16 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install CPU-only torch (без CUDA-сборок ~2 ГБ на Linux)
+      - name: Install torch 2.8.0 CPU (пин из-за pytorch#166628)
         run: |
           python -m pip install --upgrade pip
-          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          # torch 2.9–2.14 на Windows падает в PyInstaller-сборке при загрузке
+          # c10.dll: WinError 1114 (DLL initialization routine failed) — в 2.9
+          # появился явный ctypes-загрузчик _load_dll_libraries, который ломается
+          # когда runtime-hook PyInstaller уже загрузил Qt DLL. Исправлено только
+          # в torch 2.15 (её ещё нет на индексе CPU-колёс). Рабочая проверенная
+          # версия — 2.8.0: https://github.com/pytorch/pytorch/issues/166628
+          pip install "torch==2.8.0" --index-url https://download.pytorch.org/whl/cpu
 
       - name: Install dependencies
         run: |
@@ -123,6 +129,7 @@ jobs:
 
             ## Первый запуск
             - **Windows:** распакуйте ZIP (правый клик → «Извлечь всё…»), откройте папку и запустите «VoxPaperAi Pro». Если появится SmartScreen — «Подробнее» → «Выполнить в любом случае» (сборка без платной цифровой подписи, исходники открыты).
+            - **Windows, ошибка DLL:** если при запуске появляется «WinError 1114» или упоминание «c10.dll» — установите [Microsoft Visual C++ Redistributable (x64)](https://aka.ms/vs/17/release/vc_redist.x64.exe), перезагрузите ПК и запустите снова. Поддерживаются Windows 10/11 (64-бит); в сборке v1.0.6 эта ошибка исправлена — скачайте актуальный ZIP.
             - **macOS:** откройте DMG и перетащите «VoxPaperAi Pro.app» на ярлык «Applications» в открывшемся окне, затем извлеките образ. При окне «Apple не удалось подтвердить…» снимите карантин командой в Терминале: `xattr -cr "/Applications/VoxPaperAi Pro.app"` (вставьте целиком, без лишних символов) — затем откройте приложение обычным двойным кликом. Без Терминала: Системные настройки → «Конфиденциальность и безопасность» → «Открыть всё равно». В macOS 15+ правый клик → «Открыть» обход не предлагает.
             - **Linux:** `tar -xzf VoxPaperAi-Pro-linux-x64.tar.gz -C ~/Downloads`, затем запустите `~/Downloads/"VoxPaperAi Pro"/"VoxPaperAi Pro"`.
 

@@ -96,6 +96,8 @@ type InstallStep = {
   command?: string;
   commandTitle?: string;
   commandHint?: string;
+  /** Ссылка-действие (например, скачать VC++ Redistributable) — отдельно от команды. */
+  link?: { label: string; href: string };
 };
 
 /**
@@ -118,6 +120,14 @@ const INSTALL_STEPS: Record<DesktopOs, InstallStep[]> = {
     {
       text: "Если появится синий экран SmartScreen «Система Windows защитила ваш компьютер» — нажмите «Подробнее» → «Выполнить в любом случае».",
       detail: "Окно появляется потому, что у программы нет платной цифровой подписи. Исходники открыты на GitHub, сборка делается автоматически на GitHub Actions.",
+    },
+    {
+      text: "Если при запуске появляется окно с ошибкой «c10.dll» или «WinError 1114» — установите Microsoft Visual C++ Redistributable (x64) по ссылке ниже, перезагрузите компьютер и запустите снова. Убедитесь, что у вас Windows 10 или 11 — Windows 7/8 не поддерживаются.",
+      detail: "Эта ошибка означает сбой инициализации библиотеки PyTorch. В сборке v1.0.6 она исправлена — помогает и обновление программы до последней версии.",
+      link: {
+        label: "Скачать Microsoft Visual C++ Redistributable (x64)",
+        href: "https://aka.ms/vs/17/release/vc_redist.x64.exe",
+      },
     },
     { text: CONSENT_KEY },
   ],
@@ -250,6 +260,17 @@ function InstallRow({ n, step }: { n: number; step: InstallStep }) {
         <div className="text-sm leading-relaxed">{t(step.text)}</div>
         {step.detail && (
           <div className="text-xs text-muted-foreground mt-1 leading-relaxed">{t(step.detail)}</div>
+        )}
+        {step.link && (
+          <a
+            href={step.link.href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-2 inline-flex items-center gap-1.5 text-sm text-[#7c5bf5] hover:underline"
+          >
+            <ExternalLink className="w-3.5 h-3.5 flex-shrink-0" />
+            {t(step.link.label)}
+          </a>
         )}
         {step.command && (
           <CommandBlock

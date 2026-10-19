@@ -1,4 +1,46 @@
 ================================================================================
+  VOXPAPERAI PRO v1.0.6 - RELEASE NOTES
+================================================================================
+
+📝 VERSION: 1.0.6
+🗓️  BUILD DATE: October 19, 2026
+🐍 PYTHON: 3.12
+📦 PYQT6: 6.6.1
+📦 TORCH: 2.8.0 (pinned)
+✅ STATUS: Production Ready
+
+================================================================================
+🆕 WHAT'S NEW IN v1.0.6
+================================================================================
+
+1. FIXED: WINDOWS STARTUP CRASH "WinError 1114" (c10.dll)
+   • On some Windows machines the app crashed at launch with
+     "OSError: [WinError 1114] ... Error loading ... c10.dll"
+   • Root cause: a PyTorch 2.9-2.14 regression (pytorch/pytorch#166628) -
+     the DLL loader added in 2.9 fails inside PyInstaller builds where Qt
+     DLLs are already loaded; torch 2.14.1+cpu was shipped in v1.0.5
+   • Fix: the Windows build now pins torch to 2.8.0 (the last version
+     without the faulty loader; the proper fix lands upstream in 2.15)
+
+2. FRIENDLY STARTUP ERROR DIALOG INSTEAD OF A CRASH TRACEBACK
+   • If PyTorch still fails to load (e.g. missing/old VC++ Redistributable
+     on the user machine), the app now opens a clear dialog with actions:
+     install Microsoft Visual C++ Redistributable (x64) / check Windows
+     10-11 64-bit requirement / download the latest build - each opens the
+     right page in the browser; technical details are under "Details"
+
+3. BUILD HARDENING
+   • UPX compression is disabled in the PyInstaller spec (documented
+     PyInstaller trap: UPX corrupts torch/vcruntime DLLs on Windows and
+     can cause the same "DLL initialization routine failed" error)
+
+4. WEBSITE / ONBOARDING
+   • Windows install steps now include a troubleshooting item for the
+     DLL error with a direct link to VC++ Redistributable (x64), and the
+     release page lists the same instructions
+
+================================================================================
+================================================================================
   VOXPAPERAI PRO v1.0.5 - RELEASE NOTES
 ================================================================================
 

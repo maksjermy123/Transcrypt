@@ -60,7 +60,10 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    # UPX намеренно выключен: сжатие DLL torch (c10.dll, torch_cpu.dll) и
+    # vcruntime140* на Windows вызывает "DLL initialization routine failed"
+    # (WinError 1114). Это задокументированная ловушка PyInstaller — не включать.
+    upx=False,
     console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
@@ -75,7 +78,7 @@ coll = COLLECT(
     a.binaries,
     a.datas,
     strip=False,
-    upx=True,
+    upx=False,  # см. комментарий к EXE: UPX ломает DLL torch на Windows
     upx_exclude=[],
     name="VoxPaperAi Pro",
 )

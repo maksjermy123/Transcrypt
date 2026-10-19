@@ -18,57 +18,69 @@ os.environ.setdefault("OPENBLAS_NUM_THREADS", str(startup_threads))
 os.environ.setdefault("VECLIB_MAXIMUM_THREADS", str(startup_threads))
 os.environ.setdefault("NUMEXPR_NUM_THREADS", str(startup_threads))
 
-import torch
+# PyTorch загружается до PyQt6 (порядок важен). На Windows DLL-инициализация
+# может упасть (WinError 1114 при загрузке c10.dll — pytorch#166628, а также
+# старые VC++ Redistributable на системе). Раньше это крашило приложение с
+# нечитаемым трейсбеком ДО появления окна — теперь ловим сбой и показываем
+# понятный диалог с решением (см. _show_torch_error_dialog в main()).
+torch_error: Exception | None = None
+try:
+    import torch
+except Exception as _torch_exc:  # noqa: BLE001 — намеренно широкий захват
+    torch = None  # type: ignore[assignment]
+    torch_error = _torch_exc
+    print(f"WARNING: PyTorch failed to load: {_torch_exc!r}")
 
-# Monkeypatch torch.load to fix "Weights only load failed" with newer PyTorch
-# This must be done before any other torch/whisper imports
-original_load = torch.load
-def safe_load(*args, **kwargs):
-    if 'weights_only' not in kwargs:
-        kwargs['weights_only'] = False
-    return original_load(*args, **kwargs)
-torch.load = safe_load
+if torch is not None:
+    # Monkeypatch torch.load to fix "Weights only load failed" with newer PyTorch
+    # This must be done before any other torch/whisper imports
+    original_load = torch.load
+    def safe_load(*args, **kwargs):
+        if 'weights_only' not in kwargs:
+            kwargs['weights_only'] = False
+        return original_load(*args, **kwargs)
+    torch.load = safe_load
 
 # Monkeypatch whisper.audio.mel_filters to fix missing assets in PyInstaller bundle
 # The issue is that whisper looks for assets relative to its __file__ (in Frameworks),
 # but PyInstaller puts datas in Resources.
-try:
-    import whisper.audio
-    import numpy as np
-    import torch
-    
-    original_mel_filters = whisper.audio.mel_filters
-    
-    def patched_mel_filters(device, n_mels: int):
-        # Try default path first
-        default_path = os.path.join(os.path.dirname(whisper.audio.__file__), "assets", "mel_filters.npz")
-        if os.path.exists(default_path):
+if torch is not None:
+    try:
+        import whisper.audio
+        import numpy as np
+
+        original_mel_filters = whisper.audio.mel_filters
+
+        def patched_mel_filters(device, n_mels: int):
+            # Try default path first
+            default_path = os.path.join(os.path.dirname(whisper.audio.__file__), "assets", "mel_filters.npz")
+            if os.path.exists(default_path):
+                return original_mel_filters(device, n_mels)
+
+            # Try PyInstaller Resources path
+            if getattr(sys, 'frozen', False):
+                if hasattr(sys, '_MEIPASS'):
+                    # One-file
+                    resource_path = os.path.join(sys._MEIPASS, "whisper", "assets", "mel_filters.npz")
+                else:
+                    # One-dir (macOS .app)
+                    # sys.executable is in Contents/MacOS/
+                    # Resources is in Contents/Resources/
+                    base_dir = os.path.dirname(sys.executable)
+                    resource_path = os.path.abspath(os.path.join(base_dir, "../Resources/whisper/assets/mel_filters.npz"))
+
+                if os.path.exists(resource_path):
+                    print(f"Loading whisper assets from: {resource_path}")
+                    with np.load(resource_path, allow_pickle=False) as f:
+                        return torch.from_numpy(f[f"mel_{n_mels}"]).to(device)
+
+            # Fallback to original (will likely fail)
             return original_mel_filters(device, n_mels)
-            
-        # Try PyInstaller Resources path
-        if getattr(sys, 'frozen', False):
-            if hasattr(sys, '_MEIPASS'):
-                # One-file
-                resource_path = os.path.join(sys._MEIPASS, "whisper", "assets", "mel_filters.npz")
-            else:
-                # One-dir (macOS .app)
-                # sys.executable is in Contents/MacOS/
-                # Resources is in Contents/Resources/
-                base_dir = os.path.dirname(sys.executable)
-                resource_path = os.path.abspath(os.path.join(base_dir, "../Resources/whisper/assets/mel_filters.npz"))
-                
-            if os.path.exists(resource_path):
-                print(f"Loading whisper assets from: {resource_path}")
-                with np.load(resource_path, allow_pickle=False) as f:
-                    return torch.from_numpy(f[f"mel_{n_mels}"]).to(device)
-                    
-        # Fallback to original (will likely fail)
-        return original_mel_filters(device, n_mels)
-        
-    whisper.audio.mel_filters = patched_mel_filters
-    print("Monkeypatched whisper.audio.mel_filters")
-except Exception as e:
-    print(f"Failed to monkeypatch whisper: {e}")
+
+        whisper.audio.mel_filters = patched_mel_filters
+        print("Monkeypatched whisper.audio.mel_filters")
+    except Exception as e:
+        print(f"Failed to monkeypatch whisper: {e}")
 
 
 # --- Library Overlay for Frozen App Updates ---
@@ -227,6 +239,43 @@ def _theme_qss_path(app: QApplication) -> str:
     return os.path.join(assets_dir, "style.qss")
 
 
+def _show_torch_error_dialog(exc: Exception):
+    """Понятный диалог вместо нечитаемого трейсбека, если PyTorch не загрузился.
+
+    Типичный кейс — Windows: WinError 1114 при инициализации c10.dll
+    (конфликт версий PyTorch либо старый/отсутствующий VC++ Redistributable).
+    Даём пользователю действия: установить VC++ Redistributable, проверить
+    версию Windows, обновить сборку — с кнопками, открывающими нужные ссылки.
+    """
+    from PyQt6.QtCore import QUrl, QDesktopServices
+    from PyQt6.QtWidgets import QMessageBox
+
+    text = (
+        "Не удалось загрузить PyTorch — компонент, необходимый для транскрибации.\n\n"
+        "Что делать:\n"
+        "1. Установите Microsoft Visual C++ Redistributable 2015–2022 (x64) и перезагрузите компьютер.\n"
+        "2. Проверьте версию Windows: поддерживаются Windows 10/11 (64-бит); Windows 7/8 — нет.\n"
+        "3. Скачайте свежую сборку программы — в новых версиях ошибка может быть уже исправлена.\n"
+        "4. Если не помогло — добавьте папку программы в исключения антивируса и распакуйте архив заново."
+    )
+    box = QMessageBox(QMessageBox.Icon.Critical, "VoxPaperAi Pro — ошибка запуска", text)
+    box.setDetailedText(repr(exc))
+    vc_btn = box.addButton(
+        "Открыть страницу Visual C++ Redistributable",
+        QMessageBox.ButtonRole.ActionRole,
+    )
+    dl_btn = box.addButton(
+        "Открыть страницу загрузок программы",
+        QMessageBox.ButtonRole.ActionRole,
+    )
+    box.addButton(QMessageBox.StandardButton.Close)
+    box.exec()
+    if box.clickedButton() is vc_btn:
+        QDesktopServices.openUrl(QUrl("https://aka.ms/vs/17/release/vc_redist.x64.exe"))
+    elif box.clickedButton() is dl_btn:
+        QDesktopServices.openUrl(QUrl("https://github.com/maksjermy123/Transcrypt/releases/latest"))
+
+
 def _apply_theme(app: QApplication):
     qss_path = _theme_qss_path(app)
     if os.path.exists(qss_path):
@@ -242,6 +291,12 @@ def main():
     app = QApplication(sys.argv)
     app.setApplicationName("VoxPaperAi Pro")
     app.setOrganizationName("VoxPaperAi")
+
+    # PyTorch не загрузился при старте — объясняем пользователю, что делать,
+    # вместо нечитаемого трейсбека из консоли/диалога PyInstaller.
+    if torch_error is not None:
+        _show_torch_error_dialog(torch_error)
+        sys.exit(1)
 
     # NOTE: Global UI/event telemetry caused native PyQt crashes on macOS in clipboard/window-state paths.
     # Keep the function in codebase for future debugging, but do not install it in runtime builds.
