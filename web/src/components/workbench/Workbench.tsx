@@ -12,6 +12,7 @@ import { ConvertTab } from "./ConvertTab";
 import { TranslateTab } from "./TranslateTab";
 import { SettingsTab } from "./SettingsTab";
 import { AboutTab } from "./AboutTab";
+import { EngineQueueBar } from "./EngineQueueBar";
 import { ThemeToggle } from "./ThemeToggle";
 import { LangToggle } from "./LangToggle";
 import { SiteFooter } from "@/components/SiteFooter";
@@ -234,6 +235,11 @@ export function Workbench({
           </div>
         </div>
       )}
+
+      {/* Глобальная панель очереди: что сейчас занимает движок — видно с ЛЮБОЙ вкладки.
+          Без неё задача, запущенная в одном разделе, для остальных — безликое
+          «Движок занят другой задачей», и виновника не найти. */}
+      <EngineQueueBar />
 
       {/* Контент */}
       <main className="flex-1">

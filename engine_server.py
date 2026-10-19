@@ -177,6 +177,37 @@ JOBS_MAX = 30
 CURRENT_JOB = {"id": None, "worker": None}
 
 
+JOB_TYPE_TITLES = {
+    "transcribe": "Транскрипция",
+    "media": "Медиа-задача",
+    "convert": "Конвертация",
+}
+
+
+def _running_jobs_summary(lane: str) -> str:
+    """Человекочитаемое описание задач, занимающих полосу прямо сейчас:
+    «Конвертация «файл.mp4» (идёт 12 мин)». Нужно, чтобы ожидающая задача
+    в логе называла ВИНОВНИКА — раньше писалось безликое «Движок занят
+    другой задачей», и пользователь не мог найти, какая вкладка мешает."""
+    now = time.time()
+    parts = []
+    try:
+        candidates = sorted(
+            (j for j in list(JOBS.values())
+             if j.get("lane", "heavy") == lane and j.get("status") == "running"),
+            key=lambda j: j.get("started_at") or 0,
+        )
+    except Exception:
+        return ""
+    for j in candidates:
+        title = JOB_TYPE_TITLES.get(j.get("type"), j.get("type", "задача"))
+        label = str(j.get("label") or "").strip()
+        started = j.get("started_at")
+        elapsed = f" (идёт {int((now - started) // 60)} мин)" if started else ""
+        parts.append(f"{title} «{label[:48]}»{elapsed}" if label else f"{title}{elapsed}")
+    return "; ".join(parts)
+
+
 def _job_snapshot(job):
     """Копия задачи для отдачи клиенту и сохранения на диск (без служебных полей)."""
     snap = {
@@ -188,6 +219,7 @@ def _job_snapshot(job):
         "error": job.get("error"),
         "label": job.get("label", ""),
         "created_at": job.get("created_at"),
+        "started_at": job.get("started_at"),
         "finished_at": job.get("finished_at"),
         "lane": job.get("lane", "heavy"),
     }
@@ -257,12 +289,18 @@ def _load_jobs():
         print(f"⚠ Не удалось прочитать журнал задач: {e}")
 
 
+def _sorted_job_entries():
+    """JOBS по возрастанию created_at. «or 0»: запись с created_at=None
+    (брак/ручная правка jobs.json) не должна ронять сортировку с TypeError —
+    иначе /api/jobs отдаёт 500, и панель очереди на сайте исчезает."""
+    return sorted(JOBS.values(), key=lambda x: x.get("created_at") or 0)
+
+
 def _prune_jobs():
     if len(JOBS) <= JOBS_MAX:
         return
-    items = sorted(JOBS.items(), key=lambda kv: kv[1].get("created_at", 0))
-    for jid, _ in items[: len(JOBS) - JOBS_MAX]:
-        JOBS.pop(jid, None)
+    for j in _sorted_job_entries()[: len(JOBS) - JOBS_MAX]:
+        JOBS.pop(j["id"], None)
 
 
 def _file_param_from_url(ref: str) -> str:
@@ -379,11 +417,19 @@ def run_job(job):
         # Пытаемся занять слот сразу; если занято — честно показываем очередь
         if not sem.acquire(timeout=0.3):
             job["queued_at"] = time.time()
-            log(
-                f"⏳ Движок занят другой задачей — '{job['type']}' ожидает в очереди",
-                stage="В очереди",
-                percent=0,
-            )
+            busy = _running_jobs_summary(lane)
+            if busy:
+                log(
+                    f"⏳ Движок занят: {busy} — задача '{job['type']}' ожидает в очереди",
+                    stage="В очереди",
+                    percent=0,
+                )
+            else:
+                log(
+                    f"⏳ Движок занят другой задачей — '{job['type']}' ожидает в очереди",
+                    stage="В очереди",
+                    percent=0,
+                )
             sem.acquire()  # ждём своей очереди
         try:
             if job["status"] == "cancelled" or job["worker"].is_stop_requested():
@@ -848,7 +894,7 @@ class EngineHTTPRequestHandler(BaseHTTPRequestHandler):
 
         self.send_json({
             "status": "ok",
-            "version": "1.4.0",
+            "version": "1.4.1",
             "jobs": True,  # Job API: фоновые задачи, переживающие закрытие вкладки
             "queue": True,  # очереди задач + видимый статус «В очереди»
             "parallel_heavy": HEAVY_PARALLEL,  # сколько тяжёлых задач идёт одновременно
@@ -1090,10 +1136,7 @@ class EngineHTTPRequestHandler(BaseHTTPRequestHandler):
 
     def handle_jobs_list(self):
         with JOBS_LOCK:
-            jobs = [
-                _job_snapshot(j)
-                for j in sorted(JOBS.values(), key=lambda x: x.get("created_at", 0))[-JOBS_MAX:]
-            ]
+            jobs = [_job_snapshot(j) for j in _sorted_job_entries()[-JOBS_MAX:]]
         self.send_json({"status": "ok", "jobs": jobs})
 
     def handle_job_get(self, job_id):

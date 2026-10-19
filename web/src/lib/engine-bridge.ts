@@ -774,6 +774,22 @@ export async function listEngineJobs(): Promise<EngineJobListEntry[] | null> {
 }
 
 /**
+ * Полные снапшоты задач из журнала движка — для глобальной панели очереди
+ * (EngineQueueBar): статус, метка, прогресс, started_at, позиция в очереди.
+ * null — движок недоступен или без Job API (≤ 1.0.x).
+ */
+export async function listEngineJobsFull(): Promise<EngineJobState[] | null> {
+  try {
+    const resp = await fetch(`${ENGINE_URL}/api/jobs`);
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    return Array.isArray(data?.jobs) ? (data.jobs as EngineJobState[]) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Удалить файлы задач с диска движка (принимает и абсолютные пути, и ссылки
  * «/api/download?file=…»). Возвращает число удалённых файлов; null — движок
  * недоступен или старше 1.3.9 (эндпоинта ещё нет — это не ошибка).

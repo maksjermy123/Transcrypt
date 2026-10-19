@@ -1056,6 +1056,15 @@ export const EN: Record<string, string> = {
   "Запустите программу:": "Run the app:",
   "Или откройте папку «VoxPaperAi Pro» в файловом менеджере и запустите файл «VoxPaperAi Pro» двойным кликом. При необходимости подтвердите «Разрешить выполнение».": "Or open the “VoxPaperAi Pro” folder in the file manager and run the “VoxPaperAi Pro” file by double-clicking. If prompted, confirm “Allow executing”.",
 
+  // ─── Глобальная панель очереди движка (EngineQueueBar) ───
+  "Очередь движка": "Engine queue",
+  "Задача": "Job",
+  "идёт меньше минуты": "running for under a minute",
+  "идёт {n} мин": "running {n} min",
+  "идёт {h} ч {m} мин": "running {h} h {m} min",
+  "не подаёт признаков жизни {n} мин — можно отменить и запустить заново": "no signs of life for {n} min — you can cancel and restart it",
+  "Отменить задачу — можно из любого раздела": "Cancel the job — works from any section",
+  "Убрать из очереди": "Remove from queue",
 };
 
 // Поддержка плейсхолдеров: t2("Битрейт MP3: {n} kbps", {n: 192})
