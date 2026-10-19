@@ -61,7 +61,7 @@ python-docx==1.1.2
 # → 6.21.1. Wheels не нужны (pure-python). Наши вызовы (PdfReader) не менялись.
 pypdf==6.21.1
 reportlab==4.2.5
-pdf2docx==0.5.8
+pdf2docx==0.5.13
 docx2pdf==0.1.8
 # [Security bump 2026-10-19, OSV-аудит]: Pillow 11.x — 34 CVE (парсеры
 # изображений). Минимальная версия, закрывающая все — 12.3.0; wheels
