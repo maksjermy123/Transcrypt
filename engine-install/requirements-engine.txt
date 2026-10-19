@@ -38,7 +38,9 @@ deno>=2.6.6
 ffmpeg-python==0.2.0
 
 # HTTP-клиент (для yt-dlp fallback каналов)
-requests==2.32.3
+# [Security bump 2026-10-19]: CVE-2024-47081 (.netrc leak) + CVE-2026-25645
+# (insecure temp file) — 2.33.0 минимальная версия, закрывающая оба.
+requests==2.33.0
 
 # TLS-impersonation — обход блокировок YouTube (HTTP 429, bot-защита)
 curl-cffi==0.15.0
@@ -54,11 +56,17 @@ deep-translator==1.11.4
 # Pillow 11.3.0 — первая версия с готовыми wheels для Python 3.14:
 # на 11.1.0 pip пытался собирать Pillow из исходников и падал без zlib.
 python-docx==1.1.2
-pypdf==5.1.0
+# [Security bump 2026-10-19, OSV-аудит]: pypdf 5.1.0 — 97 CVE (DoS на
+# зловредных PDF: бесконечные циклы/исчерпание RAM). Все закрыты в 6.x
+# → 6.21.1. Wheels не нужны (pure-python). Наши вызовы (PdfReader) не менялись.
+pypdf==6.21.1
 reportlab==4.2.5
 pdf2docx==0.5.8
 docx2pdf==0.1.8
-Pillow==11.3.0
+# [Security bump 2026-10-19, OSV-аудит]: Pillow 11.x — 34 CVE (парсеры
+# изображений). Минимальная версия, закрывающая все — 12.3.0; wheels
+# cp310–cp314 есть на всех платформах (проверено PyPI).
+Pillow==12.3.0
 
 # torch тянется автоматически через openai-whisper. Фиксируем мин. версию
 # для воспроизводимости. CPU-only на macOS/Linux/Windows.

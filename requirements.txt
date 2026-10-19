@@ -33,7 +33,20 @@ docx2pdf==0.1.8
 reportlab==4.2.5
 pyperclip==1.9.0
 python-docx==1.1.2
-pypdf==5.1.0
-Pillow==11.0.0
-requests==2.32.3
+# [Security bump 2026-10-19, OSV-аудит]: pypdf 5.1.0 — 97 известных CVE
+# (бесконечные циклы / исчерпание RAM на зловредных PDF: outline-парсинг,
+# XRef-потоки, XMP-метаданные). Все закрыты в ветке 6.x → 6.21.1 (последний
+# патч 6.x). API не менялся для наших вызовов (PdfReader/extract_text),
+# smoke-тест пройден. Не откатывать.
+pypdf==6.21.1
+# [Security bump 2026-10-19, OSV-аудит]: Pillow 11.0.0 — 34 CVE (парсеры
+# изображений: decompression-bomb, OOB read/write, инъекция команд WindowsViewer).
+# Минимальная версия, закрывающая все 34 — 12.3.0 (13.0.0 не требуется).
+# Наши вызовы (Image.open/new/convert) не тронуты, smoke-тест пройден.
+Pillow==12.3.0
+# [Security bump 2026-10-19, OSV-аудит]: requests 2.32.3 — CVE-2024-47081
+# (утечка .netrc-креденшелов через malicious URL, фикс 2.32.4) и
+# CVE-2026-25645 (переиспользование insecure temp-файла, фикс 2.33.0).
+# 2.33.0 — минимальная версия, закрывающая оба.
+requests==2.33.0
 curl-cffi==0.15.0
