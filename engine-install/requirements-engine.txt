@@ -59,7 +59,7 @@ python-docx==1.1.2
 # [Security bump 2026-10-19, OSV-аудит]: pypdf 5.1.0 — 97 CVE (DoS на
 # зловредных PDF: бесконечные циклы/исчерпание RAM). Все закрыты в 6.x
 # → 6.21.1. Wheels не нужны (pure-python). Наши вызовы (PdfReader) не менялись.
-pypdf==6.21.1
+pypdf==6.21.0
 reportlab==4.2.5
 pdf2docx==0.5.8
 docx2pdf==0.1.8
