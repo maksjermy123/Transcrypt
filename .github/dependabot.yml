@@ -1,0 +1,51 @@
+# Dependabot: обновления версий + security-PR при CVE.
+#
+# ВАЖНО (урок инцидента PyMuPDF 2.0 от 2026-10-19): pip-зависимости в
+# requirements.txt строго запинены, у многих пинов задокументированная причина
+# (совместимость openai-whisper/pkg_resources, pdf2docx↔pymupdf, numpy, torch).
+# Поднимать пин можно только после проверки всей цепочки сборки
+# (Windows/macOS ARM/macOS Intel/Linux, PyInstaller). Поэтому pip — раз в месяц
+# и с малым лимитом PR. Security-PR (automated security fixes) приходят
+# отдельно и только при реальных CVE.
+#
+# NOTE (PyMuPDF 2.0 incident, 2026-10-19): pip pins in requirements.txt are
+# strict and several carry documented reasons (openai-whisper/pkg_resources,
+# pdf2docx↔pymupdf, numpy, torch). Never bump a pin without validating the
+# whole build chain (Windows/macOS ARM/macOS Intel/Linux, PyInstaller). Hence
+# pip is monthly with a low PR limit. Security PRs arrive separately on CVEs.
+version: 2
+updates:
+  # Действия в workflow-файлах — еженедельно, одним PR.
+  # GitHub Actions used by workflows — weekly, grouped into one PR.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      actions:
+        patterns:
+          - "*"
+    open-pull-requests-limit: 3
+
+  # Веб-фронт (web/package.json) — еженедельно; major — отдельными PR,
+  # minor+patch сгруппированы. CI (tsc + next build) проверит каждый PR.
+  # Web frontend (web/package.json) — weekly; majors stay separate,
+  # minor+patch grouped. CI (tsc + next build) validates each PR.
+  - package-ecosystem: "npm"
+    directory: "/web"
+    schedule:
+      interval: "weekly"
+    groups:
+      npm-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
+    open-pull-requests-limit: 5
+
+  # Python-движок (корневой requirements.txt) — раз в месяц из-за строгих пинов.
+  # Python engine (root requirements.txt) — monthly due to strict pins.
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 3

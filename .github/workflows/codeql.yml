@@ -1,0 +1,52 @@
+# CodeQL — статический анализ безопасности (SAST).
+# Публичные репозитории: бесплатно. Алерты — вкладка Security → Code scanning.
+# CodeQL — static security analysis (SAST). Free for public repos.
+# Alerts appear under the repo's Security tab → Code scanning.
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Понедельник ~04:23 UTC — еженедельный рескан.
+    # Weekly rescan, Mondays ~04:23 UTC.
+    - cron: "23 4 * * 1"
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    # Раннер ubuntu — достаточно: оба языка анализируются без сборки.
+    # ubuntu runner is enough: both languages analyze without a build.
+    runs-on: ubuntu-latest
+    permissions:
+      # Требуется для выгрузки SARIF-результатов в Security-вкладку.
+      # Required to upload SARIF results to the Security tab.
+      security-events: write
+      packages: read
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Python: src/ (движок + PyQt6 UI), engine-install/, scripts/
+          - language: python
+            build-mode: none
+          # JavaScript/TypeScript: web/ (Next.js-фронт)
+          - language: javascript-typescript
+            build-mode: none
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}"
