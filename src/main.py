@@ -1,5 +1,24 @@
 import sys
 import os
+
+# Windowed-сборка PyInstaller (console=False): sys.stdin/stdout/stderr равны
+# None (документация PyInstaller: «std streams are unavailable and set to
+# None»). Любой код, пишущий в stderr, падает с AttributeError:
+# 'NoneType' object has no attribute 'write' — реальный кейс: мгновенный сбой
+# «скачивания моделей Whisper» в Настройках, потому что whisper._download
+# использует tqdm (tqdm#1593). Подменяем отсутствующие потоки на /dev/null —
+# вывод невидим (консоли всё равно нет), зато библиотеки работают.
+if getattr(sys, "frozen", False):
+    try:
+        if sys.stdout is None:
+            sys.stdout = open(os.devnull, "w", encoding="utf-8")
+        if sys.stderr is None:
+            sys.stderr = open(os.devnull, "w", encoding="utf-8")
+        if sys.stdin is None:
+            sys.stdin = open(os.devnull, "r", encoding="utf-8")
+    except Exception:
+        pass
+
 from src.utils.config import load_config
 from src.utils.runtime import parse_thread_setting
 from src.utils.app_paths import app_support_dir, libs_dir, runtime_bin_dir, is_macos

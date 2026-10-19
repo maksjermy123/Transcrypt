@@ -52,6 +52,17 @@ jobs:
       - name: Build with PyInstaller
         run: python -m PyInstaller --noconfirm --clean "VoxPaperAi_Pro.spec"
 
+      # deno — JS-рантайм решателя EJS (PO Token) для yt-dlp. Пип-пакет deno
+      # кладёт бинарник в scripts-директорию venv, PyInstaller его не собирает.
+      # Копируем в Contents/MacOS: main.py добавляет эту папку в PATH, и yt-dlp
+      # находит рантайм (yt_dlp/utils/_jsruntime.py → _find_exe → PATH).
+      - name: Bundle deno (EJS solver runtime for yt-dlp)
+        run: |
+          scripts=$(python -c "import sysconfig; print(sysconfig.get_path('scripts'))")
+          cp "$scripts/deno" "dist/VoxPaperAi Pro.app/Contents/MacOS/"
+          chmod +x "dist/VoxPaperAi Pro.app/Contents/MacOS/deno"
+          "dist/VoxPaperAi Pro.app/Contents/MacOS/deno" --version
+
       - name: Package (macOS DMG)
         run: |
           mkdir -p dmg-staging

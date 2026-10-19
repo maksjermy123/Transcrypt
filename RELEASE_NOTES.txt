@@ -41,6 +41,59 @@
 
 ================================================================================
 ================================================================================
+  VOXPAPERAI PRO v1.0.7 - RELEASE NOTES
+================================================================================
+
+📝 VERSION: 1.0.7
+🗓️  BUILD DATE: October 19, 2026
+🐍 PYTHON: 3.12
+📦 PYQT6: 6.6.1
+📦 TORCH: 2.8.0 (pinned)
+📦 YT-DLP: 2026.08.19 + EJS solver (deno runtime now BUNDLED)
+✅ STATUS: Production Ready
+
+================================================================================
+🆕 WHAT'S NEW IN v1.0.7
+================================================================================
+
+1. FIXED: YOUTUBE "Requested format is not available" (PO TOKEN) IN THE
+   PORTABLE BUILD
+   • The EJS challenge solver needs a JavaScript runtime (deno); the pip
+     "deno" package installs its binary into the venv scripts dir, which
+     PyInstaller never collects - so the solver was dead in every portable
+     build and YouTube skipped ALL media streams (PO Token protection)
+   • Fix: the deno binary is now bundled into the app (next to the exe on
+     Windows - exactly where yt-dlp looks first; on macOS in
+     Contents/MacOS; on Linux in the app folder) for all four artifacts
+   • The "Requested format is not available" hint text is updated to match
+     the desktop app (no more "reinstall the engine" advice)
+
+2. FIXED: WHISPER MODEL DOWNLOAD IN SETTINGS CRASHED INSTANTLY
+   ("NoneType' object has no attribute 'write'")
+   • Root cause: PyInstaller windowed builds have sys.stdout/stderr = None
+     (documented behavior), and whisper's model downloader draws progress
+     with tqdm, which writes to sys.stderr -> instant AttributeError
+   • Fix: missing std streams are now replaced with /dev/null at startup
+   • Model downloads are also more robust now: a direct-download fallback
+     (requests, streaming, resume, SHA256 check, 3 retries) kicks in if the
+     stock whisper downloader fails, with live progress in the status cell
+   • Errors now show a human hint (VPN / network / retry) and the full
+     tracebacks under "Details" instead of a bare one-liner
+
+3. ONBOARDING: THE PROGRAM IS PORTABLE - NOW SAID OUT LOUD
+   • Windows and Linux install steps now explicitly state the program is
+     portable (nothing to install, everything lives in one folder), advise
+     moving the extracted folder to a permanent location and always running
+     it from there (and NOT to C:\Program Files); notes that settings and
+     models live in the user profile, so moving the folder is safe
+   • The release page lists the same instructions
+
+4. CARRY-OVER FROM v1.0.6
+   • torch pinned to 2.8.0 (PyTorch 2.9-2.14 WinError 1114 regression),
+     UPX disabled, friendly startup dialog if PyTorch fails to load
+
+================================================================================
+================================================================================
   VOXPAPERAI PRO v1.0.5 - RELEASE NOTES
 ================================================================================
 

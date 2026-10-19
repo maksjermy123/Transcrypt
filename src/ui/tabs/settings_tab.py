@@ -24,19 +24,114 @@ from src.utils.app_paths import app_support_dir, is_windows, models_dir
 
 class ModelDownloader(QThread):
     finished = pyqtSignal(str)
-    error = pyqtSignal(str)
+    # (сообщение, подробности-трейсбек) — подробности показываются в окне ошибки
+    error = pyqtSignal(str, str)
+    progress = pyqtSignal(str)
 
     def __init__(self, model_name):
         super().__init__()
         self.model_name = model_name
 
+    @staticmethod
+    def _sha256_file(path):
+        import hashlib
+
+        h = hashlib.sha256()
+        with open(path, "rb") as f:
+            for chunk in iter(lambda: f.read(1024 * 1024), b""):
+                h.update(chunk)
+        return h.hexdigest()
+
+    def _direct_download(self, url: str, target: str):
+        """Прямое скачивание модели через requests (стриминг + догрузка + ретраи).
+
+        Штатный загрузчик whisper использует urllib без ретраев — на нестабильных
+        сетях к openaipublic.azureedge.net он часто обрывается. Файл кладётся под
+        тем же именем (<model>.pt), поэтому повторный whisper.load_model() его
+        просто подхватывает (проверив SHA256).
+        """
+        import time
+        import requests
+
+        expected_sha256 = url.split("/")[-2]
+        tmp = target + ".part"
+        last_exc = None
+        for attempt in range(1, 4):
+            try:
+                headers = {}
+                if os.path.exists(tmp):
+                    headers["Range"] = f"bytes={os.path.getsize(tmp)}-"
+                try:
+                    resp = requests.get(url, stream=True, timeout=(15, 60), headers=headers)
+                except requests.exceptions.SSLError:
+                    # Ровно как основной путь: релаксация только для моделей Whisper
+                    resp = requests.get(url, stream=True, timeout=(15, 60), headers=headers, verify=False)
+                if resp.status_code not in (200, 206):
+                    raise RuntimeError(f"сервер ответил HTTP {resp.status_code}")
+                append = resp.status_code == 206 and os.path.exists(tmp)
+                done = os.path.getsize(tmp) if append else 0
+                total = int(resp.headers.get("Content-Length") or 0)
+                if total and append:
+                    total += done
+                with open(tmp, "ab" if append else "wb") as f:
+                    for chunk in resp.iter_content(chunk_size=256 * 1024):
+                        if chunk:
+                            f.write(chunk)
+                            done += len(chunk)
+                            if total:
+                                self.progress.emit(
+                                    f"⏳ Скачивание... {done / (1024**2):.0f} из {total / (1024**2):.0f} МБ"
+                                )
+                            else:
+                                self.progress.emit(f"⏳ Скачивание... {done / (1024**2):.0f} МБ")
+                if self._sha256_file(tmp) != expected_sha256:
+                    try:
+                        os.remove(tmp)
+                    except OSError:
+                        pass
+                    raise RuntimeError("файл скачался с ошибкой (SHA256 не совпал)")
+                os.replace(tmp, target)
+                return
+            except Exception as e:
+                last_exc = e
+                if attempt < 3:
+                    self.progress.emit(f"⏳ Сбой ({e}); повтор {attempt + 1}/3...")
+                    time.sleep(2 * attempt)
+        raise last_exc
+
+    @staticmethod
+    def _friendly_message(exc: Exception) -> str:
+        s = str(exc).lower()
+        if "nonetype" in s and "write" in s:
+            return (
+                "Внутренний сбой вывода прогресса (windowed-сборка без консоли). "
+                "Исправлено в сборке v1.0.7 — скачайте свежую версию программы."
+            )
+        if "403" in s or "forbidden" in s:
+            return (
+                "Сервер OpenAI (openaipublic.azureedge.net) отклонил запрос (HTTP 403). "
+                "Часто помогает VPN (смена IP) или повтор позже."
+            )
+        if any(m in s for m in ("timed out", "timeout", "connection", "getaddrinfo", "resolve", "unreachable", "network")):
+            return (
+                "Не удалось соединиться с сервером OpenAI (openaipublic.azureedge.net), "
+                "где лежат модели Whisper. Проверьте интернет; если сеть блокирует "
+                "этот сервер — попробуйте VPN."
+            )
+        if "sha256" in s or "checksum" in s:
+            return "Файл модели скачался с ошибкой — попробуйте ещё раз."
+        return f"Не удалось скачать модель: {exc}"
+
     def run(self):
+        cache_dir = models_dir()
+        primary_error = None
+        primary_traceback = ""
         try:
             import ssl
             import whisper
 
-            cache_dir = models_dir()
             os.makedirs(cache_dir, exist_ok=True)
+            self.progress.emit("⏳ Скачивание...")
             # macOS installations behind a corporate/self-signed certificate
             # chain can fail while Whisper fetches an official model. Keep this
             # relaxation strictly inside that download call and restore normal
@@ -48,8 +143,40 @@ class ModelDownloader(QThread):
             finally:
                 ssl._create_default_https_context = original_https_context
             self.finished.emit(self.model_name)
+            return
         except Exception as e:
-            self.error.emit(str(e))
+            import traceback
+
+            primary_error = e
+            primary_traceback = traceback.format_exc()
+
+        # Штатный загрузчик whisper не сработал — пробуем прямое скачивание
+        # через requests (ретраи + догрузка) и повторную загрузку модели.
+        try:
+            import ssl
+            import whisper
+
+            url = whisper._MODELS.get(self.model_name)
+            if not url:
+                raise primary_error
+            os.makedirs(cache_dir, exist_ok=True)
+            target = os.path.join(cache_dir, os.path.basename(url))
+            self._direct_download(url, target)
+            original_https_context = ssl._create_default_https_context
+            ssl._create_default_https_context = ssl._create_unverified_context
+            try:
+                whisper.load_model(self.model_name, download_root=cache_dir)
+            finally:
+                ssl._create_default_https_context = original_https_context
+            self.finished.emit(self.model_name)
+        except Exception:
+            import traceback
+
+            details = "--- основной путь (whisper.load_model) ---\n"
+            details += primary_traceback
+            details += "\n--- запасной путь (прямое скачивание) ---\n"
+            details += traceback.format_exc()
+            self.error.emit(self._friendly_message(primary_error), details)
 
 
 class YtDlpDownloader(QThread):
@@ -323,6 +450,7 @@ class SettingsTab(QWidget):
         downloader = ModelDownloader(model_name)
         downloader.finished.connect(self.on_download_finished)
         downloader.error.connect(self.on_download_error)
+        downloader.progress.connect(widgets["status"].setText)
 
         self.downloaders[model_name] = downloader
         downloader.start()
@@ -334,8 +462,14 @@ class SettingsTab(QWidget):
         self.update_cache_size()
         QMessageBox.information(self, "Успех", f"Модель {model_name} успешно загружена!")
 
-    def on_download_error(self, error_msg):
-        QMessageBox.critical(self, "Ошибка", f"Ошибка скачивания: {error_msg}")
+    def on_download_error(self, message: str, details: str = ""):
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Critical)
+        box.setWindowTitle("Ошибка")
+        box.setText(f"Ошибка скачивания: {message}")
+        if details:
+            box.setDetailedText(details)
+        box.exec()
         self.refresh_all_statuses()
 
     def delete_model(self, model_name):
