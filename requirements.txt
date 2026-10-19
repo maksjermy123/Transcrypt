@@ -19,7 +19,7 @@ yt-dlp[default]==2026.8.19
 deno>=2.6.6
 deep-translator==1.11.4
 ffmpeg-python==0.2.0
-pdf2docx==0.5.8
+pdf2docx==0.5.13
 # Пины ниже — ТРЕБУЕТСЯ pdf2docx 0.5.8 (его зависимость «PyMuPDF>=1.19.0»).
 # 2026-10-19: вышел PyMuPDF 2.0 (мажор) — формально проходит «>=1.19.0», но
 # pdf2docx 0.5.8 с ним несовместим: на Windows PyInstaller-сборка падает с

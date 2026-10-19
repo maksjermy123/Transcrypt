@@ -5,7 +5,7 @@ openai-whisper==20231117
 yt-dlp==2026.7.4
 deep-translator==1.11.4
 ffmpeg-python==0.2.0
-pdf2docx==0.5.8
+pdf2docx==0.5.13
 docx2pdf==0.1.8
 reportlab==4.2.5
 pyperclip==1.9.0
