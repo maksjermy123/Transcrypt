@@ -27,16 +27,18 @@ updates:
           - "*"
     open-pull-requests-limit: 3
 
-  # Веб-фронт (web/package.json) — еженедельно; major — отдельными PR,
-  # minor+patch сгруппированы. CI (tsc + next build) проверит каждый PR.
-  # Web frontend (web/package.json) — weekly; majors stay separate,
-  # minor+patch grouped. CI (tsc + next build) validates each PR.
-  - package-ecosystem: "npm"
+  # Веб-фронт (web/package.json + web/bun.lock) — еженедельно; major —
+  # отдельными PR, minor+patch сгруппированы. CI (tsc + next build) проверит
+  # каждый PR. Экосистема именно "bun": проект использует bun.lock (Bun),
+  # экосистема npm его не понимает и падает с ошибкой конфигурации.
+  # Web frontend (web/package.json + web/bun.lock, Bun) — weekly; majors stay
+  # separate, minor+patch grouped. CI (tsc + next build) validates each PR.
+  - package-ecosystem: "bun"
     directory: "/web"
     schedule:
       interval: "weekly"
     groups:
-      npm-minor-patch:
+      bun-minor-patch:
         update-types:
           - "minor"
           - "patch"
