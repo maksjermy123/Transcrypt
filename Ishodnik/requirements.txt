@@ -10,7 +10,7 @@ docx2pdf==0.1.8
 reportlab==4.2.5
 pyperclip==1.9.0
 python-docx==1.1.2
-pypdf==5.1.0
+pypdf==6.21.2
 Pillow==11.0.0
 requests==2.32.3
 curl-cffi==0.15.0
