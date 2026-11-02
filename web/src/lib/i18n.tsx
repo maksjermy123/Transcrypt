@@ -140,7 +140,7 @@ export const EN: Record<string, string> = {
   "Только браузерный режим": "Browser mode only",
   "Сбросить настройки": "Reset settings",
   "Выразить благодарность": "Say thank you",
-  "Присоединиться к сообществу": "Join the community",
+  "Присоединиться к христианскому телеграм-каналу": "Join the Christian Telegram channel",
   "Посмотреть другой продукт (для админов Телеграм-каналов)": "Check out another product (for Telegram channel admins)",
 
   // ─── Онбординг: шаги ───

@@ -3,7 +3,8 @@
 /**
  * Общий футер сайта: работает на лендинге (онбординг) и в рабочей области.
  * Слева — статус и сброс, справа — контакты проекта VoxPaperAi:
- * благодарность автору, сообщество и второй продукт (для админов TG-каналов).
+ * чаевые автору (Tribute), христианский телеграм-канал и второй продукт
+ * (для админов TG-каналов).
  */
 import { Heart, Users, Send } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
@@ -32,7 +33,7 @@ export function SiteFooter({
       </div>
       <div className="max-w-6xl mx-auto mt-2 flex flex-wrap items-center justify-center gap-x-5 gap-y-1.5 text-xs">
         <a
-          href="https://t.me/MaksErem"
+          href="https://web.tribute.tg/p/IAb"
           target="_blank"
           rel="noopener noreferrer"
           className="inline-flex items-center gap-1.5 text-muted-foreground hover:text-[#a78bfa] transition-colors"
@@ -47,7 +48,7 @@ export function SiteFooter({
           className="inline-flex items-center gap-1.5 text-muted-foreground hover:text-[#a78bfa] transition-colors"
         >
           <Users className="w-3.5 h-3.5 text-sky-400/80" />
-          {t("Присоединиться к сообществу")}
+          {t("Присоединиться к христианскому телеграм-каналу")}
         </a>
         <a
           href="https://tinyurl.com/oglavlenie"
