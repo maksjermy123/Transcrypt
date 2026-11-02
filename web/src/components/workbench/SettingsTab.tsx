@@ -412,7 +412,7 @@ export function SettingsTab({
         ) : (
           <div className="text-sm text-muted-foreground space-y-3">
             <p>
-              {t("Локальный движок открывает URL-задачи (YouTube/TikTok), нативный Whisper и ffmpeg-операции. Браузер сам находит его при каждом открытии страницы — достаточно один раз установить.")} </p>
+              {t("Локальный движок открывает URL-задачи (YouTube/TikTok), нативный Whisper и ffmpeg-операции. Движок работает только на компьютере — с телефона подключиться к нему нельзя. Браузер сам находит его при каждом открытии страницы — достаточно один раз установить.")} </p>
             <div className="flex flex-wrap gap-2">
               <button
                 onClick={onInstallEngine}

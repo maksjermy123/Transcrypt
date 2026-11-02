@@ -326,7 +326,7 @@ export function DesktopStep({ onNext }: { onNext: () => void }) {
         </div>
         <h2 className="text-3xl font-bold mb-3">{t("Скачайте программу")}</h2>
         <p className="text-muted-foreground max-w-lg mx-auto">
-          {t("VoxPaperAi Pro — полностью локальное приложение: сайт и браузер не нужны. Установщик собран на GitHub автоматически из открытых исходников. Бесплатно.")}
+          {t("VoxPaperAi Pro — полностью локальное приложение: сайт и браузер не нужны. Программа работает только на компьютере — на телефоне и планшете (Android, iPhone, iPad) её установить нельзя. Установщик собран на GitHub автоматически из открытых исходников. Бесплатно.")}
         </p>
       </div>
 

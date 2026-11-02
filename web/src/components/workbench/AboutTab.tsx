@@ -126,6 +126,9 @@ export function AboutTab() {
           <li className="flex gap-2">
             <span className="text-[#7c5bf5]">•</span>
             {t("PDF LAYOUT лучше всего работает с текстовыми PDF; для сканов без текстового слоя используйте FAST-режим после OCR.")} </li>
+          <li className="flex gap-2">
+            <span className="text-[#7c5bf5]">•</span>
+            {t("Движок и программа устанавливаются только на компьютер (Windows / macOS / Linux) — на телефоне и планшете доступен лишь браузерный режим, и он медленнее.")} </li>
         </ul>
       </section>
     </div>

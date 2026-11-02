@@ -117,6 +117,9 @@ export function EngineStep({ onNext }: { onNext: () => void }) {
             {t("Локальный движок — это сердце VoxPaperAi. Он будет работать на вашем компьютере: распознавание через нативный Whisper, скачивание с YouTube/TikTok, ffmpeg-операции. Никаких архивов скачивать не нужно —")}{" "}
             <span className="text-foreground font-medium">{t("одна команда, и всё установится само")}</span>.
           </p>
+          <p className="text-sm text-amber-400/90 max-w-lg mx-auto mt-3">
+            {t("Только компьютер: движок ставится на Windows, macOS и Linux — на телефоне и планшете он не работает. Для больших моделей Whisper (Medium, Large-v3) нужно хорошее железо: 5–10 ГБ оперативной памяти.")}
+          </p>
         </div>
 
         {/* Авто-переход: движок подключён */}

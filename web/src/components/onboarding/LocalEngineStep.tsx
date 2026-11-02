@@ -13,6 +13,7 @@ import {
   ClipboardCheck,
   ExternalLink,
   Info,
+  MonitorSmartphone,
 } from "lucide-react";
 import { useEffect, useState, useRef } from "react";
 import { useOnboarding } from "@/lib/onboarding-store";
@@ -334,6 +335,14 @@ export function LocalEngineStep({
               <span className="text-muted-foreground">{t("Ваша платформа:")}</span>
               <span className="px-2 py-0.5 rounded-md bg-[#7c5bf5]/15 text-[#7c5bf5] text-xs font-medium">
                 {info.label}
+              </span>
+            </div>
+
+            {/* Только компьютеры: на телефоне/планшете движок установить нельзя */}
+            <div className="text-xs text-amber-200/90 bg-amber-500/5 border border-amber-500/20 rounded-lg p-3 flex items-start gap-2">
+              <MonitorSmartphone className="w-3.5 h-3.5 text-amber-400 flex-shrink-0 mt-0.5" />
+              <span>
+                {t("Только компьютер: движок ставится на Windows, macOS и Linux — на телефоне и планшете он не работает. Для больших моделей Whisper (Medium, Large-v3) нужно хорошее железо: 5–10 ГБ оперативной памяти.")}
               </span>
             </div>
 
