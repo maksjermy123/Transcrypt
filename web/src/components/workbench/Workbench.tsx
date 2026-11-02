@@ -23,7 +23,7 @@ const TABS: { id: WorkTab; label: string; icon: React.ComponentType<{ className?
   { id: "transcribe", label: "Транскрипция", icon: Mic, hint: "Whisper превратит голос в текст с таймкодами" },
   { id: "media", label: "Медиа", icon: FileAudio, hint: "Скачивание видео/аудио по ссылкам через локальный движок" },
   { id: "convert", label: "Конвертер", icon: FileArchive, hint: "Медиа через ffmpeg, изображения, документы" },
-  { id: "translate", label: "Перевод", icon: Languages, hint: "Текст и файлы TXT/DOCX/PDF, включая LAYOUT с разметкой" },
+  { id: "translate", label: "Перевод", icon: Languages, hint: "Пакетный перевод файлов TXT/DOCX/PDF, включая LAYOUT с разметкой" },
   { id: "settings", label: "Настройки", icon: Wrench, hint: "Железо, движок, модели Whisper, переводчик" },
   { id: "about", label: "О программе", icon: Info, hint: "Возможности, архитектура и ограничения" },
 ];

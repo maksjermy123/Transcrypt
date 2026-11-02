@@ -28,7 +28,7 @@ const FEATURES = [
   {
     icon: Languages,
     title: "Перевод",
-    text: "Текст и файлы TXT/DOCX/PDF (Google или DeepL). PDF читается прямо в браузере (pdf.js), а режим LAYOUT накладывает перевод на оригинальные страницы с сохранением картинок и разметки — Microsoft Word и LibreOffice не нужны.",
+    text: "Пакетный перевод файлов TXT/DOCX/PDF (Google или DeepL). PDF читается прямо в браузере (pdf.js), а режим LAYOUT накладывает перевод на оригинальные страницы с сохранением картинок и разметки — Microsoft Word и LibreOffice не нужны.",
   },
   {
     icon: Wrench,

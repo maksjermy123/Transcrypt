@@ -118,7 +118,7 @@ const COMPARISON: Array<{
     desktop: true,
   },
   { feature: "Конвертация изображений и текстов", browser: true, engine: true, desktop: true },
-  { feature: "Перевод текста и файлов", browser: true, engine: true, desktop: true },
+  { feature: "Пакетный перевод файлов", browser: true, engine: true, desktop: true },
   { feature: "Фоновые задачи (вкладку можно закрыть)", browser: false, engine: true, desktop: true },
   {
     feature: "Транскрипция без интернета",

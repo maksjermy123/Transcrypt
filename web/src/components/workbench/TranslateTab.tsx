@@ -3,26 +3,22 @@
 /**
  * Вкладка «Перевод» — веб-порт translation_tab.py из десктопа.
  *
- * Секция 1. Перевод текста (Google / DeepL) — как в десктопе:
- *   слева исходник, справа перевод, провайдер + язык + копирование.
- * Секция 2. Перевод файлов (TXT / DOCX / PDF):
+ * Один блок: пакетный перевод файлов (TXT / DOCX / PDF):
  *   - PDF читается прямо в браузере (pdf.js) — Word/LibreOffice НЕ нужны
  *   - Режимы PDF: LAYOUT (сохраняет картинки и разметку, перевод накладывается
  *     поверх оригинальных страниц) и FAST (только текст, новый PDF)
  *   - Выходные форматы: txt / docx / pdf
+ *   (Одиночный перевод текста убран — Task 51.)
  */
 
 import { useState, useRef, useCallback } from "react";
 import { motion } from "framer-motion";
 import {
   Languages,
-  Copy,
-  Check,
   FileText,
   FilePlus2,
   Trash2,
   Loader2,
-  AlertCircle,
   Info,
   Wand2,
   CheckCircle2,
@@ -82,15 +78,7 @@ export function TranslateTab() {
   const dragDepth = useRef(0);
   const sectionInputRef = useRef<HTMLInputElement>(null);
 
-  // ─── Секция 1: перевод текста ───
-  const [textIn, setTextIn] = useState("");
-  const [textOut, setTextOut] = useState("");
-  const [textLang, setTextLang] = useState("ru");
-  const [textBusy, setTextBusy] = useState(false);
-  const [textError, setTextError] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
-
-  // ─── Секция 2: перевод файлов ───
+  // ─── Пакетный перевод файлов ───
   const [items, setItems] = useState<FileItem[]>([]);
   const [batchBusy, setBatchBusy] = useState(false);
   const [batchProgress, setBatchProgress] = useState(0);
@@ -108,36 +96,6 @@ export function TranslateTab() {
       logRef.current?.scrollTo({ top: logRef.current.scrollHeight });
     });
   }, []);
-
-  // ─── Перевод текста ───
-  async function translateTextInput() {
-    if (!textIn.trim() || textBusy) return;
-    setTextBusy(true);
-    setTextError(null);
-    setTextOut(t("Перевод…"));
-    try {
-      const res = await translateText(textIn, {
-        targetLang: textLang,
-        provider,
-        apiKey: deeplKey,
-        engineOnline: engineServerOnline,
-      });
-      setTextOut(res);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setTextError(msg);
-      setTextOut("");
-    } finally {
-      setTextBusy(false);
-    }
-  }
-
-  async function copyResult() {
-    if (!textOut) return;
-    await navigator.clipboard.writeText(textOut);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
-  }
 
   // ─── Файлы: добавление / удаление ───
   // Единая точка приёма файлов: и через кнопку, и через drag&drop на секции
@@ -329,112 +287,11 @@ export function TranslateTab() {
         <div className="min-w-0">
           <h1 className="text-xl font-bold">{t("Перевод")}</h1>
           <p className="text-sm text-muted-foreground">
-            {t("Текст и файлы (TXT / DOCX / PDF). PDF обрабатывается прямо в браузере — Word и LibreOffice не нужны.")} </p>
+            {t("Пакетный перевод файлов (TXT / DOCX / PDF). PDF обрабатывается прямо в браузере — Word и LibreOffice не нужны.")} </p>
         </div>
       </div>
 
-      {/* ═══════════ Секция 1: Перевод текста ═══════════ */}
-      <section className="rounded-2xl border border-[#263147]/60 bg-[#111827]/40 overflow-hidden">
-        <div className="px-5 py-3.5 border-b border-[#263147]/60 flex flex-wrap items-center gap-3">
-          <h3 className="font-semibold text-sm">{t("1. Перевод текста")}</h3>
-          <div className="flex items-center gap-2 ml-auto">
-            <label className="text-xs text-muted-foreground">{t("Провайдер:")}</label>
-            <select
-              value={provider}
-              onChange={(e) => useSettings.getState().setProvider(e.target.value as "google" | "deepl")}
-              className="bg-[#1b2334] border border-[#263147] rounded-lg px-2.5 py-1.5 text-xs"
-            >
-              <option value="google">Google</option>
-              <option value="deepl">DeepL</option>
-            </select>
-            <label className="text-xs text-muted-foreground ml-2">{t("Язык:")}</label>
-            <select
-              value={textLang}
-              onChange={(e) => setTextLang(e.target.value)}
-              className="bg-[#1b2334] border border-[#263147] rounded-lg px-2.5 py-1.5 text-xs"
-            >
-              {TARGET_LANGS.map((l) => (
-                <option key={l} value={l}>
-                  {l} — {LANG_NAMES[l]}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        <div className="grid md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-[#263147]/60">
-          {/* Вход */}
-          <div className="p-4">
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-xs text-muted-foreground">{t("Исходный текст (авто-определение):")}</label>
-              <button
-                onClick={() => {
-                  setTextIn("");
-                  setTextOut("");
-                  setTextError(null);
-                }}
-                className="text-xs text-muted-foreground hover:text-foreground"
-              >
-                {t("Очистить")} </button>
-            </div>
-            <textarea
-              value={textIn}
-              onChange={(e) => setTextIn(e.target.value)}
-              placeholder={t("Вставьте или введите текст для перевода…")}
-              className="w-full h-48 bg-[#0b0f19] border border-[#263147] rounded-xl p-3 text-sm resize-y focus:outline-none focus:ring-1 focus:ring-[#7c5bf5]/50"
-            />
-          </div>
-
-          {/* Выход */}
-          <div className="p-4">
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-xs text-muted-foreground">{t("Перевод:")}</label>
-              <button
-                onClick={copyResult}
-                disabled={!textOut}
-                className="text-xs text-muted-foreground hover:text-foreground disabled:opacity-40 inline-flex items-center gap-1"
-              >
-                {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-                {copied ? t("Скопировано") : t("Копировать")}
-              </button>
-            </div>
-            <div
-              className={`w-full h-48 bg-[#0b0f19] border rounded-xl p-3 text-sm overflow-y-auto ${
-                textError ? "border-red-500/40" : "border-[#263147]"
-              }`}
-            >
-              {textError ? (
-                <div className="flex items-start gap-2 text-red-300">
-                  <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                  <span>{textError}</span>
-                </div>
-              ) : (
-                <span className={textOut ? "" : "text-muted-foreground"}>
-                  {textOut || t("Здесь появится перевод…")}
-                </span>
-              )}
-            </div>
-          </div>
-        </div>
-
-        <div className="px-4 py-3 border-t border-[#263147]/60 flex flex-wrap items-center gap-3">
-          {/* Унификация: подсказка слева, главная кнопка действия — справа, как во всех очередях */}
-          {provider === "deepl" && !deeplKey && (
-            <span className="text-xs text-amber-400 inline-flex items-center gap-1">
-              <Info className="w-3 h-3" />  {t("Для DeepL добавьте API-ключ во вкладке «Настройки»")} </span>
-          )}
-          <button
-            onClick={translateTextInput}
-            disabled={textBusy || !textIn.trim()}
-            className="ml-auto bg-gradient-primary text-white px-5 py-2.5 rounded-xl text-sm font-semibold hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center gap-2"
-          >
-            {textBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Languages className="w-4 h-4" />}
-            {textBusy ? t("Переводим…") : t("Перевести текст")}
-          </button>
-        </div>
-      </section>
-
-      {/* ═══════════ Секция 2: Перевод файлов ═══════════ */}
+      {/* ═══════════ Пакетный перевод файлов ═══════════ */}
       <section
         className={`rounded-2xl border bg-[#111827]/40 overflow-hidden transition-colors ${
           dragActive ? "border-[#7c5bf5] bg-[#7c5bf5]/10" : "border-[#263147]/60"
@@ -467,9 +324,18 @@ export function TranslateTab() {
         }}
       >
         <div className="px-5 py-3.5 border-b border-[#263147]/60 flex flex-wrap items-center gap-3">
-          <h3 className="font-semibold text-sm">{t("2. Перевод файлов (TXT / DOCX / PDF)")}</h3>
+          <h3 className="font-semibold text-sm">{t("Пакетный перевод файлов (TXT / DOCX / PDF)")}</h3>
           <div className="flex items-center gap-2 ml-auto">
-            <label className="text-xs text-muted-foreground">{t("PDF режим:")}</label>
+            <label className="text-xs text-muted-foreground">{t("Провайдер:")}</label>
+            <select
+              value={provider}
+              onChange={(e) => useSettings.getState().setProvider(e.target.value as "google" | "deepl")}
+              className="bg-[#1b2334] border border-[#263147] rounded-lg px-2.5 py-1.5 text-xs"
+            >
+              <option value="google">Google</option>
+              <option value="deepl">DeepL</option>
+            </select>
+            <label className="text-xs text-muted-foreground ml-2">{t("PDF режим:")}</label>
             <select
               value={pdfMode}
               onChange={(e) => setPdfMode(e.target.value as "LAYOUT" | "FAST")}
@@ -616,6 +482,11 @@ export function TranslateTab() {
 
             {/* Унификация с очередями: слева «Очистить список», справа — кнопка запуска */}
             <div className="flex flex-wrap items-center gap-2">
+              {provider === "deepl" && !deeplKey && (
+                <span className="text-xs text-amber-400 inline-flex items-center gap-1">
+                  <Info className="w-3 h-3" /> {t("Для DeepL добавьте API-ключ во вкладке «Настройки»")}
+                </span>
+              )}
               {items.length > 0 && (
                 <button
                   onClick={() => !batchBusy && setItems([])}

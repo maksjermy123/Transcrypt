@@ -1,7 +1,7 @@
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, 
-                             QPushButton, QTextEdit, QTextBrowser, QSplitter, QGroupBox, QFileDialog, 
-                             QProgressBar, QMessageBox, QApplication)
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
+                             QPushButton, QTextBrowser, QGroupBox, QFileDialog, 
+                             QProgressBar, QMessageBox)
+from PyQt6.QtCore import QThread, pyqtSignal
 from src.ui.widgets.file_list import FileListWidget
 from src.core.translator import Translator
 from src.utils.config import load_config, save_config
@@ -150,83 +150,15 @@ class TranslationWorker(QThread):
 class TranslationTab(QWidget):
     def __init__(self):
         super().__init__()
-        self.translator = Translator()
         self._task_token = None
         self._task_queued = False
         self.init_ui()
         
     def init_ui(self):
         layout = QVBoxLayout(self)
-        
-        # Splitter (Vertical)
-        splitter = QSplitter(Qt.Orientation.Vertical)
-        
-        # === 1. Text Translation Section ===
-        text_widget = QGroupBox("1. Перевод текста (Google / DeepL)")
-        text_layout = QVBoxLayout(text_widget)
-        
-        # Horizontal Splitter for In/Out
-        h_splitter = QSplitter(Qt.Orientation.Horizontal)
-        
-        # LEFT (Input)
-        left_widget = QWidget()
-        left_layout = QVBoxLayout(left_widget)
-        left_layout.setContentsMargins(0,0,0,0)
-        
-        l_top = QHBoxLayout()
-        l_top.addWidget(QLabel("Исходный текст (Авто):"))
-        btn_clear = QPushButton("Очистить")
-        btn_clear.clicked.connect(self.clear_text)
-        l_top.addWidget(btn_clear)
-        left_layout.addLayout(l_top)
-        
-        self.txt_in = QTextEdit()
-        left_layout.addWidget(self.txt_in)
-        
-        h_splitter.addWidget(left_widget)
-        
-        # RIGHT (Output)
-        right_widget = QWidget()
-        right_layout = QVBoxLayout(right_widget)
-        right_layout.setContentsMargins(0,0,0,0)
-        
-        r_top = QHBoxLayout()
-        r_top.addWidget(QLabel("Перевод:"))
 
-        r_top.addWidget(QLabel("Провайдер:"))
-        self.combo_provider = QComboBox()
-        self.combo_provider.addItems(["Google", "DeepL"])
-        self.combo_provider.currentTextChanged.connect(self.save_provider)
-        r_top.addWidget(self.combo_provider)
-        
-        # Language Selector
-        self.combo_lang_text = QComboBox()
-        self.combo_lang_text.addItems(["ru", "en", "uk", "es", "de", "fr", "it", "pl"])
-        r_top.addWidget(QLabel("Язык:"))
-        r_top.addWidget(self.combo_lang_text)
-        
-        btn_copy = QPushButton("Копировать")
-        btn_copy.clicked.connect(self.copy_result)
-        r_top.addWidget(btn_copy)
-        
-        right_layout.addLayout(r_top)
-        
-        self.txt_out = QTextEdit()
-        right_layout.addWidget(self.txt_out)
-        
-        h_splitter.addWidget(right_widget)
-        
-        text_layout.addWidget(h_splitter)
-        
-        # Translate Button
-        self.btn_trans_text = QPushButton("▶️ ПЕРЕВЕСТИ ТЕКСТ")
-        self.btn_trans_text.clicked.connect(self.translate_text)
-        text_layout.addWidget(self.btn_trans_text)
-        
-        splitter.addWidget(text_widget)
-        
-        # === 2. File Translation Section ===
-        file_widget = QGroupBox("2. Перевод файлов (Text/Docx/PDF)")
+        # === Пакетный перевод файлов (текстовый перевод убран — Task 51) ===
+        file_widget = QGroupBox("Пакетный перевод файлов (TXT / DOCX / PDF)")
         file_layout = QVBoxLayout(file_widget)
         
         # Controls
@@ -237,6 +169,14 @@ class TranslationTab(QWidget):
         f_controls.addWidget(btn_add)
         
         f_controls.addStretch()
+        
+        # Провайдер (Google / DeepL) — общий для всего перевода, перенесён
+        # сюда из убранной текстовой секции
+        f_controls.addWidget(QLabel("Провайдер:"))
+        self.combo_provider = QComboBox()
+        self.combo_provider.addItems(["Google", "DeepL"])
+        self.combo_provider.currentTextChanged.connect(self.save_provider)
+        f_controls.addWidget(self.combo_provider)
         
         f_controls.addWidget(QLabel("Папка вывода:"))
         self.out_dir_display = QLabel("По умолчанию (рядом с файлом)")
@@ -294,9 +234,7 @@ class TranslationTab(QWidget):
         
         file_layout.addLayout(b_controls)
         
-        splitter.addWidget(file_widget)
-        
-        layout.addWidget(splitter)
+        layout.addWidget(file_widget)
         
         self.output_dir = None
         self.worker = None
@@ -340,46 +278,6 @@ class TranslationTab(QWidget):
         cfg = load_config()
         cfg["translation_provider"] = provider
         save_config(cfg)
-
-    # --- Text Logic ---
-    def clear_text(self):
-        self.txt_in.clear()
-        self.txt_out.clear()
-        
-    def copy_result(self):
-        clipboard = QApplication.clipboard()
-        clipboard.setText(self.txt_out.toPlainText())
-        
-    def translate_text(self):
-        try:
-            from src.utils.event_log import get_event_log
-
-            get_event_log().write(
-                "translation_text_start",
-                provider=self.combo_provider.currentText(),
-                target=self.combo_lang_text.currentText(),
-                in_len=len(self.txt_in.toPlainText() or ""),
-            )
-        except Exception:
-            pass
-        text = self.txt_in.toPlainText()
-        if not text:
-            return
-        
-        target = self.combo_lang_text.currentText()
-        cfg = load_config()
-        provider = self.combo_provider.currentText()
-        api_key = cfg.get("deepl_api_key", "")
-        self.btn_trans_text.setEnabled(False)
-        self.txt_out.setText("Перевод...")
-        
-        self.text_worker = TextTransWorker(text, target, provider, api_key)
-        self.text_worker.result.connect(self.on_text_trans_finished)
-        self.text_worker.start()
-        
-    def on_text_trans_finished(self, text):
-        self.txt_out.setText(text)
-        self.btn_trans_text.setEnabled(True)
 
     # --- File Logic ---
     def add_files(self):
@@ -599,18 +497,4 @@ class TranslationTab(QWidget):
         else:
             QMessageBox.information(self, "Готово", "Пакетный перевод завершен")
 
-class TextTransWorker(QThread):
-    result = pyqtSignal(str)
-    def __init__(self, text, lang, provider, api_key):
-        super().__init__()
-        self.text = text
-        self.lang = lang
-        self.provider = provider
-        self.api_key = api_key
-        self.translator = Translator()
-    def run(self):
-        try:
-            res = self.translator.translate_text(self.text, self.lang, provider=self.provider, api_key=self.api_key)
-            self.result.emit(res)
-        except Exception as e:
-            self.result.emit(f"Ошибка: {e}")
+

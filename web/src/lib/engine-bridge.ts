@@ -319,6 +319,7 @@ export type EngineJobState = {
   error?: string | null;
   label?: string;
   created_at?: number;
+  started_at?: number; // фактический старт задачи (движок ≥ 1.4.1); на старых движках нет — фолбэк на created_at
   finished_at?: number | null;
   lane?: string;
   queue_position?: number; // позиция в очереди (только для status === "queued")
