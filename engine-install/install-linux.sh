@@ -191,12 +191,15 @@ print_step "Скачивание engine_server.py, src/ и requirements-engine.t
 TMP_TARBALL="$INSTALL_DIR/repo.tar.gz"
 TMP_EXTRACT="$INSTALL_DIR/_extract"
 curl -fsSL "$REPO_TARBALL" -o "$TMP_TARBALL"
+# Чистим папку распаковки от прошлых попыток
+rm -rf "$TMP_EXTRACT"
 mkdir -p "$TMP_EXTRACT"
 tar -xzf "$TMP_TARBALL" -C "$TMP_EXTRACT"
 
-# Внутри tarball директория называется Transcrypt-main/
-EXTRACTED="$TMP_EXTRACT/Transcrypt-main"
-if [ ! -d "$EXTRACTED" ]; then
+# Каталог внутри архива называется "<имя-репозитория>-main" — имя репозитория
+# может меняться (сейчас voxpaperai.github.io), поэтому ищем его динамически
+EXTRACTED=$(find "$TMP_EXTRACT" -mindepth 1 -maxdepth 1 -type d | head -n 1)
+if [ -z "$EXTRACTED" ]; then
     print_err "Не удалось распаковать репозиторий"
     exit 1
 fi

@@ -328,17 +328,19 @@ if (-not (Get-RemoteFile -Url $RepoTarball -OutFile $tmpTarball)) {
     Exit-WithPause 1
 }
 
-if (-not (Test-Path $tmpExtract)) {
-    New-Item -ItemType Directory -Path $tmpExtract -Force | Out-Null
-}
+# Распаковываем tarball (Windows 10+ имеет встроенный tar).
+# Каталог внутри архива называется "<имя-репозитория>-main" — имя репозитория
+# может меняться (сейчас voxpaperai.github.io), поэтому ищем его динамически.
+Remove-Item -Recurse -Force $tmpExtract -ErrorAction SilentlyContinue
+New-Item -ItemType Directory -Path $tmpExtract -Force | Out-Null
 
-# Распаковываем tarball (Windows 10+ имеет встроенный tar)
-$extractedDir = Join-Path $tmpExtract "Transcrypt-main"
 $hasTar = Get-Command tar -ErrorAction SilentlyContinue
 if ($hasTar) {
     cmd /c "tar -xzf `"$tmpTarball`" -C `"$tmpExtract`"" 2>&1 | Out-Null
 }
-if (-not (Test-Path $extractedDir)) {
+$extractedDir = Get-ChildItem -Path $tmpExtract -Directory |
+    Select-Object -First 1 -ExpandProperty FullName
+if (-not $extractedDir) {
     if ($hasTar) {
         Write-Err "Не удалось распаковать архив репозитория (tar)."
     } else {
