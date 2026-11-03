@@ -17,12 +17,12 @@
 
 ## 🌐 Веб-версия
 
-**Адрес после деплоя:** `https://maksjermy123.github.io/Transcrypt/`
+**Адрес после деплоя:** `https://voxpaperai.github.io/`
 
 **Архитектура:**
 
 ```
-Пользователь открывает https://maksjermy123.github.io/Transcrypt/
+Пользователь открывает https://voxpaperai.github.io/
         ↓
 [1] Авто-пинг http://127.0.0.1:8765/api/health (1.5 сек)
         ↓
@@ -102,7 +102,7 @@ YouTube и профили платформ отклоняются с объяс�
 ### Способ 2 — Вручную
 
 ```bash
-git clone https://github.com/maksjermy123/Transcrypt
+git clone https://github.com/voxpaperai/voxpaperai.github.io
 cd Transcrypt
 python -m venv .venv
 source .venv/bin/activate  # на Windows: .venv\Scripts\activate
@@ -180,7 +180,7 @@ Release-сборка macOS:
 
 1. Repo → Settings → Pages → Source: **GitHub Actions**
 2. Любой пуш в `main`, изменяющий `web/`, триггерит пересборку
-3. Через ~2 минуты сайт доступен на `https://maksjermy123.github.io/Transcrypt/`
+3. Через ~2 минуты сайт доступен на `https://voxpaperai.github.io/`
 
 Веб-версия находится в папке [`web/`](./web/) — Next.js 16 + TypeScript + Tailwind CSS 4 + shadcn/ui.
 

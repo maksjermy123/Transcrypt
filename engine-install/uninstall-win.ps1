@@ -2,7 +2,7 @@
 #  VoxPaperAi — ПОЛНОЕ удаление с компьютера (Windows)
 #
 #  Запуск (PowerShell) — окно не закроется, пока не нажмёте Enter:
-#    iwr -useb https://raw.githubusercontent.com/maksjermy123/Transcrypt/main/engine-install/uninstall-win.ps1 -OutFile "$env:TEMP\vpai-uninstall.ps1"; powershell -NoProfile -ExecutionPolicy Bypass -NoExit -File "$env:TEMP\vpai-uninstall.ps1"
+#    iwr -useb https://raw.githubusercontent.com/voxpaperai/voxpaperai.github.io/main/engine-install/uninstall-win.ps1 -OutFile "$env:TEMP\vpai-uninstall.ps1"; powershell -NoProfile -ExecutionPolicy Bypass -NoExit -File "$env:TEMP\vpai-uninstall.ps1"
 #
 #  Что удаляет:
 #    1. Автозапуск: ключ реестра HKCU\...\Run\TranscryptEngine

@@ -48,7 +48,7 @@ export function isEngineOutdated(health: EngineHealth | null): boolean {
   return false;
 }
 
-const REPO_RAW = "https://raw.githubusercontent.com/maksjermy123/Transcrypt/main/engine-install";
+const REPO_RAW = "https://raw.githubusercontent.com/voxpaperai/voxpaperai.github.io/main/engine-install";
 
 interface OSInfo {
   label: string;

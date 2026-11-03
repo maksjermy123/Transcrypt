@@ -37,7 +37,7 @@ const CORE_SOURCES = [
   `https://cdn.jsdelivr.net/npm/@ffmpeg/core@${CORE_VERSION}/dist/umd`,
 ];
 
-/** Базовый путь приложения (на GitHub Pages — "/Transcrypt", локально — ""). */
+/** Базовый путь приложения: сайт — https://voxpaperai.github.io (корень, ""), локально — "". */
 function basePath(): string {
   return (process.env.NEXT_PUBLIC_BASE_PATH as string | undefined) || "";
 }

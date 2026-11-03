@@ -22,7 +22,7 @@ import { checkEngineHealth, type EngineHealth } from "@/lib/engine-bridge";
 
 type LocalPhase = "idle" | "waiting" | "online" | "error";
 
-const RAW_BASE = "https://raw.githubusercontent.com/maksjermy123/Transcrypt/main/engine-install";
+const RAW_BASE = "https://raw.githubusercontent.com/voxpaperai/voxpaperai.github.io/main/engine-install";
 
 type Platform = "mac" | "win" | "linux" | "unknown";
 
@@ -51,9 +51,9 @@ const PLATFORM_INFO: Record<
     label: "macOS",
     // Команда, которую пользователь копирует и вставляет в Terminal
     command:
-      'bash -c "$(curl -fsSL https://raw.githubusercontent.com/maksjermy123/Transcrypt/main/engine-install/install-mac.command)"',
+      'bash -c "$(curl -fsSL https://raw.githubusercontent.com/voxpaperai/voxpaperai.github.io/main/engine-install/install-mac.command)"',
     uninstallCommand:
-      'bash -c "$(curl -fsSL https://raw.githubusercontent.com/maksjermy123/Transcrypt/main/engine-install/uninstall-mac.command)"',
+      'bash -c "$(curl -fsSL https://raw.githubusercontent.com/voxpaperai/voxpaperai.github.io/main/engine-install/uninstall-mac.command)"',
     terminalName: "Terminal.app",
     openTerminalHint:
       "Cmd+Space → введите «Terminal» → Enter. Или откройте Finder → Программы → Утилиты → Terminal",
@@ -83,9 +83,9 @@ const PLATFORM_INFO: Record<
   linux: {
     label: "Linux",
     command:
-      'bash -c "$(curl -fsSL https://raw.githubusercontent.com/maksjermy123/Transcrypt/main/engine-install/install-linux.sh)"',
+      'bash -c "$(curl -fsSL https://raw.githubusercontent.com/voxpaperai/voxpaperai.github.io/main/engine-install/install-linux.sh)"',
     uninstallCommand:
-      'bash -c "$(curl -fsSL https://raw.githubusercontent.com/maksjermy123/Transcrypt/main/engine-install/uninstall-linux.sh)"',
+      'bash -c "$(curl -fsSL https://raw.githubusercontent.com/voxpaperai/voxpaperai.github.io/main/engine-install/uninstall-linux.sh)"',
     terminalName: "Терминал",
     openTerminalHint:
       "Ctrl+Alt+T в большинстве дистрибутивов, или найдите «Терминал» в меню приложений",
@@ -116,9 +116,9 @@ const PLATFORM_INFO: Record<
     // даже при ошибке. Python ставится автоматически, если его не было
     // (раньше заглушка Microsoft Store обрывала установку после пары «?»).
     command:
-      'iwr -useb https://raw.githubusercontent.com/maksjermy123/Transcrypt/main/engine-install/install-win.ps1 -OutFile "$env:TEMP\\vpai-install.ps1"; powershell -NoProfile -ExecutionPolicy Bypass -NoExit -File "$env:TEMP\\vpai-install.ps1"',
+      'iwr -useb https://raw.githubusercontent.com/voxpaperai/voxpaperai.github.io/main/engine-install/install-win.ps1 -OutFile "$env:TEMP\\vpai-install.ps1"; powershell -NoProfile -ExecutionPolicy Bypass -NoExit -File "$env:TEMP\\vpai-install.ps1"',
     uninstallCommand:
-      'iwr -useb https://raw.githubusercontent.com/maksjermy123/Transcrypt/main/engine-install/uninstall-win.ps1 -OutFile "$env:TEMP\\vpai-uninstall.ps1"; powershell -NoProfile -ExecutionPolicy Bypass -NoExit -File "$env:TEMP\\vpai-uninstall.ps1"',
+      'iwr -useb https://raw.githubusercontent.com/voxpaperai/voxpaperai.github.io/main/engine-install/uninstall-win.ps1 -OutFile "$env:TEMP\\vpai-uninstall.ps1"; powershell -NoProfile -ExecutionPolicy Bypass -NoExit -File "$env:TEMP\\vpai-uninstall.ps1"',
     terminalName: "PowerShell",
     openTerminalHint:
       "Win+R → введите «powershell» → Enter. Или: Пуск → найдите «PowerShell»",
@@ -148,16 +148,16 @@ const PLATFORM_INFO: Record<
   unknown: {
     label: "Неизвестная платформа",
     command:
-      'bash -c "$(curl -fsSL https://raw.githubusercontent.com/maksjermy123/Transcrypt/main/engine-install/install-linux.sh)"',
+      'bash -c "$(curl -fsSL https://raw.githubusercontent.com/voxpaperai/voxpaperai.github.io/main/engine-install/install-linux.sh)"',
     uninstallCommand:
-      'bash -c "$(curl -fsSL https://raw.githubusercontent.com/maksjermy123/Transcrypt/main/engine-install/uninstall-linux.sh)"',
+      'bash -c "$(curl -fsSL https://raw.githubusercontent.com/voxpaperai/voxpaperai.github.io/main/engine-install/uninstall-linux.sh)"',
     terminalName: "терминал",
     openTerminalHint: "Откройте терминал вашей системы",
     steps: [
       {
         step: "Не удалось определить платформу",
         detail:
-          "Скачайте установщик вручную с https://github.com/maksjermy123/Transcrypt/tree/main/engine-install",
+          "Скачайте установщик вручную с https://github.com/voxpaperai/voxpaperai.github.io/tree/main/engine-install",
       },
     ],
   },

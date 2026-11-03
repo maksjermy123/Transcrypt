@@ -942,7 +942,7 @@ export const EN: Record<string, string> = {
   "терминал": "terminal",
   "Откройте терминал вашей системы": "Open your system's terminal",
   "Не удалось определить платформу": "Failed to detect the platform",
-  "Скачайте установщик вручную с https://github.com/maksjermy123/Transcrypt/tree/main/engine-install": "Download the installer manually from https://github.com/maksjermy123/Transcrypt/tree/main/engine-install",
+  "Скачайте установщик вручную с https://github.com/voxpaperai/voxpaperai.github.io/tree/main/engine-install": "Download the installer manually from https://github.com/voxpaperai/voxpaperai.github.io/tree/main/engine-install",
   "Удалить все данные VoxPaperAi из этого браузера?\n\n· Кеш моделей браузерного Whisper\n· Настройки и онбординг (пройдёте гайд заново)\n· Историю результатов и активные задачи\n\nДанные на компьютере (движок) не трогаются — для них есть команда Шага 1.":
     "Delete all VoxPaperAi data from this browser?\n\n· Browser Whisper model cache\n· Settings and onboarding (you'll redo the guide)\n· Result history and active jobs\n\nData on the computer (engine) is untouched — use the Step 1 command for that.",
   " · в работе: {n}": " · {n} in progress",

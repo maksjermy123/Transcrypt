@@ -113,7 +113,7 @@ export function ConsentStep({
         <p className="text-xs text-muted-foreground leading-relaxed mb-3">
           <strong className="text-foreground">{t("Кратко:")}</strong>  {t("мы не собираем персональные данные, не используем cookies для трекинга, не показываем рекламу. Локальные файлы обрабатываются в браузере, не покидают ваше устройство. URL-задачи идут через локальный движок с вашего IP. Полный текст политики — по ссылке ниже.")} </p>
         <a
-          href="/Transcrypt/privacy"
+          href="/privacy"
           target="_blank"
           rel="noopener noreferrer"
           className="inline-flex items-center gap-1.5 text-sm text-[#7c5bf5] hover:underline"
@@ -143,7 +143,7 @@ export function ConsentStep({
           <span className="text-sm">
             {t("Я прочитал(а) и принимаю")}{" "}
             <a
-              href="/Transcrypt/privacy"
+              href="/privacy"
               target="_blank"
               rel="noopener noreferrer"
               className="text-[#7c5bf5] hover:underline"

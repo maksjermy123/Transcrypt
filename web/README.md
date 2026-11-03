@@ -89,19 +89,18 @@ bun run dev
 2. **В настройках репозитория** откройте Settings → Pages → Source:
    выберите **GitHub Actions**.
 
-3. **Обновите `next.config.ts`** — замените `basePath` на имя репозитория:
+3. **Проверьте `next.config.ts`** — `basePath` там вычисляется автоматически:
+   для обычного репозитория это `/имя-репозитория`, для корневого сайта
+   (репозиторий вида `имя.github.io`) — пустой. Обычно менять ничего не нужно:
 
    ```ts
-   const nextConfig: NextConfig = {
-     output: "export",
-     basePath: "/Transcrypt",          // ← имя репозитория
-     images: { unoptimized: true },
-     typescript: { ignoreBuildErrors: true },
-   };
+   // в next.config.ts уже настроено:
+   const basePath = isGH && !repoName.endsWith(".github.io") ? `/${repoName}` : "";
    ```
 
 4. **Запушьте** — GitHub Actions автоматически соберёт статический сайт
-   и опубликует на `https://<username>.github.io/Transcrypt/`.
+   и опубликует на `https://<username>.github.io/<имя-репозитория>/`
+   (или на `https://имя.github.io/` для корневого сайта).
 
 ### Вариант B — Ручная сборка и деплой
 

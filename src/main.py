@@ -292,7 +292,7 @@ def _show_torch_error_dialog(exc: Exception):
     if box.clickedButton() is vc_btn:
         QDesktopServices.openUrl(QUrl("https://aka.ms/vs/17/release/vc_redist.x64.exe"))
     elif box.clickedButton() is dl_btn:
-        QDesktopServices.openUrl(QUrl("https://github.com/maksjermy123/Transcrypt/releases/latest"))
+        QDesktopServices.openUrl(QUrl("https://github.com/voxpaperai/voxpaperai.github.io/releases/latest"))
 
 
 def _apply_theme(app: QApplication):

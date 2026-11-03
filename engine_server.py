@@ -9,7 +9,7 @@ Features:
   - ffmpeg audio cleanup and video hardsubbing
   - Universal media, document, and image format conversion
   - Text & document translation (Google / DeepL)
-  - Full CORS support for https://maksjermy123.github.io/Transcrypt
+  - Full CORS support for https://voxpaperai.github.io
 """
 
 import sys
@@ -1317,7 +1317,7 @@ def run_server(port=8765):
     print("=" * 60)
     print(f"🚀 VoxPaperAi Pro — Локальный движок запущен!")
     print(f"📡 Порт: http://127.0.0.1:{port}")
-    print(f"🌐 Откройте веб-интерфейс: https://maksjermy123.github.io/Transcrypt/")
+    print(f"🌐 Откройте веб-интерфейс: https://voxpaperai.github.io/")
     print("=" * 60)
     try:
         httpd.serve_forever()

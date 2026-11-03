@@ -252,7 +252,7 @@ export function ChoiceStep({
         <span>
           {t("В любом режиме ваши файлы не покидают устройство. Программа бесплатна. Подробнее —")}{" "}
           <a
-            href="/Transcrypt/privacy"
+            href="/privacy"
             target="_blank"
             rel="noopener noreferrer"
             className="text-[#7c5bf5] hover:underline"

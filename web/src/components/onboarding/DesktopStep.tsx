@@ -29,8 +29,8 @@ interface DesktopTarget {
  * НЕ в имени (каждый релиз перезаписывает те же имена), поэтому ссылка
  * releases/latest/download/... всегда отдаёт актуальную сборку.
  */
-const RELEASE_BASE = "https://github.com/maksjermy123/Transcrypt/releases/latest/download/";
-const RELEASES_PAGE = "https://github.com/maksjermy123/Transcrypt/releases";
+const RELEASE_BASE = "https://github.com/voxpaperai/voxpaperai.github.io/releases/latest/download/";
+const RELEASES_PAGE = "https://github.com/voxpaperai/voxpaperai.github.io/releases";
 
 const ASSETS: Record<string, string> = {
   "windows:x64": "VoxPaperAi-Pro-windows-x64.zip",

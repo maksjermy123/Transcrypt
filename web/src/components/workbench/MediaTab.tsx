@@ -319,7 +319,7 @@ export function MediaTab() {
             <div className="text-muted-foreground">{t("# Обновите эту страницу — индикатор станет зелёным")}</div>
           </div>
           <a
-            href="https://github.com/maksjermy123/Transcrypt#-локальный-движок-опционально-для-url-задач"
+            href="https://github.com/voxpaperai/voxpaperai.github.io#-локальный-движок-опционально-для-url-задач"
             target="_blank"
             rel="noopener noreferrer"
             className="inline-block mt-5 text-[#7c5bf5] hover:underline text-sm"

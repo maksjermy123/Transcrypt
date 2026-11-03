@@ -9,7 +9,7 @@
 #   3. Скачивает engine_server.py и requirements-engine.txt из GitHub
 #   4. Устанавливает зависимости в venv (whisper, yt-dlp, ffmpeg-python, curl-cffi)
 #   5. Запускает engine_server.py на http://127.0.0.1:8765
-#   6. Открывает браузер с https://maksjermy123.github.io/Transcrypt/
+#   6. Открывает браузер с https://voxpaperai.github.io/
 #
 # Запуск: bash install-linux.sh
 # Удаление: rm -rf ~/.transcrypt-engine
@@ -30,7 +30,7 @@ echo "  • Ваши файлы обрабатываются локально и
 echo "  • Программа предоставляется «как есть», без гарантий."
 echo "  • Скачивание контента с YouTube/TikTok может нарушать их правила —"
 echo "    ответственность лежит на пользователе."
-echo " Полный текст: https://maksjermy123.github.io/Transcrypt/privacy"
+echo " Полный текст: https://voxpaperai.github.io/privacy"
 echo "════════════════════════════════════════════════════════════════"
 if [ "${TRANSCRYPT_CONSENT:-}" = "yes" ]; then
   echo " Согласие принято автоматически (TRANSCRYPT_CONSENT=yes — автоматическая установка)."
@@ -50,8 +50,8 @@ else
   exit 1
 fi
 
-REPO_RAW="https://raw.githubusercontent.com/maksjermy123/Transcrypt/main"
-REPO_TARBALL="https://github.com/maksjermy123/Transcrypt/archive/refs/heads/main.tar.gz"
+REPO_RAW="https://raw.githubusercontent.com/voxpaperai/voxpaperai.github.io/main"
+REPO_TARBALL="https://github.com/voxpaperai/voxpaperai.github.io/archive/refs/heads/main.tar.gz"
 INSTALL_DIR="$HOME/.transcrypt-engine"
 VENV_DIR="$INSTALL_DIR/venv"
 ENGINE_FILE="$INSTALL_DIR/engine_server.py"
@@ -300,11 +300,11 @@ else
     print_step "Открываем веб-интерфейс в браузере..."
     sleep 1
     if command -v xdg-open &> /dev/null; then
-        xdg-open "https://maksjermy123.github.io/Transcrypt/" &> /dev/null &
+        xdg-open "https://voxpaperai.github.io/" &> /dev/null &
     elif command -v sensible-browser &> /dev/null; then
-        sensible-browser "https://maksjermy123.github.io/Transcrypt/" &> /dev/null &
+        sensible-browser "https://voxpaperai.github.io/" &> /dev/null &
     else
-        print_warn "Не удалось открыть браузер автоматически. Откройте вручную: https://maksjermy123.github.io/Transcrypt/"
+        print_warn "Не удалось открыть браузер автоматически. Откройте вручную: https://voxpaperai.github.io/"
     fi
 fi
 

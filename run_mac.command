@@ -20,7 +20,7 @@ elif [ -d "../.venv" ]; then
 fi
 
 # Open Web App in browser after 1 second in background
-(sleep 1 && open "https://maksjermy123.github.io/Transcrypt/") &
+(sleep 1 && open "https://voxpaperai.github.io/") &
 
 # Start Engine
 python3 engine_server.py

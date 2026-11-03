@@ -3,7 +3,7 @@
 #  Transcrypt — ПОЛНОЕ удаление с компьютера (Linux)
 #
 #  Запуск:
-#    bash -c "$(curl -fsSL https://raw.githubusercontent.com/maksjermy123/Transcrypt/main/engine-install/uninstall-linux.sh)"
+#    bash -c "$(curl -fsSL https://raw.githubusercontent.com/voxpaperai/voxpaperai.github.io/main/engine-install/uninstall-linux.sh)"
 #
 #  Что удаляет:
 #    1. Автозапуск: systemd user unit transcrypt-engine.service

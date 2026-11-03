@@ -3,7 +3,7 @@
 #  Transcrypt — ПОЛНОЕ удаление с компьютера (macOS)
 #
 #  Запуск:
-#    bash -c "$(curl -fsSL https://raw.githubusercontent.com/maksjermy123/Transcrypt/main/engine-install/uninstall-mac.command)"
+#    bash -c "$(curl -fsSL https://raw.githubusercontent.com/voxpaperai/voxpaperai.github.io/main/engine-install/uninstall-mac.command)"
 #
 #  Что удаляет:
 #    1. Автозапуск: LaunchAgent com.transcrypt.engine (~/Library/LaunchAgents)

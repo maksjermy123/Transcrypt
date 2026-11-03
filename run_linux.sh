@@ -15,7 +15,7 @@ if [ -d ".venv" ]; then
 fi
 
 if command -v xdg-open &> /dev/null; then
-    (sleep 1 && xdg-open "https://maksjermy123.github.io/Transcrypt/") &
+    (sleep 1 && xdg-open "https://voxpaperai.github.io/") &
 fi
 
 python3 engine_server.py

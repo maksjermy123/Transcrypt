@@ -101,7 +101,7 @@ export function SettingsTab({
   }
 
   // ─── Удаление VoxPaperAi: команда под ОС + очистка браузера ───
-  const REPO_RAW = "https://raw.githubusercontent.com/maksjermy123/Transcrypt/main/engine-install";
+  const REPO_RAW = "https://raw.githubusercontent.com/voxpaperai/voxpaperai.github.io/main/engine-install";
   const detectedOS = (() => {
     const sysName = health?.system_name || "";
     const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";

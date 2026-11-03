@@ -17,7 +17,7 @@ export default function PrivacyPage() {
             <span className="font-semibold">{t("VoxPaperAi — Политика конфиденциальности")}</span>
           </div>
           <a
-            href="/Transcrypt/"
+            href="/"
             className="text-sm text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5"
           >
             {t("← На главную")} </a>
@@ -101,7 +101,7 @@ export default function PrivacyPage() {
             <p className="text-sm text-muted-foreground leading-relaxed">
               {t("VoxPaperAi — opensource проект. Полный исходный код доступен на")}{" "}
               <a
-                href="https://github.com/maksjermy123/Transcrypt"
+                href="https://github.com/voxpaperai/voxpaperai.github.io"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-[#7c5bf5] hover:underline inline-flex items-center gap-1"
@@ -115,7 +115,7 @@ export default function PrivacyPage() {
 
           <div className="pt-8 border-t border-[#263147]">
             <a
-              href="/Transcrypt/"
+              href="/"
               className="bg-gradient-primary text-white px-6 py-3 rounded-xl font-medium hover:opacity-90 inline-flex items-center gap-2"
             >
               {t("← Понятно, вернуться к VoxPaperAi")} </a>

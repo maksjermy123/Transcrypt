@@ -4,7 +4,7 @@
 
 | Версия / Version | Поддержка / Supported |
 | --- | --- |
-| [последний релиз / latest release](https://github.com/maksjermy123/Transcrypt/releases/latest) | ✅ |
+| [последний релиз / latest release](https://github.com/voxpaperai/voxpaperai.github.io/releases/latest) | ✅ |
 | предыдущие релизы / previous releases | ❌ — обновитесь / please upgrade |
 
 Безопасность исправляется только в актуальном релизе: программа портативная,
@@ -72,9 +72,9 @@ their GitHub profile email.
 - macOS / Linux: `shasum -a 256 <файл>` или `sha256sum <файл>`
 
 Скачивайте программу только со страницы
-[releases/latest](https://github.com/maksjermy123/Transcrypt/releases/latest)
+[releases/latest](https://github.com/voxpaperai/voxpaperai.github.io/releases/latest)
 или с официального сайта проекта. / Only download from the
-[releases/latest](https://github.com/maksjermy123/Transcrypt/releases/latest)
+[releases/latest](https://github.com/voxpaperai/voxpaperai.github.io/releases/latest)
 page or the project's official website.
 
 ## Безопасность пользователей / User safety notes

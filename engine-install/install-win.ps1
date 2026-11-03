@@ -9,11 +9,11 @@
 #   3. Скачивает engine_server.py, src/ и requirements-engine.txt из GitHub
 #   4. Устанавливает зависимости в venv (whisper, yt-dlp, документы и т.д.)
 #   5. Запускает engine_server.py на http://127.0.0.1:8765
-#   6. Открывает браузер с https://maksjermy123.github.io/Transcrypt/
+#   6. Открывает браузер с https://voxpaperai.github.io/
 #   7. Настраивает автозапуск с системой (запись в реестре)
 #
 # Рекомендуемый запуск (окно НЕ закроется даже при ошибке):
-#   iwr -useb https://raw.githubusercontent.com/maksjermy123/Transcrypt/main/engine-install/install-win.ps1 -OutFile "$env:TEMP\vpai-install.ps1"; powershell -NoProfile -ExecutionPolicy Bypass -NoExit -File "$env:TEMP\vpai-install.ps1"
+#   iwr -useb https://raw.githubusercontent.com/voxpaperai/voxpaperai.github.io/main/engine-install/install-win.ps1 -OutFile "$env:TEMP\vpai-install.ps1"; powershell -NoProfile -ExecutionPolicy Bypass -NoExit -File "$env:TEMP\vpai-install.ps1"
 #
 # Удаление:
 #   Remove-Item -Recurse -Force "$env:USERPROFILE\.transcrypt-engine"
@@ -44,7 +44,7 @@ Write-Host "  • Ваши файлы обрабатываются локаль�
 Write-Host "  • Программа предоставляется «как есть», без гарантий."
 Write-Host "  • Скачивание контента с YouTube/TikTok может нарушать их правила —"
 Write-Host "    ответственность лежит на пользователе."
-Write-Host " Полный текст: https://maksjermy123.github.io/Transcrypt/privacy"
+Write-Host " Полный текст: https://voxpaperai.github.io/privacy"
 Write-Host "════════════════════════════════════════════════════════════════"
 if ("$env:TRANSCRYPT_CONSENT" -eq "yes") {
     Write-Host " Согласие принято автоматически (TRANSCRYPT_CONSENT=yes — автоматическая установка)."
@@ -66,8 +66,8 @@ try {
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 } catch {}
 
-$RepoRaw = "https://raw.githubusercontent.com/maksjermy123/Transcrypt/main"
-$RepoTarball = "https://github.com/maksjermy123/Transcrypt/archive/refs/heads/main.tar.gz"
+$RepoRaw = "https://raw.githubusercontent.com/voxpaperai/voxpaperai.github.io/main"
+$RepoTarball = "https://github.com/voxpaperai/voxpaperai.github.io/archive/refs/heads/main.tar.gz"
 $InstallDir = Join-Path $env:USERPROFILE ".transcrypt-engine"
 $VenvDir = Join-Path $InstallDir "venv"
 $EngineFile = Join-Path $InstallDir "engine_server.py"
@@ -489,10 +489,10 @@ if ($IsUpdate) {
     # по умолчанию — Start-Process бросает исключение и при Stop-политике
     # ронял ВСЮ установку на самом последнем шаге. Оборачиваем в try/catch.
     try {
-        Start-Process "https://maksjermy123.github.io/Transcrypt/"
+        Start-Process "https://voxpaperai.github.io/"
     } catch {
         Write-Warn "Не удалось открыть браузер автоматически — откройте вручную:"
-        Write-Host "    https://maksjermy123.github.io/Transcrypt/" -ForegroundColor Gray
+        Write-Host "    https://voxpaperai.github.io/" -ForegroundColor Gray
     }
 }
 
