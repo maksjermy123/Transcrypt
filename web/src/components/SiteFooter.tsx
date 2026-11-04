@@ -51,7 +51,7 @@ export function SiteFooter({
           {t("Присоединиться к христианскому телеграм-каналу")}
         </a>
         <a
-          href="https://tinyurl.com/oglavlenie"
+          href="https://oglavlenie.github.io/"
           target="_blank"
           rel="noopener noreferrer"
           className="inline-flex items-center gap-1.5 text-muted-foreground hover:text-[#a78bfa] transition-colors"
