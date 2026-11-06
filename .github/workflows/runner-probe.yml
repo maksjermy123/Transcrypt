@@ -1,0 +1,23 @@
+name: Runner probe (диагностика пула macOS)
+
+# Временный диагностический workflow: проверяет, доступны ли macos-14 и
+# macos-15 раннеры в организации. Запускается вручную, удаляется после
+# разбора инцидента с отменой macOS-джобы релиза.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  probe-14:
+    runs-on: macos-14
+    timeout-minutes: 5
+    steps:
+      - name: Отчёт
+        run: echo "macos-14 работает"; sw_vers
+
+  probe-15:
+    runs-on: macos-15
+    timeout-minutes: 5
+    steps:
+      - name: Отчёт
+        run: echo "macos-15 работает"; sw_vers
