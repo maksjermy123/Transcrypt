@@ -20,6 +20,7 @@ import {
   ChevronDown,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { DropdownPanel } from "@/components/ui/dropdown";
 import { useOnboarding, MODEL_INFO, browserSafeModel, type WhisperModelId } from "@/lib/onboarding-store";
 import { transcribeAudio, loadWhisperPipeline } from "@/lib/whisper";
 import { useSettings } from "@/lib/settings-store";
@@ -1305,9 +1306,10 @@ function DownloadMenu({
 }) {
   const [open, setOpen] = useState(false);
   const { t } = useI18n();
+  const wrapRef = useRef<HTMLDivElement>(null);
 
   return (
-    <div className="relative flex-shrink-0">
+    <div ref={wrapRef} className="relative flex-shrink-0">
       <button
         onClick={() => setOpen((v) => !v)}
         title={title || t("Выбрать формат и скачать")}
@@ -1319,25 +1321,22 @@ function DownloadMenu({
         {t("Скачать")}
         <ChevronDown className={`w-3 h-3 transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
-      {open && (
-        <>
-          <div className="fixed inset-0 z-20" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 top-full mt-1 z-30 min-w-[180px] rounded-xl border border-[#263147] bg-[#151b28] shadow-2xl overflow-hidden">
-            {items.map((m) => (
-              <button
-                key={m.id}
-                onClick={() => {
-                  setOpen(false);
-                  void m.on();
-                }}
-                className="w-full text-left px-3 py-2 text-xs hover:bg-[#1b2334] transition-colors whitespace-nowrap"
-              >
-                {m.label}
-              </button>
-            ))}
-          </div>
-        </>
-      )}
+      {/* Портал в body: меню всегда поверх карточек (stacking context
+          из backdrop-filter у .glass-card больше не влияет) */}
+      <DropdownPanel open={open} anchorRef={wrapRef} onClose={() => setOpen(false)} minWidth={180}>
+        {items.map((m) => (
+          <button
+            key={m.id}
+            onClick={() => {
+              setOpen(false);
+              void m.on();
+            }}
+            className="w-full text-left px-3 py-2 text-xs hover:bg-[#1b2334] transition-colors whitespace-nowrap"
+          >
+            {m.label}
+          </button>
+        ))}
+      </DropdownPanel>
     </div>
   );
 }
@@ -1351,6 +1350,7 @@ function CopyModesBtn({
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const { t } = useI18n();
+  const wrapRef = useRef<HTMLDivElement>(null);
 
   async function copy(m: { id: string; get: () => string }) {
     const ok = await copyTextToClipboard(m.get());
@@ -1362,7 +1362,7 @@ function CopyModesBtn({
   }
 
   return (
-    <div className="relative flex-shrink-0">
+    <div ref={wrapRef} className="relative flex-shrink-0">
       <button
         onClick={() => setOpen((v) => !v)}
         title={t("Выбрать, как скопировать: обычный текст, с таймкодами или цитатами")}
@@ -1372,22 +1372,18 @@ function CopyModesBtn({
         {copied ? t("Скопировано") : t("Копировать")}
         <ChevronDown className={`w-3 h-3 transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
-      {open && (
-        <>
-          <div className="fixed inset-0 z-20" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 top-full mt-1 z-30 min-w-[190px] rounded-xl border border-[#263147] bg-[#151b28] shadow-2xl overflow-hidden">
-            {modes.map((m) => (
-              <button
-                key={m.id}
-                onClick={() => void copy(m)}
-                className="w-full text-left px-3 py-2 text-xs hover:bg-[#1b2334] transition-colors whitespace-nowrap"
-              >
-                {m.label}
-              </button>
-            ))}
-          </div>
-        </>
-      )}
+      {/* Портал в body: меню поверх любых карточек — та же причина, что и у «Скачать» */}
+      <DropdownPanel open={open} anchorRef={wrapRef} onClose={() => setOpen(false)} minWidth={190}>
+        {modes.map((m) => (
+          <button
+            key={m.id}
+            onClick={() => void copy(m)}
+            className="w-full text-left px-3 py-2 text-xs hover:bg-[#1b2334] transition-colors whitespace-nowrap"
+          >
+            {m.label}
+          </button>
+        ))}
+      </DropdownPanel>
     </div>
   );
 }
