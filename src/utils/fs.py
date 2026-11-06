@@ -175,6 +175,16 @@ def _find_ffmpeg_uncached() -> str | None:
         os.path.join(os.environ.get("ProgramFiles", r"C:\Program Files"), "ffmpeg", "bin", "ffmpeg.exe"),
         os.path.join(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"), "ffmpeg", "bin", "ffmpeg.exe"),
     ]
+    try:
+        # Портативная сборка (PyInstaller onedir): ffmpeg.exe лежит рядом с exe
+        # приложения (release.yml, шаг «Bundle ffmpeg»). main.py также добавляет
+        # эту папку в PATH, но ищем и напрямую — на случай проблем с PATH.
+        import sys
+
+        exe_dir = os.path.dirname(os.path.abspath(sys.executable))
+        candidates.append(os.path.join(exe_dir, ffmpeg_binary_name()))
+    except Exception:
+        pass
     for path in candidates:
         if _is_usable(path):
             return path

@@ -88,6 +88,49 @@ jobs:
           Copy-Item "$scripts/deno.exe" "dist/VoxPaperAi Pro/" -Force
           & "dist/VoxPaperAi Pro/deno.exe" --version
 
+      # ffmpeg + ffprobe — runtime транскрибации и конвертера медиа. На macOS
+      # ffmpeg_installer.py умеет докачивать бинарники сам, на Windows по
+      # задумке они кладутся в пакет заранее — но шага в релизе не было, и
+      # свежая установка падала «FFmpeg не найден» при первой транскрибации.
+      # Кладём рядом с exe (main.py добавляет эту папку в PATH,
+      # find_ffmpeg_executable находит). Источники те же, что у
+      # engine-install/install-win.ps1: gyan.dev, зеркало — BtbN.
+      - name: Bundle ffmpeg + ffprobe (transcription runtime)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $dest = "dist/VoxPaperAi Pro"
+          $tmpZip = Join-Path $env:RUNNER_TEMP "ffmpeg-release-essentials.zip"
+          $urls = @(
+            "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip",
+            "https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/ffmpeg-master-latest-win64-gpl.zip"
+          )
+          $ok = $false
+          foreach ($u in $urls) {
+            try {
+              Invoke-WebRequest -Uri $u -OutFile $tmpZip -UseBasicParsing
+              $ok = $true
+              break
+            } catch {
+              Write-Host "Источник не ответил: $u — пробуем зеркало..."
+            }
+          }
+          if (-not $ok) { throw "не удалось скачать ffmpeg ни с одного источника" }
+          $extract = Join-Path $env:RUNNER_TEMP "ffmpeg-extract"
+          if (Test-Path $extract) { Remove-Item -Recurse -Force $extract }
+          Expand-Archive -Path $tmpZip -DestinationPath $extract -Force
+          $bin = Get-ChildItem $extract -Directory |
+            Where-Object { Test-Path (Join-Path $_.FullName "bin\ffmpeg.exe") } |
+            Select-Object -First 1
+          if (-not $bin) { throw "в архиве ffmpeg не найден bin\ffmpeg.exe" }
+          Copy-Item (Join-Path $bin.FullName "bin\ffmpeg.exe") $dest -Force
+          Copy-Item (Join-Path $bin.FullName "bin\ffprobe.exe") $dest -Force
+          Remove-Item -Recurse -Force $extract -ErrorAction SilentlyContinue
+          Remove-Item -Force $tmpZip -ErrorAction SilentlyContinue
+          Write-Host "ffmpeg: $((& "$dest/ffmpeg.exe" -version | Select-Object -First 1))"
+          Write-Host "ffprobe: $((& "$dest/ffprobe.exe" -version | Select-Object -First 1))"
+
       - name: Bundle deno (EJS solver runtime for yt-dlp)
         if: runner.os != 'Windows'
         shell: bash
@@ -173,7 +216,7 @@ jobs:
             При первом запуске программа попросит согласие с Политикой конфиденциальности и Отказом от ответственности. Программа бесплатна.
 
             ## Состав
-            Whisper (транскрибация), yt-dlp со встроенным решателем PO Token (JS-рантайм deno внутри сборки), переводчик, конвертер медиа и документов. Согласие показывается до начала работы.
+            Whisper (транскрибация), yt-dlp со встроенным решателем PO Token (JS-рантайм deno внутри сборки), встроенный ffmpeg и ffprobe, переводчик, конвертер медиа и документов. Согласие показывается до начала работы.
           draft: false
           prerelease: false
           files: |

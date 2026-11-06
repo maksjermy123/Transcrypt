@@ -135,6 +135,11 @@ except Exception:
 
 # Ensure bundled ffmpeg is in PATH
 if getattr(sys, 'frozen', False):
+    # Папка с exe приложения: в onedir-сборках PyInstaller 6 sys._MEIPASS
+    # указывает на _internal, поэтому exe-папку добавляем в PATH отдельно —
+    # там лежат ffmpeg/ffprobe (release.yml, шаг «Bundle ffmpeg») и deno.
+    exe_dir = os.path.dirname(os.path.abspath(sys.executable))
+    os.environ["PATH"] += os.pathsep + exe_dir
     # If running as a PyInstaller bundle
     if hasattr(sys, '_MEIPASS'):
         # One-file mode
