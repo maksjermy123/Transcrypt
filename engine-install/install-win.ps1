@@ -512,13 +512,15 @@ if (-not $HaveFiles) {
     } else {
         Write-Err "Не удалось скачать файлы движка автоматически."
         Write-Host ""
-        Write-Host "    Последний вариант — скачайте архив репозитория в браузере"
-        Write-Host "    по одной из ссылок (подойдёт tar.gz или zip):"
+        Write-Host "    Последний вариант — скачайте архив репозитория по одной из ссылок"
+        Write-Host "    (подойдёт tar.gz или zip):"
         Write-Host "    $RepoTarball" -ForegroundColor Gray
         Write-Host "    $RepoZip" -ForegroundColor Gray
-        Write-Host "    Если браузер при этом ругается на безопасность (HSTS," -ForegroundColor DarkGray
-        Write-Host "    «Что-то выглядит не так») — это перехват трафика в сети, а не вирус:" -ForegroundColor DarkGray
-        Write-Host "    поможет VPN, интернет с телефона или другая Wi-Fi-сеть." -ForegroundColor DarkGray
+        Write-Host "    Если браузер тоже упрётся в перехват (SSL_ERROR_BAD_CERT_DOMAIN, HSTS," -ForegroundColor DarkGray
+        Write-Host "    «Что-то выглядит не так») — расширения и даже VPN часто бессильны:" -ForegroundColor DarkGray
+        Write-Host "    это перехват на уровне сети, а не вирус. Достаньте файл иначе —" -ForegroundColor DarkGray
+        Write-Host "    интернет с телефона, другая Wi-Fi-сеть, другой компьютер или пересылка" -ForegroundColor DarkGray
+        Write-Host "    в мессенджере (Telegram-боты, скачивающие файлы по ссылке, проходят)." -ForegroundColor DarkGray
         Write-Host "    Затем введите путь к скачанному файлу и нажмите Enter."
         $ManualTarball = ""
         if (-not [Console]::IsInputRedirected) {
