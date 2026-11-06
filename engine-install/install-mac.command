@@ -57,6 +57,19 @@ PYTHON_BIN="${TRANSCRYPT_PYTHON:-python3}"
 
 REPO_SLUG="voxpaperai/voxpaperai.github.io"
 REPO_RAW="https://raw.githubusercontent.com/$REPO_SLUG/main"
+# Хосты для резервного скачивания файлов ПО ОДНОМУ (Способ 2): raw обычно
+# доступен, даже когда archive/codeload перехватываются (с него же скачался
+# и сам установщик). Зеркала jsDelivr — CDN-копия репозитория; кешируют
+# ветку main до ~12 часов, поэтому идут ПОСЛЕ raw: на свежий пуш файл может
+# отстать, зато установка проходит (рассинхрон версий сайт и движок
+# показывают сами — «обновите движок»). Часть сетей РФ пропускает только
+# gcore-зеркало (CDN GCore) — потому зеркал три.
+REPO_RAW_HOSTS=(
+    "$REPO_RAW"
+    "https://cdn.jsdelivr.net/gh/$REPO_SLUG@main"
+    "https://fastly.jsdelivr.net/gh/$REPO_SLUG@main"
+    "https://gcore.jsdelivr.net/gh/$REPO_SLUG@main"
+)
 # Архив пробуем с ТРЁХ адресов: основной (github.com/archive → codeload) на
 # части сетей перехватывается по TLS («SEC_E_WRONG_PRINCIPAL», «доверительные
 # отношения SSL/TLS») — тогда срабатывают запасные адреса и способы.
@@ -240,41 +253,85 @@ if command -v tar >/dev/null 2>&1; then
     done
 fi
 
-# Способ 2 — файлы по одному с raw.githubusercontent.com (этот хост обычно
-# доступен, даже когда архив перехватывается: с него скачался сам установщик).
+# Способ 2 — файлы по одному, перебирая хосты из REPO_RAW_HOSTS
+# (raw → зеркала jsDelivr). Правило «один сбой — не провал»: файл, не
+# взявшийся ни с одного хоста, НЕ обрывает установку (раньше обрывал —
+# на перехватывающих сетях установщик падал из-за одного пустого ответа
+# посреди 41 файла), а остаётся в списке должников; после полного прохода
+# недостающие догоняются ещё до двух раз с паузой — перехват TLS на части
+# сетей «отпускает» через несколько секунд.
 if [ -z "$EXTRACTED" ]; then
     print_step "Резервный способ: скачивание файлов по одному..."
     rm -f "$TMP_TARBALL"
     rm -rf "$TMP_EXTRACT"
     MANIFEST="$INSTALL_DIR/_engine-files.txt"
-    if curl -fsSL --max-time 120 "$REPO_RAW/engine-install/engine-files.txt" -o "$MANIFEST" && [ -s "$MANIFEST" ]; then
+    MANIFEST_OK=0
+    for h in "${REPO_RAW_HOSTS[@]}"; do
+        if curl -fsSL --max-time 120 "$h/engine-install/engine-files.txt" -o "$MANIFEST" && [ -s "$MANIFEST" ]; then
+            MANIFEST_OK=1
+            break
+        fi
+    done
+    if [ "$MANIFEST_OK" = "1" ]; then
         rm -rf "$SRC_DIR"   # при обновлении убираем старые файлы, чтобы не смешать версии
-        RAW_OK=1
         TOTAL=$(grep -vc '^#' "$MANIFEST" || true)
+        NH=${#REPO_RAW_HOSTS[@]}
+        STICKY=0            # индекс хоста, сработавшего последним — с него начинаем для следующего файла
+        MISSING=""
         N=0
-        while IFS= read -r rel; do
-            case "$rel" in ''|\#*) continue ;; esac
-            case "$rel" in
-                engine-install/*) dest="$INSTALL_DIR/$(basename "$rel")" ;;
-                *)                dest="$INSTALL_DIR/$rel" ;;
-            esac
-            mkdir -p "$(dirname "$dest")"
-            if ! curl -fsSL --max-time 120 "$REPO_RAW/$rel" -o "$dest" || [ ! -s "$dest" ]; then
-                print_err "Не скачался файл: $rel"
-                RAW_OK=0
-                break
+        pass=1
+        while [ "$pass" -le 3 ]; do
+            if [ "$pass" -eq 1 ]; then
+                LIST_SRC="$MANIFEST"
+            else
+                [ -n "$MISSING" ] || break
+                echo "    Повтор для неудавшихся файлов (попытка $pass из 3)..."
+                sleep 3
+                printf '%s' "$MISSING" > "$INSTALL_DIR/_missing.txt"
+                LIST_SRC="$INSTALL_DIR/_missing.txt"
+                MISSING=""
             fi
-            N=$((N+1))
-            if [ $((N % 10)) -eq 0 ]; then echo "    скачано $N из $TOTAL..."; fi
-        done < "$MANIFEST"
+            while IFS= read -r rel; do
+                case "$rel" in ''|\#*) continue ;; esac
+                case "$rel" in
+                    engine-install/*) dest="$INSTALL_DIR/$(basename "$rel")" ;;
+                    *)                dest="$INSTALL_DIR/$rel" ;;
+                esac
+                mkdir -p "$(dirname "$dest")"
+                ok=0
+                i=0
+                while [ "$i" -lt "$NH" ]; do
+                    idx=$(( (STICKY + i) % NH ))
+                    rm -f "$dest"   # чистим возможный пустой остаток от прошлой попытки
+                    if curl -fsSL --max-time 120 "${REPO_RAW_HOSTS[$idx]}/$rel" -o "$dest" && [ -s "$dest" ]; then
+                        ok=1
+                        STICKY=$idx
+                        break
+                    fi
+                    i=$((i+1))
+                done
+                if [ "$ok" = "1" ]; then
+                    N=$((N+1))
+                    if [ "$pass" -eq 1 ] && [ $((N % 10)) -eq 0 ]; then echo "    скачано $N из $TOTAL..."; fi
+                else
+                    print_err "Не скачался файл (все зеркала): $rel"
+                    MISSING="$MISSING$rel
+"
+                fi
+            done < "$LIST_SRC"
+            rm -f "$INSTALL_DIR/_missing.txt"
+            pass=$((pass+1))
+        done
         rm -f "$MANIFEST"
-        if [ "$RAW_OK" = "1" ]; then EXTRACTED="RAW"; fi   # условный маркер: файлы уже разложены
+        if [ -z "$MISSING" ]; then EXTRACTED="RAW"; fi   # условный маркер: файлы уже разложены
     fi
 fi
 
 if [ -z "$EXTRACTED" ]; then
     print_err "Не удалось скачать файлы движка. Проверьте интернет и попробуйте"
     print_err "ещё раз позже или из другой сети (часто помогает мобильный интернет)."
+    print_err "Подсказка: программа для компьютера работает и без движка —"
+    print_err "движок нужен только веб-версии для задач по URL."
     exit 1
 fi
 

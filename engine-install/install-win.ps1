@@ -68,6 +68,12 @@ try {
 
 $RepoSlug = "voxpaperai/voxpaperai.github.io"
 $RepoRaw = "https://raw.githubusercontent.com/$RepoSlug/main"
+# Хосты для резервного скачивания файлов ПО ОДНОМУ (см. Get-EngineFilesViaRaw):
+# raw.githubusercontent.com обычно доступен, даже когда archive/codeload
+# перехватываются, — с него же скачался и сам установщик. Зеркала jsDelivr —
+# CDN-копия репозитория; кешируют ветку main до ~12 часов, поэтому идут
+# ПОСЛЕ raw: на свежий пуш файл может отстать, зато установка проходит
+# (рассинхрон версий сайт и движок показывают сами — «обновите движок»).
 # Архив репозитория пробуем с ТРЁХ адресов по очереди: основной (github.com/
 # archive → редирект на codeload) на части сетей перехватывается по TLS
 # (curl: «SEC_E_WRONG_PRINCIPAL», PowerShell: «доверительные отношения
@@ -77,8 +83,15 @@ $RepoTarballUrls = @(
     "https://github.com/$RepoSlug/archive/refs/heads/main.tar.gz",
     "https://api.github.com/repos/$RepoSlug/tarball/main"
 )
-# Для подсказок пользователю (ручное скачивание в браузере)
+# Для подсказок пользователю (ручное скачивание в браузере; сайт даёт обе ссылки)
 $RepoTarball = "https://github.com/$RepoSlug/archive/refs/heads/main.tar.gz"
+$RepoZip = "https://github.com/$RepoSlug/archive/refs/heads/main.zip"
+$FileHosts = @(
+    $RepoRaw,
+    "https://cdn.jsdelivr.net/gh/$RepoSlug@main",
+    "https://fastly.jsdelivr.net/gh/$RepoSlug@main",
+    "https://gcore.jsdelivr.net/gh/$RepoSlug@main"
+)
 $InstallDir = Join-Path $env:USERPROFILE ".transcrypt-engine"
 $VenvDir = Join-Path $InstallDir "venv"
 $EngineFile = Join-Path $InstallDir "engine_server.py"
@@ -123,8 +136,14 @@ function Get-RemoteFile {
     }
     try {
         Invoke-WebRequest -Uri $Url -OutFile $OutFile -UseBasicParsing -TimeoutSec $TimeoutSec
-        return (Test-Path $OutFile)
+        # Пустой файл (перехватчик отдал 200 без тела) считаем неудачей:
+        # раньше такой файл проходил как «успех» и обрывал установку
+        # уже на следующем шаге с невнятной причиной.
+        if ((Test-Path $OutFile) -and ((Get-Item $OutFile).Length -gt 0)) { return $true }
+        Remove-Item -Force $OutFile -ErrorAction SilentlyContinue
+        return $false
     } catch {
+        Remove-Item -Force $OutFile -ErrorAction SilentlyContinue
         Write-Host "    Скачивание не удалось: $($_.Exception.Message)" -ForegroundColor Gray
         return $false
     }
@@ -145,48 +164,107 @@ function Test-GzipFile {
     } catch { return $false }
 }
 
+# Аналогично для zip-архива (сигнатура PK) — сайт и подсказки дают и его.
+function Test-ZipFile {
+    param([string]$Path)
+    try {
+        $fs = [System.IO.File]::OpenRead($Path)
+        try {
+            $b0 = $fs.ReadByte(); $b1 = $fs.ReadByte()
+            return ($b0 -eq 0x50 -and $b1 -eq 0x4B)
+        } finally { $fs.Close() }
+    } catch { return $false }
+}
+
 # Резервный способ, когда архив репозитория не скачался ни с одного адреса:
-# берём список файлов (engine-install/engine-files.txt) и качаем их ПО ОДНОМУ
-# с raw.githubusercontent.com. Этот хост обычно остаётся доступен, даже когда
-# archive/codeload перехватываются — с него же скачался и сам установщик.
+# берём список файлов (engine-install/engine-files.txt) и качаем их ПО ОДНОМУ,
+# перебирая хосты из $FileHosts (raw → зеркала jsDelivr).
+# Правило «один сбой — не провал»: файл, не взявшийся ни с одного хоста,
+# НЕ обрывает установку (раньше обрывал — на перехватывающих сетях установщик
+# падал из-за одного пустого ответа посреди 41 файла), а остаётся в списке
+# должников; после полного прохода недостающие догоняются ещё до двух раз
+# с паузой — перехват TLS на части сетей «отпускает» через несколько секунд.
 # Возвращает $true, если все файлы разложены по $InstallDir.
 function Get-EngineFilesViaRaw {
     $Manifest = Join-Path $env:TEMP "vpai-engine-files.txt"
-    if (-not (Get-RemoteFile -Url "$RepoRaw/engine-install/engine-files.txt" -OutFile $Manifest -TimeoutSec 120)) { return $false }
+    $ManifestOk = $false
+    foreach ($SrcHost in $FileHosts) {
+        if ((Get-RemoteFile -Url "$SrcHost/engine-install/engine-files.txt" -OutFile $Manifest -TimeoutSec 120) -and (Get-Item $Manifest).Length -gt 0) {
+            $ManifestOk = $true
+            break
+        }
+    }
+    if (-not $ManifestOk) { return $false }
     $Files = @(Get-Content $Manifest | ForEach-Object { $_.Trim() } | Where-Object { $_ -and -not $_.StartsWith("#") })
     if ($Files.Count -eq 0) { return $false }
     Write-Host "    Файлов в списке: $($Files.Count) — качаем по одному, это дольше, зато работает." -ForegroundColor DarkGray
     # При обновлении убираем старый src/, чтобы не смешать версии
     if (Test-Path $SrcDir) { Remove-Item -Recurse -Force $SrcDir }
+    $Sticky = 0        # индекс хоста, сработавшего последним — с него начинаем для следующего файла
+    $Missing = New-Object System.Collections.Generic.List[string]
     $Done = 0
-    foreach ($Rel in $Files) {
-        if ($Rel -like "engine-install/*") { $Dest = Join-Path $InstallDir (Split-Path $Rel -Leaf) }
-        else { $Dest = Join-Path $InstallDir $Rel }
-        $Parent = Split-Path $Dest -Parent
-        if (-not (Test-Path $Parent)) { New-Item -ItemType Directory -Path $Parent -Force | Out-Null }
-        $Ok = $false
-        if ((Get-RemoteFile -Url "$RepoRaw/$Rel" -OutFile $Dest -TimeoutSec 120) -and (Get-Item $Dest).Length -gt 0) {
-            $Ok = $true
+    for ($pass = 1; $pass -le 3; $pass++) {
+        if ($pass -eq 1) {
+            $Targets = $Files
+        } else {
+            if ($Missing.Count -eq 0) { break }
+            Write-Host "    Повтор для неудавшихся файлов (попытка $pass из 3, файлов: $($Missing.Count))..." -ForegroundColor DarkGray
+            Start-Sleep -Seconds 3
+            $Targets = @($Missing.ToArray())
+            $Missing.Clear()
         }
-        if (-not $Ok) { Write-Warn "Не скачался файл: $Rel"; return $false }
-        $Done++
-        if (($Done % 10) -eq 0) { Write-Host "    скачано $Done из $($Files.Count)..." -ForegroundColor DarkGray }
+        foreach ($Rel in $Targets) {
+            if ($Rel -like "engine-install/*") { $Dest = Join-Path $InstallDir (Split-Path $Rel -Leaf) }
+            else { $Dest = Join-Path $InstallDir $Rel }
+            $Parent = Split-Path $Dest -Parent
+            if (-not (Test-Path $Parent)) { New-Item -ItemType Directory -Path $Parent -Force | Out-Null }
+            $Ok = $false
+            for ($hi = 0; $hi -lt $FileHosts.Count; $hi++) {
+                $idx = ($Sticky + $hi) % $FileHosts.Count
+                Remove-Item -Force $Dest -ErrorAction SilentlyContinue  # чистим возможный пустой остаток
+                if ((Get-RemoteFile -Url "$($FileHosts[$idx])/$Rel" -OutFile $Dest -TimeoutSec 120) -and (Test-Path $Dest) -and ((Get-Item $Dest).Length -gt 0)) {
+                    $Ok = $true
+                    $Sticky = $idx
+                    break
+                }
+            }
+            if ($Ok) {
+                $Done++
+                if (($Done % 10) -eq 0) { Write-Host "    скачано $Done из $($Files.Count)..." -ForegroundColor DarkGray }
+            } else {
+                Write-Warn "Не скачался файл (все зеркала): $Rel"
+                $Missing.Add($Rel)
+            }
+        }
     }
+    if ($Missing.Count -gt 0) { return $false }
     return ((Test-Path $EngineFile) -and (Get-Item $EngineFile).Length -gt 0 -and (Test-Path $RequirementsFile) -and (Test-Path $SrcDir))
 }
 
-# Распаковка архива репозитория и раскладка файлов по $InstallDir.
-# Каталог внутри архива называется "<имя-репозитория>-main" — имя репозитория
-# может меняться (сейчас voxpaperai.github.io), поэтому ищем его динамически.
-function Expand-RepoTarball {
-    param([string]$TarballPath)
-    if (-not (Get-Command tar -ErrorAction SilentlyContinue)) {
-        Write-Err "В системе нет tar.exe (нужен Windows 10+). Обновите систему или используйте другой компьютер."
-        return $false
+# Распаковка архива репозитория (.tar.gz или .zip) и раскладка файлов
+# по $InstallDir. Каталог внутри архива называется "<имя-репозитория>-main" —
+# имя репозитория может меняться (сейчас voxpaperai.github.io), поэтому ищем
+# его динамически.
+function Expand-RepoArchive {
+    param([string]$ArchivePath)
+    if (Test-ZipFile $ArchivePath) {
+        # zip (например, main.zip с сайта) — распаковка встроенным Expand-Archive
+        Remove-Item -Recurse -Force $tmpExtract -ErrorAction SilentlyContinue
+        try {
+            Expand-Archive -Path $ArchivePath -DestinationPath $tmpExtract -Force
+        } catch {
+            Write-Warn "Архив не распаковался (Expand-Archive): $($_.Exception.Message)"
+            return $false
+        }
+    } else {
+        if (-not (Get-Command tar -ErrorAction SilentlyContinue)) {
+            Write-Err "В системе нет tar.exe (нужен Windows 10+). Обновите систему или используйте другой компьютер."
+            return $false
+        }
+        Remove-Item -Recurse -Force $tmpExtract -ErrorAction SilentlyContinue
+        New-Item -ItemType Directory -Path $tmpExtract -Force | Out-Null
+        cmd /c "tar -xzf `"$ArchivePath`" -C `"$tmpExtract`"" 2>&1 | Out-Null
     }
-    Remove-Item -Recurse -Force $tmpExtract -ErrorAction SilentlyContinue
-    New-Item -ItemType Directory -Path $tmpExtract -Force | Out-Null
-    cmd /c "tar -xzf `"$TarballPath`" -C `"$tmpExtract`"" 2>&1 | Out-Null
     $extracted = Get-ChildItem -Path $tmpExtract -Directory |
         Select-Object -First 1 -ExpandProperty FullName
     if (-not $extracted) { Write-Warn "Архив не распаковался."; return $false }
@@ -408,7 +486,7 @@ $HaveFiles = $false
 # отношения SSL/TLS» — это сеть, а не поломка; запасные адреса и способы ниже).
 if (Get-Command tar -ErrorAction SilentlyContinue) {
     foreach ($TarballUrl in $RepoTarballUrls) {
-        if ((Get-RemoteFile -Url $TarballUrl -OutFile $tmpTarball) -and (Test-GzipFile $tmpTarball) -and (Expand-RepoTarball -TarballPath $tmpTarball)) {
+        if ((Get-RemoteFile -Url $TarballUrl -OutFile $tmpTarball) -and (Test-GzipFile $tmpTarball) -and (Expand-RepoArchive -ArchivePath $tmpTarball)) {
             $HaveFiles = $true
             break
         }
@@ -417,8 +495,8 @@ if (Get-Command tar -ErrorAction SilentlyContinue) {
     }
 }
 
-# Способ 2 — файлы по одному с raw.githubusercontent.com (этот хост обычно
-# доступен, даже когда архив перехватывается: с него скачался сам установщик).
+# Способ 2 — файлы по одному: raw → зеркала jsDelivr, с повторными проходами
+# для неудавшихся файлов (см. Get-EngineFilesViaRaw).
 if (-not $HaveFiles) {
     Write-Step "Резервный способ: скачивание файлов по одному..."
     Remove-Item -Force $tmpTarball -ErrorAction SilentlyContinue
@@ -434,8 +512,13 @@ if (-not $HaveFiles) {
     } else {
         Write-Err "Не удалось скачать файлы движка автоматически."
         Write-Host ""
-        Write-Host "    Последний вариант — скачайте архив в браузере по ссылке:"
+        Write-Host "    Последний вариант — скачайте архив репозитория в браузере"
+        Write-Host "    по одной из ссылок (подойдёт tar.gz или zip):"
         Write-Host "    $RepoTarball" -ForegroundColor Gray
+        Write-Host "    $RepoZip" -ForegroundColor Gray
+        Write-Host "    Если браузер при этом ругается на безопасность (HSTS," -ForegroundColor DarkGray
+        Write-Host "    «Что-то выглядит не так») — это перехват трафика в сети, а не вирус:" -ForegroundColor DarkGray
+        Write-Host "    поможет VPN, интернет с телефона или другая Wi-Fi-сеть." -ForegroundColor DarkGray
         Write-Host "    Затем введите путь к скачанному файлу и нажмите Enter."
         $ManualTarball = ""
         if (-not [Console]::IsInputRedirected) {
@@ -443,10 +526,10 @@ if (-not $HaveFiles) {
         }
         if ($ManualTarball -and (Test-Path $ManualTarball)) {
             Copy-Item $ManualTarball $tmpTarball -Force
-            if ((Test-GzipFile $tmpTarball) -and (Expand-RepoTarball -TarballPath $tmpTarball)) {
+            if (((Test-GzipFile $tmpTarball) -or (Test-ZipFile $tmpTarball)) -and (Expand-RepoArchive -ArchivePath $tmpTarball)) {
                 $HaveFiles = $true
             } else {
-                Write-Warn "Этот файл не подошёл — нужен .tar.gz по ссылке выше."
+                Write-Warn "Этот файл не подошёл — нужен архив .tar.gz или .zip по ссылке выше."
             }
         }
     }
@@ -455,6 +538,8 @@ if (-not $HaveFiles) {
 if (-not $HaveFiles) {
     Write-Err "Файлы движка не скачались. Проверьте интернет и попробуйте ещё раз"
     Write-Host "    позже или из другой сети — мобильный интернет часто помогает." -ForegroundColor Gray
+    Write-Host "    Подсказка: программа для компьютера работает и без движка —" -ForegroundColor Gray
+    Write-Host "    движок нужен только веб-версии для задач по URL." -ForegroundColor Gray
     Exit-WithPause 1
 }
 
