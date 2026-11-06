@@ -1,44 +1,85 @@
 # Файлы движка для резервного скачивания по одному (raw-fallback).
-# Пересоздавать после изменения состава файлов движка:
+# Пересоздавать после изменения состава или содержимого файлов:
 #   bash engine-install/gen-files-manifest.sh
 engine-install/requirements-engine.txt
+# size engine-install/requirements-engine.txt 5214
 engine_server.py
+# size engine_server.py 65974
 src/__init__.py
+# size src/__init__.py 0
 src/core/__init__.py
+# size src/core/__init__.py 0
 src/core/converter.py
+# size src/core/converter.py 46935
 src/core/diagnostics.py
+# size src/core/diagnostics.py 11352
 src/core/downloader.py
+# size src/core/downloader.py 48339
 src/core/engine.py
+# size src/core/engine.py 15217
 src/core/model_manager.py
+# size src/core/model_manager.py 4336
 src/core/subtitles.py
+# size src/core/subtitles.py 1867
 src/core/transcription_policy.py
+# size src/core/transcription_policy.py 903
 src/core/translator.py
+# size src/core/translator.py 26889
 src/core/whisper_runner.py
+# size src/core/whisper_runner.py 5453
 src/core/worker.py
+# size src/core/worker.py 2309
 src/main.py
+# size src/main.py 16570
 src/ui/__init__.py
+# size src/ui/__init__.py 0
 src/ui/assets/logo.png
+# size src/ui/assets/logo.png 393267
 src/ui/assets/style.qss
+# size src/ui/assets/style.qss 4207
 src/ui/assets/style_light.qss
+# size src/ui/assets/style_light.qss 4211
 src/ui/main_window.py
+# size src/ui/main_window.py 5784
 src/ui/tabs/about_tab.py
+# size src/ui/tabs/about_tab.py 9959
 src/ui/tabs/converter_tab.py
+# size src/ui/tabs/converter_tab.py 13172
 src/ui/tabs/media_tab.py
+# size src/ui/tabs/media_tab.py 45617
 src/ui/tabs/settings_tab.py
+# size src/ui/tabs/settings_tab.py 36641
 src/ui/tabs/transcription_tab.py
+# size src/ui/tabs/transcription_tab.py 62355
 src/ui/tabs/translation_tab.py
+# size src/ui/tabs/translation_tab.py 23332
 src/ui/widgets/disclaimer_dialog.py
+# size src/ui/widgets/disclaimer_dialog.py 3437
 src/ui/widgets/file_list.py
+# size src/ui/widgets/file_list.py 24079
 src/utils/__init__.py
+# size src/utils/__init__.py 0
 src/utils/app_paths.py
+# size src/utils/app_paths.py 3208
 src/utils/config.py
+# size src/utils/config.py 1752
 src/utils/event_log.py
+# size src/utils/event_log.py 1341
 src/utils/ffmpeg_installer.py
+# size src/utils/ffmpeg_installer.py 5873
 src/utils/fs.py
+# size src/utils/fs.py 14719
 src/utils/logger.py
+# size src/utils/logger.py 1632
 src/utils/pip_tools.py
+# size src/utils/pip_tools.py 721
 src/utils/processing_guard.py
+# size src/utils/processing_guard.py 3454
 src/utils/runtime.py
+# size src/utils/runtime.py 1600
 src/utils/timestamps.py
+# size src/utils/timestamps.py 418
 src/utils/url_checker.py
+# size src/utils/url_checker.py 15994
 src/utils/winproc.py
+# size src/utils/winproc.py 1410

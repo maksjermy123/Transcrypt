@@ -116,6 +116,23 @@ function Exit-WithPause {
     exit $code
 }
 
+# Проверка скачанного файла. Если из манифеста известен ожидаемый размер
+# (строки «# size <путь> <байт>»), файл обязан совпасть по длине: пустая
+# заглушка перехватчика (HTTP 200 без тела) и HTML-подсовывания отсеиваются
+# по несовпадению размера. Ожидаемый размер 0 — легитимно пустой файл
+# (как пустые __init__.py в src/): 0 байт = УСПЕХ. Без известного размера —
+# старое правило «пустой файл = неудача».
+# Урок Task 61: без размеров правило «пустой = перехват» браковало
+# легитимно пустые __init__.py — и резервный способ никогда не доходил
+# до конца, пользователям приходилось идти в ручной путь.
+function Test-DownloadedFile {
+    param([string]$Path, [int]$ExpectedSize = -1)
+    if (-not (Test-Path $Path)) { return $false }
+    $len = (Get-Item $Path).Length
+    if ($ExpectedSize -ge 0) { return ($len -eq $ExpectedSize) }
+    return ($len -gt 0)
+}
+
 # Скачивание файла с повторными попытками и защитой от «зависаний».
 #   1) curl.exe — встроен в Windows 10 (1803+) и 11: заметно быстрее
 #      Invoke-WebRequest (у того медленный прогресс-бар, съедающий скорость),
@@ -125,11 +142,11 @@ function Exit-WithPause {
 #      «висим на одном числе» больше не бывает).
 #   2) Фолбэк — Invoke-WebRequest (есть на любой Windows).
 function Get-RemoteFile {
-    param([string]$Url, [string]$OutFile, [int]$TimeoutSec = 600)
+    param([string]$Url, [string]$OutFile, [int]$TimeoutSec = 600, [int]$ExpectedSize = -1)
     try {
         $null = Get-Command curl.exe -ErrorAction Stop
         & curl.exe -L --fail --retry 3 --retry-delay 2 --connect-timeout 30 --speed-time 60 --speed-limit 2048 -o "$OutFile" "$Url"
-        if ($LASTEXITCODE -eq 0 -and (Test-Path $OutFile) -and ((Get-Item $OutFile).Length -gt 0)) { return $true }
+        if ($LASTEXITCODE -eq 0 -and (Test-DownloadedFile -Path $OutFile -ExpectedSize $ExpectedSize)) { return $true }
         Write-Warn "curl не справился (код $LASTEXITCODE) — пробуем резервный способ..."
     } catch {
         Write-Warn "curl.exe не найден — качаем через Invoke-WebRequest (медленнее)..."
@@ -138,8 +155,9 @@ function Get-RemoteFile {
         Invoke-WebRequest -Uri $Url -OutFile $OutFile -UseBasicParsing -TimeoutSec $TimeoutSec
         # Пустой файл (перехватчик отдал 200 без тела) считаем неудачей:
         # раньше такой файл проходил как «успех» и обрывал установку
-        # уже на следующем шаге с невнятной причиной.
-        if ((Test-Path $OutFile) -and ((Get-Item $OutFile).Length -gt 0)) { return $true }
+        # уже на следующем шаге с невнятной причиной. Исключение — файл
+        # с ожидаемым размером 0 (легитимно пустой), см. Test-DownloadedFile.
+        if (Test-DownloadedFile -Path $OutFile -ExpectedSize $ExpectedSize) { return $true }
         Remove-Item -Force $OutFile -ErrorAction SilentlyContinue
         return $false
     } catch {
@@ -184,6 +202,9 @@ function Test-ZipFile {
 # падал из-за одного пустого ответа посреди 41 файла), а остаётся в списке
 # должников; после полного прохода недостающие догоняются ещё до двух раз
 # с паузой — перехват TLS на части сетей «отпускает» через несколько секунд.
+# Манифест несёт ожидаемые размеры («# size <путь> <байт>») — скачанный файл
+# сверяется по длине: пустая заглушка перехватчика отсеивается, а легитимно
+# пустые файлы (размер 0) скачиваются успешно (Task 61).
 # Возвращает $true, если все файлы разложены по $InstallDir.
 function Get-EngineFilesViaRaw {
     $Manifest = Join-Path $env:TEMP "vpai-engine-files.txt"
@@ -195,7 +216,25 @@ function Get-EngineFilesViaRaw {
         }
     }
     if (-not $ManifestOk) { return $false }
-    $Files = @(Get-Content $Manifest | ForEach-Object { $_.Trim() } | Where-Object { $_ -and -not $_.StartsWith("#") })
+    $Files = New-Object System.Collections.Generic.List[string]
+    $Sizes = @{}
+    foreach ($Line in (Get-Content $Manifest)) {
+        $t = $Line.Trim()
+        if (-not $t) { continue }
+        if ($t.StartsWith("# size ")) {
+            # Формат «# size <путь> <байт>»: размер — последнее поле, путь — всё
+            # перед ним (путь с пробелом не сломает разбор).
+            $body = $t.Substring(7)
+            $sp = $body.LastIndexOf(' ')
+            if ($sp -gt 0) {
+                $n = 0
+                if ([int]::TryParse($body.Substring($sp + 1).Trim(), [ref]$n)) { $Sizes[$body.Substring(0, $sp).Trim()] = $n }
+            }
+            continue
+        }
+        if ($t.StartsWith("#")) { continue }
+        $Files.Add($t)
+    }
     if ($Files.Count -eq 0) { return $false }
     Write-Host "    Файлов в списке: $($Files.Count) — качаем по одному, это дольше, зато работает." -ForegroundColor DarkGray
     # При обновлении убираем старый src/, чтобы не смешать версии
@@ -218,11 +257,13 @@ function Get-EngineFilesViaRaw {
             else { $Dest = Join-Path $InstallDir $Rel }
             $Parent = Split-Path $Dest -Parent
             if (-not (Test-Path $Parent)) { New-Item -ItemType Directory -Path $Parent -Force | Out-Null }
+            $Exp = -1
+            if ($Sizes.ContainsKey($Rel)) { $Exp = $Sizes[$Rel] }
             $Ok = $false
             for ($hi = 0; $hi -lt $FileHosts.Count; $hi++) {
                 $idx = ($Sticky + $hi) % $FileHosts.Count
                 Remove-Item -Force $Dest -ErrorAction SilentlyContinue  # чистим возможный пустой остаток
-                if ((Get-RemoteFile -Url "$($FileHosts[$idx])/$Rel" -OutFile $Dest -TimeoutSec 120) -and (Test-Path $Dest) -and ((Get-Item $Dest).Length -gt 0)) {
+                if ((Get-RemoteFile -Url "$($FileHosts[$idx])/$Rel" -OutFile $Dest -TimeoutSec 120 -ExpectedSize $Exp) -and (Test-DownloadedFile -Path $Dest -ExpectedSize $Exp)) {
                     $Ok = $true
                     $Sticky = $idx
                     break

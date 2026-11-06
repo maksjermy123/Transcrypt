@@ -287,7 +287,22 @@ if [ -z "$EXTRACTED" ]; then
                 while [ "$i" -lt "$NH" ]; do
                     idx=$(( (STICKY + i) % NH ))
                     rm -f "$dest"   # чистим возможный пустой остаток от прошлой попытки
-                    if curl -fsSL --max-time 120 "${REPO_RAW_HOSTS[$idx]}/$rel" -o "$dest" && [ -s "$dest" ]; then
+                    dl_ok=0
+                    if curl -fsSL --max-time 120 "${REPO_RAW_HOSTS[$idx]}/$rel" -o "$dest"; then
+                        # Сверка размера из манифеста («# size <путь> <байт>»):
+                        # совпал — успех, включая легитимно пустые файлы
+                        # (ожидаемый размер 0, как у __init__.py в src/).
+                        # Несовпадение отсеивает пустые заглушки перехватчика
+                        # (HTTP 200 без тела) и HTML-подсовывания. Размер
+                        # неизвестен — старое правило «пустой файл = неудача».
+                        exp="$(grep -F "# size $rel " "$MANIFEST" 2>/dev/null | tail -n 1 | awk '{print $NF}')"
+                        if [ -n "$exp" ]; then
+                            [ "$(( $(wc -c < "$dest" | tr -d ' ') ))" -eq "$exp" ] && dl_ok=1
+                        elif [ -s "$dest" ]; then
+                            dl_ok=1
+                        fi
+                    fi
+                    if [ "$dl_ok" = "1" ]; then
                         ok=1
                         STICKY=$idx
                         break
