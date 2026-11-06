@@ -31,11 +31,15 @@ jobs:
         include:
           - os: windows-latest
             asset: VoxPaperAi-Pro-windows-x64.zip
-          - os: macos-14 # Apple Silicon (arm64)
+          # macOS arm64: macos-15 — Apple Silicon (M1–M4). Раньше был macos-14,
+          # но 06.11.2026 его пул в организации начал мгновенно отменять джобы
+          # (probe-проверка: macos-14 cancelled за 1 с, macos-15 — success),
+          # поэтому сборка переведена на macos-15. Оба образа — arm64.
+          - os: macos-15 # Apple Silicon (arm64)
             asset: VoxPaperAi-Pro-macos-apple-silicon.dmg
           # macOS Intel собирается отдельно: .github/workflows/release-intel.yml —
-          # раннеры macos-13 (Intel) подолгу стоят в очереди, поэтому x86_64-сборка
-          # идёт на macos-14 под Rosetta (x64-Python) и загружается в тот же релиз.
+          # раннеры macos-13 (Intel) выведены из эксплуатации, поэтому x86_64-сборка
+          # идёт на macos-15 под Rosetta (x64-Python) и загружается в тот же релиз.
           - os: ubuntu-latest
             asset: VoxPaperAi-Pro-linux-x64.tar.gz
 

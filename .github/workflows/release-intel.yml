@@ -3,8 +3,9 @@ name: Release desktop Intel
 # macOS Intel (x86_64) сборка VoxPaperAi Pro.
 #
 # Почему отдельный workflow: раннеры macos-13 (последние Intel-машины GitHub)
-# безнадёжно стоят в очереди (дефицит/вывод из эксплуатации). Вместо этого
-# собираем на macos-14 (Apple Silicon) с x86_64-Python под Rosetta 2 —
+# выведены из эксплуатации.
+# Вместо этого
+# собираем на macos-15 (Apple Silicon) с x86_64-Python под Rosetta 2 —
 # PyInstaller собирает бандл под архитектуру интерпретатора, поэтому
 # результат — честное x86_64-приложение для Intel-маков.
 #
@@ -28,7 +29,7 @@ permissions:
 
 jobs:
   build-intel:
-    runs-on: macos-14 # Apple Silicon; x86_64-Python работает под Rosetta 2
+    runs-on: macos-15 # Apple Silicon; x86_64-Python работает под Rosetta 2. macos-14 больше не используем: 06.11.2026 его пул в организации начал мгновенно отменять джобы (probe: cancelled за 1 с, macos-15 — success)
     timeout-minutes: 90
 
     steps:
