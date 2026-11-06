@@ -1,0 +1,44 @@
+# Файлы движка для резервного скачивания по одному (raw-fallback).
+# Пересоздавать после изменения состава файлов движка:
+#   bash engine-install/gen-files-manifest.sh
+engine-install/requirements-engine.txt
+engine_server.py
+src/__init__.py
+src/core/__init__.py
+src/core/converter.py
+src/core/diagnostics.py
+src/core/downloader.py
+src/core/engine.py
+src/core/model_manager.py
+src/core/subtitles.py
+src/core/transcription_policy.py
+src/core/translator.py
+src/core/whisper_runner.py
+src/core/worker.py
+src/main.py
+src/ui/__init__.py
+src/ui/assets/logo.png
+src/ui/assets/style.qss
+src/ui/assets/style_light.qss
+src/ui/main_window.py
+src/ui/tabs/about_tab.py
+src/ui/tabs/converter_tab.py
+src/ui/tabs/media_tab.py
+src/ui/tabs/settings_tab.py
+src/ui/tabs/transcription_tab.py
+src/ui/tabs/translation_tab.py
+src/ui/widgets/disclaimer_dialog.py
+src/ui/widgets/file_list.py
+src/utils/__init__.py
+src/utils/app_paths.py
+src/utils/config.py
+src/utils/event_log.py
+src/utils/ffmpeg_installer.py
+src/utils/fs.py
+src/utils/logger.py
+src/utils/pip_tools.py
+src/utils/processing_guard.py
+src/utils/runtime.py
+src/utils/timestamps.py
+src/utils/url_checker.py
+src/utils/winproc.py

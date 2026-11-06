@@ -111,6 +111,8 @@ export const EN: Record<string, string> = {
   "Вы выбрали настольную программу. Скачайте установщик в шаге «Программа» (кнопка «Назад») или со страницы GitHub Releases — а эта страница остаётся браузерной версией, можно пользоваться обоими вариантами.": "You chose the desktop program. Download the installer in the “Program” step (Back button) or from the GitHub Releases page — this page remains the browser version, you can use both.",
   "Программа VoxPaperAi Pro работает независимо от сайта — своё окно, свои настройки": "The VoxPaperAi Pro program works independently of the website — its own window, its own settings",
   "Эта страница остаётся браузерной версией — можно пользоваться обоими вариантами": "This page remains the browser version — you can use both",
+  "«SEC_E_WRONG_PRINCIPAL», «Не удалось установить доверительные отношения» — так выглядит перехват трафика до GitHub (провайдер или антивирус), сама программа ни при чём. Установщик сам переключится на резервный способ и скачает файлы по одному.": "“SEC_E_WRONG_PRINCIPAL”, “Could not establish trust relationship” — this is traffic interception on the way to GitHub (your ISP or antivirus), the app itself is fine. The installer will switch to a fallback mode and download the files one by one.",
+  "Если не помогло — запустите команду позже или из другой сети (мобильный интернет почти всегда проходит).": "If that doesn't help — run the command later or from a different network (mobile internet almost always works).",
   "Если позже установите движок сайта — URL-задачи заработают и здесь (в Настройках)": "If you later install the website engine, URL tasks will work here too (in Settings)",
 
 
@@ -263,6 +265,7 @@ export const EN: Record<string, string> = {
   "Полный функционал": "Full feature set",
   "Установка локального Python-движка (~800 МБ). Доступны URL-задачи (YouTube, TikTok), скачивание, очистка аудио, hardsub, нативный Whisper (в 5+ раз быстрее).":
     "Installs a local Python engine (~800 MB). Unlocks URL jobs (YouTube, TikTok), downloads, audio cleanup, hardsub and native Whisper (5x+ faster).",
+  "Установка падает с ошибкой SSL/TLS?": "Installer fails with an SSL/TLS error?",
   "Установить движок →": "Install engine →",
   "Подробное сравнение": "Detailed comparison",
   "Функция": "Feature",

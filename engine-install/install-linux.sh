@@ -50,8 +50,18 @@ else
   exit 1
 fi
 
-REPO_RAW="https://raw.githubusercontent.com/voxpaperai/voxpaperai.github.io/main"
-REPO_TARBALL="https://github.com/voxpaperai/voxpaperai.github.io/archive/refs/heads/main.tar.gz"
+REPO_SLUG="voxpaperai/voxpaperai.github.io"
+REPO_RAW="https://raw.githubusercontent.com/$REPO_SLUG/main"
+# Архив пробуем с ТРЁХ адресов: основной (github.com/archive → codeload) на
+# части сетей перехватывается по TLS («SEC_E_WRONG_PRINCIPAL», «доверительные
+# отношения SSL/TLS») — тогда срабатывают запасные адреса и способы.
+REPO_TARBALLS=(
+    "https://codeload.github.com/$REPO_SLUG/tar.gz/refs/heads/main"
+    "https://github.com/$REPO_SLUG/archive/refs/heads/main.tar.gz"
+    "https://api.github.com/repos/$REPO_SLUG/tarball/main"
+)
+# Для подсказок пользователю (ручное скачивание в браузере)
+REPO_TARBALL="https://github.com/$REPO_SLUG/archive/refs/heads/main.tar.gz"
 INSTALL_DIR="$HOME/.transcrypt-engine"
 VENV_DIR="$INSTALL_DIR/venv"
 ENGINE_FILE="$INSTALL_DIR/engine_server.py"
@@ -187,31 +197,81 @@ fi
 
 # ─── 6. Скачивание engine_server.py, src/ и requirements ───────────
 print_step "Скачивание engine_server.py, src/ и requirements-engine.txt..."
-# Скачиваем tarball всего репо, распаковываем во временную папку
 TMP_TARBALL="$INSTALL_DIR/repo.tar.gz"
 TMP_EXTRACT="$INSTALL_DIR/_extract"
-curl -fsSL "$REPO_TARBALL" -o "$TMP_TARBALL"
-# Чистим папку распаковки от прошлых попыток
-rm -rf "$TMP_EXTRACT"
-mkdir -p "$TMP_EXTRACT"
-tar -xzf "$TMP_TARBALL" -C "$TMP_EXTRACT"
+EXTRACTED=""
 
-# Каталог внутри архива называется "<имя-репозитория>-main" — имя репозитория
-# может меняться (сейчас voxpaperai.github.io), поэтому ищем его динамически
-EXTRACTED=$(find "$TMP_EXTRACT" -mindepth 1 -maxdepth 1 -type d | head -n 1)
+# Скачанный файл должен быть настоящим gzip-архивом (первые байты 1f 8b):
+# перехватчики TLS иногда отдают HTTP 200 с HTML-страницей вместо архива.
+is_gzip() { [ "$(head -c 2 "$1" 2>/dev/null | od -An -tx1 | tr -d ' \n')" = "1f8b" ]; }
+
+# Способ 1 — tarball с трёх адресов по очереди.
+if command -v tar >/dev/null 2>&1; then
+    for u in "${REPO_TARBALLS[@]}"; do
+        if curl -fsSL --retry 3 --retry-delay 2 --connect-timeout 30 "$u" -o "$TMP_TARBALL" && is_gzip "$TMP_TARBALL"; then
+            rm -rf "$TMP_EXTRACT"
+            mkdir -p "$TMP_EXTRACT"
+            if tar -xzf "$TMP_TARBALL" -C "$TMP_EXTRACT" 2>/dev/null; then
+                # Каталог внутри архива называется "<имя-репозитория>-main" — имя
+                # репозитория может меняться, поэтому ищем его динамически.
+                EXTRACTED=$(find "$TMP_EXTRACT" -mindepth 1 -maxdepth 1 -type d | head -n 1)
+                if [ -n "$EXTRACTED" ]; then break; fi
+            fi
+        fi
+        print_warn "Источник $u не сработал — пробуем следующий..."
+        rm -f "$TMP_TARBALL"
+        EXTRACTED=""
+    done
+fi
+
+# Способ 2 — файлы по одному с raw.githubusercontent.com (этот хост обычно
+# доступен, даже когда архив перехватывается: с него скачался сам установщик).
 if [ -z "$EXTRACTED" ]; then
-    print_err "Не удалось распаковать репозиторий"
+    print_step "Резервный способ: скачивание файлов по одному..."
+    rm -f "$TMP_TARBALL"
+    rm -rf "$TMP_EXTRACT"
+    MANIFEST="$INSTALL_DIR/_engine-files.txt"
+    if curl -fsSL --max-time 120 "$REPO_RAW/engine-install/engine-files.txt" -o "$MANIFEST" && [ -s "$MANIFEST" ]; then
+        rm -rf "$SRC_DIR"   # при обновлении убираем старые файлы, чтобы не смешать версии
+        RAW_OK=1
+        TOTAL=$(grep -vc '^#' "$MANIFEST" || true)
+        N=0
+        while IFS= read -r rel; do
+            case "$rel" in ''|\#*) continue ;; esac
+            case "$rel" in
+                engine-install/*) dest="$INSTALL_DIR/$(basename "$rel")" ;;
+                *)                dest="$INSTALL_DIR/$rel" ;;
+            esac
+            mkdir -p "$(dirname "$dest")"
+            if ! curl -fsSL --max-time 120 "$REPO_RAW/$rel" -o "$dest" || [ ! -s "$dest" ]; then
+                print_err "Не скачался файл: $rel"
+                RAW_OK=0
+                break
+            fi
+            N=$((N+1))
+            if [ $((N % 10)) -eq 0 ]; then echo "    скачано $N из $TOTAL..."; fi
+        done < "$MANIFEST"
+        rm -f "$MANIFEST"
+        if [ "$RAW_OK" = "1" ]; then EXTRACTED="RAW"; fi   # условный маркер: файлы уже разложены
+    fi
+fi
+
+if [ -z "$EXTRACTED" ]; then
+    print_err "Не удалось скачать файлы движка. Проверьте интернет и попробуйте"
+    print_err "ещё раз позже или из другой сети (часто помогает мобильный интернет)."
     exit 1
 fi
 
-# Копируем нужные файлы
-cp "$EXTRACTED/engine_server.py" "$ENGINE_FILE"
-cp "$EXTRACTED/engine-install/requirements-engine.txt" "$REQUIREMENTS_FILE"
-# Копируем весь каталог src/ — engine_server.py импортирует из него
-if [ -d "$SRC_DIR" ]; then
-    rm -rf "$SRC_DIR"
+if [ "$EXTRACTED" != "RAW" ]; then
+    # Копируем нужные файлы
+    cp "$EXTRACTED/engine_server.py" "$ENGINE_FILE"
+    cp "$EXTRACTED/engine-install/requirements-engine.txt" "$REQUIREMENTS_FILE"
+    # Копируем весь каталог src/ — engine_server.py импортирует из него
+    if [ -d "$SRC_DIR" ]; then
+        rm -rf "$SRC_DIR"
+    fi
+    cp -r "$EXTRACTED/src" "$SRC_DIR"
 fi
-cp -r "$EXTRACTED/src" "$SRC_DIR"
 
 # Чистим временные файлы
 rm -f "$TMP_TARBALL"

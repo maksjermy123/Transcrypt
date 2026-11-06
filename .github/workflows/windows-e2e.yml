@@ -30,6 +30,16 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Свежесть манифеста engine-files.txt (raw-fallback установщиков)
+        shell: bash
+        run: |
+          bash engine-install/gen-files-manifest.sh
+          if ! git diff --ignore-cr-at-eol --exit-code -- engine-install/engine-files.txt; then
+            echo "::error::engine-install/engine-files.txt устарел — запустите bash engine-install/gen-files-manifest.sh и закоммитьте результат"
+            exit 1
+          fi
+          echo "OK: манифест актуален ($(grep -vc '^#' engine-install/engine-files.txt) файлов)"
+
       - name: Установщик движка (реальный путь пользователя, PowerShell 5.1)
         shell: pwsh
         env:

@@ -441,6 +441,21 @@ export function LocalEngineStep({
               </ol>
             </details>
 
+            {/* Если сеть перехватывает TLS до GitHub — редкий, но известный случай */}
+            <details className="text-xs text-muted-foreground">
+              <summary className="cursor-pointer hover:text-foreground inline-flex items-center gap-1.5">
+                <Info className="w-3 h-3" />
+                {t("Установка падает с ошибкой SSL/TLS?")} </summary>
+              <div className="mt-2 space-y-1.5 leading-relaxed">
+                <p>
+                  {t("«SEC_E_WRONG_PRINCIPAL», «Не удалось установить доверительные отношения» — так выглядит перехват трафика до GitHub (провайдер или антивирус), сама программа ни при чём. Установщик сам переключится на резервный способ и скачает файлы по одному.")}
+                </p>
+                <p>
+                  {t("Если не помогло — запустите команду позже или из другой сети (мобильный интернет почти всегда проходит).")}
+                </p>
+              </div>
+            </details>
+
             <div className="flex gap-2 pt-2">
               {phase === "idle" && (
                 <button

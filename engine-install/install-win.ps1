@@ -66,8 +66,19 @@ try {
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 } catch {}
 
-$RepoRaw = "https://raw.githubusercontent.com/voxpaperai/voxpaperai.github.io/main"
-$RepoTarball = "https://github.com/voxpaperai/voxpaperai.github.io/archive/refs/heads/main.tar.gz"
+$RepoSlug = "voxpaperai/voxpaperai.github.io"
+$RepoRaw = "https://raw.githubusercontent.com/$RepoSlug/main"
+# Архив репозитория пробуем с ТРЁХ адресов по очереди: основной (github.com/
+# archive → редирект на codeload) на части сетей перехватывается по TLS
+# (curl: «SEC_E_WRONG_PRINCIPAL», PowerShell: «доверительные отношения
+# SSL/TLS») — тогда срабатывают запасные адреса и способы (см. ниже).
+$RepoTarballUrls = @(
+    "https://codeload.github.com/$RepoSlug/tar.gz/refs/heads/main",
+    "https://github.com/$RepoSlug/archive/refs/heads/main.tar.gz",
+    "https://api.github.com/repos/$RepoSlug/tarball/main"
+)
+# Для подсказок пользователю (ручное скачивание в браузере)
+$RepoTarball = "https://github.com/$RepoSlug/archive/refs/heads/main.tar.gz"
 $InstallDir = Join-Path $env:USERPROFILE ".transcrypt-engine"
 $VenvDir = Join-Path $InstallDir "venv"
 $EngineFile = Join-Path $InstallDir "engine_server.py"
@@ -117,6 +128,74 @@ function Get-RemoteFile {
         Write-Host "    Скачивание не удалось: $($_.Exception.Message)" -ForegroundColor Gray
         return $false
     }
+}
+
+# Проверка, что скачанный файл — настоящий gzip-архив (первые байты 1F 8B).
+# Защита от «заглушек»: перехватчик TLS может отдать HTTP 200 с HTML-страницей
+# вместо архива — без проверки мы бы потом падали на распаковке с невнятной
+# ошибкой.
+function Test-GzipFile {
+    param([string]$Path)
+    try {
+        $fs = [System.IO.File]::OpenRead($Path)
+        try {
+            $b0 = $fs.ReadByte(); $b1 = $fs.ReadByte()
+            return ($b0 -eq 0x1F -and $b1 -eq 0x8B)
+        } finally { $fs.Close() }
+    } catch { return $false }
+}
+
+# Резервный способ, когда архив репозитория не скачался ни с одного адреса:
+# берём список файлов (engine-install/engine-files.txt) и качаем их ПО ОДНОМУ
+# с raw.githubusercontent.com. Этот хост обычно остаётся доступен, даже когда
+# archive/codeload перехватываются — с него же скачался и сам установщик.
+# Возвращает $true, если все файлы разложены по $InstallDir.
+function Get-EngineFilesViaRaw {
+    $Manifest = Join-Path $env:TEMP "vpai-engine-files.txt"
+    if (-not (Get-RemoteFile -Url "$RepoRaw/engine-install/engine-files.txt" -OutFile $Manifest -TimeoutSec 120)) { return $false }
+    $Files = @(Get-Content $Manifest | ForEach-Object { $_.Trim() } | Where-Object { $_ -and -not $_.StartsWith("#") })
+    if ($Files.Count -eq 0) { return $false }
+    Write-Host "    Файлов в списке: $($Files.Count) — качаем по одному, это дольше, зато работает." -ForegroundColor DarkGray
+    # При обновлении убираем старый src/, чтобы не смешать версии
+    if (Test-Path $SrcDir) { Remove-Item -Recurse -Force $SrcDir }
+    $Done = 0
+    foreach ($Rel in $Files) {
+        if ($Rel -like "engine-install/*") { $Dest = Join-Path $InstallDir (Split-Path $Rel -Leaf) }
+        else { $Dest = Join-Path $InstallDir $Rel }
+        $Parent = Split-Path $Dest -Parent
+        if (-not (Test-Path $Parent)) { New-Item -ItemType Directory -Path $Parent -Force | Out-Null }
+        $Ok = $false
+        if ((Get-RemoteFile -Url "$RepoRaw/$Rel" -OutFile $Dest -TimeoutSec 120) -and (Get-Item $Dest).Length -gt 0) {
+            $Ok = $true
+        }
+        if (-not $Ok) { Write-Warn "Не скачался файл: $Rel"; return $false }
+        $Done++
+        if (($Done % 10) -eq 0) { Write-Host "    скачано $Done из $($Files.Count)..." -ForegroundColor DarkGray }
+    }
+    return ((Test-Path $EngineFile) -and (Get-Item $EngineFile).Length -gt 0 -and (Test-Path $RequirementsFile) -and (Test-Path $SrcDir))
+}
+
+# Распаковка архива репозитория и раскладка файлов по $InstallDir.
+# Каталог внутри архива называется "<имя-репозитория>-main" — имя репозитория
+# может меняться (сейчас voxpaperai.github.io), поэтому ищем его динамически.
+function Expand-RepoTarball {
+    param([string]$TarballPath)
+    if (-not (Get-Command tar -ErrorAction SilentlyContinue)) {
+        Write-Err "В системе нет tar.exe (нужен Windows 10+). Обновите систему или используйте другой компьютер."
+        return $false
+    }
+    Remove-Item -Recurse -Force $tmpExtract -ErrorAction SilentlyContinue
+    New-Item -ItemType Directory -Path $tmpExtract -Force | Out-Null
+    cmd /c "tar -xzf `"$TarballPath`" -C `"$tmpExtract`"" 2>&1 | Out-Null
+    $extracted = Get-ChildItem -Path $tmpExtract -Directory |
+        Select-Object -First 1 -ExpandProperty FullName
+    if (-not $extracted) { Write-Warn "Архив не распаковался."; return $false }
+    Copy-Item -Path (Join-Path $extracted "engine_server.py") -Destination $EngineFile -Force
+    Copy-Item -Path (Join-Path $extracted "engine-install/requirements-engine.txt") -Destination $RequirementsFile -Force
+    # Копируем весь каталог src/ — engine_server.py импортирует из него
+    if (Test-Path $SrcDir) { Remove-Item -Recurse -Force $SrcDir }
+    Copy-Item -Path (Join-Path $extracted "src") -Destination $SrcDir -Recurse -Force
+    return $true
 }
 
 Write-Host ""
@@ -322,42 +401,62 @@ Get-Process python -ErrorAction SilentlyContinue | Where-Object { $_.Path -like 
 Write-Step "Скачивание engine_server.py, src/ и requirements-engine.txt..."
 $tmpTarball = Join-Path $InstallDir "repo.tar.gz"
 $tmpExtract = Join-Path $InstallDir "_extract"
+$HaveFiles = $false
 
-if (-not (Get-RemoteFile -Url $RepoTarball -OutFile $tmpTarball)) {
-    Write-Err "Не удалось скачать архив репозитория. Проверьте интернет."
-    Exit-WithPause 1
-}
-
-# Распаковываем tarball (Windows 10+ имеет встроенный tar).
-# Каталог внутри архива называется "<имя-репозитория>-main" — имя репозитория
-# может меняться (сейчас voxpaperai.github.io), поэтому ищем его динамически.
-Remove-Item -Recurse -Force $tmpExtract -ErrorAction SilentlyContinue
-New-Item -ItemType Directory -Path $tmpExtract -Force | Out-Null
-
-$hasTar = Get-Command tar -ErrorAction SilentlyContinue
-if ($hasTar) {
-    cmd /c "tar -xzf `"$tmpTarball`" -C `"$tmpExtract`"" 2>&1 | Out-Null
-}
-$extractedDir = Get-ChildItem -Path $tmpExtract -Directory |
-    Select-Object -First 1 -ExpandProperty FullName
-if (-not $extractedDir) {
-    if ($hasTar) {
-        Write-Err "Не удалось распаковать архив репозитория (tar)."
-    } else {
-        Write-Err "В системе нет tar.exe (нужен Windows 10+). Обновите систему или распакуйте вручную:"
-        Write-Host "    $RepoTarball" -ForegroundColor Gray
+# Способ 1 — архив с трёх адресов по очереди (основной часто перехватывается
+# провайдером/антивирусом по TLS: «SEC_E_WRONG_PRINCIPAL», «доверительные
+# отношения SSL/TLS» — это сеть, а не поломка; запасные адреса и способы ниже).
+if (Get-Command tar -ErrorAction SilentlyContinue) {
+    foreach ($TarballUrl in $RepoTarballUrls) {
+        if ((Get-RemoteFile -Url $TarballUrl -OutFile $tmpTarball) -and (Test-GzipFile $tmpTarball) -and (Expand-RepoTarball -TarballPath $tmpTarball)) {
+            $HaveFiles = $true
+            break
+        }
+        Write-Warn "Источник $(([uri]$TarballUrl).Host) не сработал — пробуем следующий..."
+        Remove-Item -Force $tmpTarball -ErrorAction SilentlyContinue
     }
-    Exit-WithPause 1
 }
 
-# Копируем нужные файлы
-Copy-Item -Path (Join-Path $extractedDir "engine_server.py") -Destination $EngineFile -Force
-Copy-Item -Path (Join-Path $extractedDir "engine-install/requirements-engine.txt") -Destination $RequirementsFile -Force
-# Копируем весь каталог src/ — engine_server.py импортирует из него
-if (Test-Path $SrcDir) {
-    Remove-Item -Recurse -Force $SrcDir
+# Способ 2 — файлы по одному с raw.githubusercontent.com (этот хост обычно
+# доступен, даже когда архив перехватывается: с него скачался сам установщик).
+if (-not $HaveFiles) {
+    Write-Step "Резервный способ: скачивание файлов по одному..."
+    Remove-Item -Force $tmpTarball -ErrorAction SilentlyContinue
+    Remove-Item -Recurse -Force $tmpExtract -ErrorAction SilentlyContinue
+    if (Get-EngineFilesViaRaw) { $HaveFiles = $true }
 }
-Copy-Item -Path (Join-Path $extractedDir "src") -Destination $SrcDir -Recurse -Force
+
+# Способ 3 — последний: архив, скачанный ВРУЧНУЮ в браузере (браузер часто
+# проходит там, где curl/PowerShell упираются в перехват TLS).
+if (-not $HaveFiles) {
+    if (-not (Get-Command tar -ErrorAction SilentlyContinue)) {
+        Write-Err "Нужен Windows 10+ (встроенный tar.exe) — распаковать файлы нечем."
+    } else {
+        Write-Err "Не удалось скачать файлы движка автоматически."
+        Write-Host ""
+        Write-Host "    Последний вариант — скачайте архив в браузере по ссылке:"
+        Write-Host "    $RepoTarball" -ForegroundColor Gray
+        Write-Host "    Затем введите путь к скачанному файлу и нажмите Enter."
+        $ManualTarball = ""
+        if (-not [Console]::IsInputRedirected) {
+            $ManualTarball = (Read-Host "Путь к архиву, например $env:USERPROFILE\Downloads\main.tar.gz").Trim('"').Trim()
+        }
+        if ($ManualTarball -and (Test-Path $ManualTarball)) {
+            Copy-Item $ManualTarball $tmpTarball -Force
+            if ((Test-GzipFile $tmpTarball) -and (Expand-RepoTarball -TarballPath $tmpTarball)) {
+                $HaveFiles = $true
+            } else {
+                Write-Warn "Этот файл не подошёл — нужен .tar.gz по ссылке выше."
+            }
+        }
+    }
+}
+
+if (-not $HaveFiles) {
+    Write-Err "Файлы движка не скачались. Проверьте интернет и попробуйте ещё раз"
+    Write-Host "    позже или из другой сети — мобильный интернет часто помогает." -ForegroundColor Gray
+    Exit-WithPause 1
+}
 
 # Чистим временные файлы
 Remove-Item -Force $tmpTarball -ErrorAction SilentlyContinue
