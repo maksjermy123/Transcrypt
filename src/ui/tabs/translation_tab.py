@@ -387,7 +387,9 @@ class TranslationTab(QWidget):
                 "PDF → PDF (LAYOUT)",
                 "Режим LAYOUT использует цепочку:\n"
                 "PDF → DOCX → перевод → DOCX → PDF.\n\n"
-                "Для последнего шага нужен Word (docx2pdf) или LibreOffice (soffice).",
+                "Для последнего шага нужен Word (docx2pdf) или LibreOffice (soffice).\n"
+                "На Windows обычно достаточно Microsoft Word (обычный офис) —\n"
+                "LibreOffice не обязателен (это запасной вариант, чаще на macOS).",
             )
             if not self._can_export_docx_to_pdf():
                 reply = QMessageBox.question(

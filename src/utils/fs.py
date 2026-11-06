@@ -141,6 +141,43 @@ def _find_soffice_uncached() -> str | None:
             return path
     return None
 
+def find_msword_executable() -> str | None:
+    """Finds Microsoft Word (для PDF LAYOUT: docx2pdf на Windows/macOS
+    работает именно через установленный Word) — с кэшем."""
+    return _cached_executable("msword", _find_msword_uncached)
+
+
+def _find_msword_uncached() -> str | None:
+    import platform as _platform
+
+    system = _platform.system()
+    if system == "Windows":
+        # Word ставится вместе с Office и регистрируется в реестре
+        # (App Paths) — проверяем реестр (быстро, без запуска Word),
+        # затем PATH.
+        try:
+            import winreg
+
+            for root in (winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER):
+                try:
+                    with winreg.OpenKey(
+                        root, r"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\Winword.exe"
+                    ) as key:
+                        path = winreg.QueryValue(key, None)
+                        if path and os.path.exists(path):
+                            return path
+                except OSError:
+                    continue
+        except Exception:
+            pass
+        import shutil
+
+        return shutil.which("winword.exe")
+    if system == "Darwin":
+        candidate = "/Applications/Microsoft Word.app/Contents/MacOS/Microsoft Word"
+        return candidate if os.path.exists(candidate) else None
+    return None
+
 def find_ffmpeg_executable() -> str | None:
     """Finds ffmpeg binary in common install/runtime locations (с кэшем)."""
     return _cached_executable("ffmpeg", _find_ffmpeg_uncached)

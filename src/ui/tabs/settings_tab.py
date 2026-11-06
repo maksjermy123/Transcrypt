@@ -23,6 +23,7 @@ from src.utils.fs import (
     find_deno_executable,
     find_ffmpeg_executable,
     find_ffprobe_executable,
+    find_msword_executable,
     find_soffice_executable,
 )
 from src.utils.config import CONFIG_FILE
@@ -281,8 +282,13 @@ class SettingsTab(QWidget):
         diagnostics_layout.addWidget(QLabel("FFprobe:"), 0, 2)
         self.lbl_diag_ffprobe = QLabel("Проверка...")
         diagnostics_layout.addWidget(self.lbl_diag_ffprobe, 0, 3)
-        diagnostics_layout.addWidget(QLabel("LibreOffice:"), 1, 0)
+        diagnostics_layout.addWidget(QLabel("Word / LibreOffice:"), 1, 0)
         self.lbl_diag_soffice = QLabel("Проверка...")
+        self.lbl_diag_soffice.setToolTip(
+            "Конвертер DOCX→PDF с сохранением разметки (режим LAYOUT).\n"
+            "На Windows обычно достаточно Microsoft Word (обычный офис);\n"
+            "LibreOffice — запасной вариант (чаще на macOS)."
+        )
         diagnostics_layout.addWidget(self.lbl_diag_soffice, 1, 1)
         diagnostics_layout.addWidget(QLabel("Устройство:"), 1, 2)
         self.lbl_diag_device = QLabel("Проверка...")
@@ -413,6 +419,7 @@ class SettingsTab(QWidget):
         ffmpeg_path = find_ffmpeg_executable()
         ffprobe_path = find_ffprobe_executable()
         soffice_path = find_soffice_executable()
+        word_path = find_msword_executable()
         cpu_total = int(os.cpu_count() or 1)
         thread_choice = self.combo_cpu_threads.currentText() if hasattr(self, "combo_cpu_threads") else "Auto"
         if (thread_choice or "Auto") == "Auto":
@@ -425,7 +432,15 @@ class SettingsTab(QWidget):
 
         self._set_diag_label(self.lbl_diag_ffmpeg, bool(ffmpeg_path), "найден" if ffmpeg_path else "не найден")
         self._set_diag_label(self.lbl_diag_ffprobe, bool(ffprobe_path), "найден" if ffprobe_path else "не найден")
-        self._set_diag_label(self.lbl_diag_soffice, bool(soffice_path), "найден" if soffice_path else "не найден")
+        if word_path and soffice_path:
+            pdf_conv_text = "Word и LibreOffice найдены"
+        elif word_path:
+            pdf_conv_text = "Word найден (LibreOffice не нужен)"
+        elif soffice_path:
+            pdf_conv_text = "LibreOffice найден"
+        else:
+            pdf_conv_text = "не найдены"
+        self._set_diag_label(self.lbl_diag_soffice, bool(word_path or soffice_path), pdf_conv_text)
         self._set_diag_label(self.lbl_diag_device, True, f"{device} -> {resolved_device}")
         self._set_diag_label(self.lbl_diag_threads, True, threads_text)
 
@@ -494,6 +509,7 @@ class SettingsTab(QWidget):
             ffmpeg_path = find_ffmpeg_executable()
             ffprobe_path = find_ffprobe_executable()
             soffice_path = find_soffice_executable()
+            word_path = find_msword_executable()
             deno_path = find_deno_executable()
 
             def _ver(module_name: str) -> str:
@@ -517,7 +533,8 @@ class SettingsTab(QWidget):
                 f"Python: {platform.python_version()}; portable-сборка: {bool(getattr(sys, 'frozen', False))}",
                 f"FFmpeg: {ffmpeg_path or 'не найден'}",
                 f"FFprobe: {ffprobe_path or 'не найден'}",
-                f"LibreOffice: {soffice_path or 'не найден'}",
+                f"Word (PDF LAYOUT): {word_path or 'не найден'}",
+                f"LibreOffice (PDF LAYOUT, запасной): {soffice_path or 'не найден'}",
                 f"Загрузчик (yt-dlp): {ytdlp_text}",
                 f"Решатель (deno): {deno_path or 'не найден'}",
                 f"PyTorch: {_ver('torch')}",

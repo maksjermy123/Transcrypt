@@ -719,7 +719,7 @@ function setEngineStatus(online, data = null) {
         document.getElementById("diagDevice").innerText = data.device;
         document.getElementById("diagThreads").innerText = data.recommended_threads;
         document.getElementById("diagFFmpeg").innerText = data.ffmpeg ? "✅ Доступен" : "⚠️ Не найден";
-        document.getElementById("diagLibre").innerText = data.libreoffice ? "✅ Доступен" : "⚪ Не установлен (опционально)";
+        document.getElementById("diagLibre").innerText = data.libreoffice ? "✅ Доступен" : "⚪ Не найден — не страшно: на Windows обычно достаточно Microsoft Word, а сайт делает PDF сам";
     } else {
         badge.className = "engine-badge offline";
         text.innerText = "⚪ Движок не обнаружен";

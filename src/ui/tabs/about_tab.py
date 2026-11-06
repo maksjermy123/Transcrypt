@@ -3,6 +3,8 @@ from PyQt6.QtCore import Qt
 import os
 import sys
 
+from src.utils.app_paths import is_windows
+
 class AboutTab(QWidget):
     def __init__(self):
         super().__init__()
@@ -97,6 +99,22 @@ class AboutTab(QWidget):
         self.title_label.setText(f"VoxPaperAi Pro <span style='font-size:16px; color:#7A8798;'>v{version}</span>")
         self.meta_label.setText("Whisper • ffmpeg • PyQt6 • PDF/DOCX • Queue Scheduler")
 
+        # PDF LAYOUT: на Windows конвертер — Microsoft Word (docx2pdf),
+        # LibreOffice — запасной вариант; на macOS/локальных сборках —
+        # Word или LibreOffice. Подпись зависит от платформы, чтобы
+        # пользователи Windows не думали, что LibreOffice обязателен.
+        if is_windows():
+            pdf_layout_li = (
+                "<li><b>PDF режим LAYOUT</b> для финального DOCX→PDF использует "
+                "<b>Microsoft Word</b> (обычный офис) — LibreOffice НЕ обязателен "
+                "(это запасной вариант, чаще на macOS).</li>"
+            )
+        else:
+            pdf_layout_li = (
+                "<li><b>PDF режим LAYOUT</b> для финального DOCX→PDF обычно требует "
+                "<b>Microsoft Word</b> или <b>LibreOffice</b>.</li>"
+            )
+
         html_content = f"""
         <div style="line-height: 1.55;">
         <h2 style="margin-top:0;">Что умеет программа</h2>
@@ -127,9 +145,9 @@ class AboutTab(QWidget):
             <li><b>Перевод</b> требует интернет; при выборе DeepL нужен корректный API key.</li>
             <li><b>YouTube субтитры</b> могут иногда возвращать <b>HTTP 429</b>. В таком случае приложение переходит на fallback через скачивание медиа и Whisper.</li>
             <li><b>Whisper</b> запускается в отдельном подпроцессе, поэтому тяжёлая транскрибация не должна открывать второе главное окно приложения.</li>
-            <li><b>PDF режим LAYOUT</b> для финального DOCX→PDF обычно требует Microsoft Word или LibreOffice.</li>
+            {pdf_layout_li}
             <li><b>Светлая/тёмная тема</b> подстраивается под систему, включая автоматическое переключение по времени суток на macOS.</li>
-            <li><b>Диагностика среды</b> доступна во вкладке <b>Настройки</b>: ffmpeg, ffprobe, LibreOffice, устройство и потоки Whisper.</li>
+            <li><b>Диагностика среды</b> доступна во вкладке <b>Настройки</b>: ffmpeg, ffprobe, Word/LibreOffice, устройство и потоки Whisper.</li>
         </ul>
 
         <h2>Отказ от ответственности</h2>

@@ -199,6 +199,11 @@ jobs:
           body: |
             Настольная программа VoxPaperAi Pro — полностью локальная версия: сайт и браузер не нужны.
 
+            ## Что нового в v1.1.0
+            - **В Windows-сборку встроены ffmpeg и ffprobe** — транскрибация и конвертация медиа работают сразу после установки, ничего доустанавливать не нужно (в v1.0.9 свежая установка падала «FFmpeg не найден»).
+            - В **Настройках → Диагностика** честные подписи конвертера PDF LAYOUT: на Windows — **Microsoft Word** (обычный офис), LibreOffice — запасной вариант (чаще на macOS). Ставить LibreOffice на Windows не нужно.
+            - В отчёт о среде добавлены отдельные строки Word и LibreOffice — проще диагностировать PDF LAYOUT по багрепорту.
+
             ## Загрузки
             - **Windows 64-bit:** VoxPaperAi-Pro-windows-x64.zip
             - **macOS Apple Silicon (M1–M4):** VoxPaperAi-Pro-macos-apple-silicon.dmg
